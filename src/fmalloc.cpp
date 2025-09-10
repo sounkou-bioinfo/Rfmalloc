@@ -8,12 +8,6 @@
 #include <R.h>
 #include <Rinternals.h>
 #include <R_ext/Rallocators.h>
-#ifdef length
-#undef length
-#endif
-#ifdef error
-#undef error
-#endif
 
 // Global fmalloc info structure
 static struct fm_info *global_fm_info = nullptr;

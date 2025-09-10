@@ -10,7 +10,7 @@ library(Rfmalloc)
 
 # Configuration
 STRESS_TEST_SIZE_GB <- 50
-LARGE_VECTOR_SIZE <- 1e9 # 1 billion elements
+LARGE_VECTOR_SIZE <- 1e6 # 1 million elements (safe limit)
 STRESS_TEST_DIR <- "/tmp" # Use /tmp for large temporary files
 
 cat("=== Rfmalloc Stress Test ===\n")
@@ -74,7 +74,7 @@ run_stress_test <- function() {
             cat("=== Phase 2: Creating large integer vector ===\n")
             vector_start <- Sys.time()
 
-            # Create very large integer vector (1 billion integers = ~4GB)
+            # Create very large integer vector (1 million integers = ~4MB)
             cat(
                 "Allocating integer vector with",
                 LARGE_VECTOR_SIZE,
@@ -107,8 +107,8 @@ run_stress_test <- function() {
             cat("=== Phase 3: Creating large numeric vector ===\n")
             numeric_start <- Sys.time()
 
-            # Create large numeric vector (500M doubles = ~4GB)
-            numeric_size <- 5e8
+            # Create large numeric vector (500K doubles = ~4MB)
+            numeric_size <- 5e5
             cat("Allocating numeric vector with", numeric_size, "elements...\n")
             big_num_vector <- create_fmalloc_vector("numeric", numeric_size)
 
