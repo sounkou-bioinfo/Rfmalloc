@@ -64,14 +64,18 @@ Use fmalloc for alternative memory allocation:
 # Initialize fmalloc with a backing file
 alloc_file <- tempfile(fileext = ".bin")
 init_fmalloc(alloc_file)
-#> fmalloc initialized with file: /tmp/RtmpWVGrDo/file83a026ca5c179.bin (init: true)
+#> fmalloc initialized with file: /tmp/Rtmp2psvE5/file83d5b78f08a92.bin (init: true)
 #> [1] TRUE
 
 # Create vectors using fmalloc
 v_int <- create_fmalloc_vector("integer", 100)
-#> fmalloc allocated 480 bytes at 0x7479b04023e0
+#> fmalloc allocated 480 bytes at 0x7fa79ba023e0
 v_num <- create_fmalloc_vector("numeric", 100)
-#> fmalloc allocated 880 bytes at 0x7479b04025c8
+#> fmalloc allocated 880 bytes at 0x7fa79ba025c8
+print(head(v_int))
+#> [1] 0 0 0 0 0 0
+print(head(v_num))
+#> [1] 0 0 0 0 0 0
 # Clean up
 cleanup_fmalloc()
 #> fmalloc cleaned up

@@ -72,6 +72,8 @@ init_fmalloc(alloc_file)
 # Create vectors using fmalloc
 v_int <- create_fmalloc_vector("integer", 100)
 v_num <- create_fmalloc_vector("numeric", 100)
+print(head(v_int))
+print(head(v_num))
 # Clean up
 cleanup_fmalloc()
 ```
