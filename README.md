@@ -42,13 +42,19 @@ library(Rfmalloc)
 # Initialize fmalloc with a backing file
 alloc_file <- tempfile(fileext = ".bin")
 init_result <- init_fmalloc(alloc_file)
-#> fmalloc initialized with file: /tmp/Rtmpqf3k4I/file8ba4c268f036f.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpE2RfNO/file8c68e5b8ca98a.bin (init: true)
 print(paste("Initialization result:", init_result))
 #> [1] "Initialization result: TRUE"
 
 # Create vectors using fmalloc
 v_int <- create_fmalloc_vector("integer", 10)
+#> Creating fmalloc vector: type=13, length=10
+#> fmalloc allocated 120 bytes at 0x73cdc54023e0
+#> Successfully created fmalloc vector
 v_num <- create_fmalloc_vector("numeric", 10)
+#> Creating fmalloc vector: type=14, length=10
+#> fmalloc allocated 160 bytes at 0x73cdc5402460
+#> Successfully created fmalloc vector
 
 # Simple assignment (no reallocation)
 v_int[1:3] <- c(1L, 2L, 3L)
@@ -65,6 +71,7 @@ print(v_num[1:3])
 
 # Clean up
 cleanup_fmalloc()
+#> Cleaning up fmalloc...
 #> fmalloc cleaned up
 
 # Remove temporary file
