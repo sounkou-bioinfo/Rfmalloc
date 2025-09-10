@@ -29,20 +29,12 @@ library(Rfmalloc)
 alloc_file <- tempfile(fileext = ".bin")
 init_fmalloc(alloc_file)
 #> Creating file with size: 33554432 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpC9tYa9/file523f5d6723cd.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpK0ytnS/filee1e019c970c8.bin (init: true)
 #> [1] TRUE
 
 # Create vectors using file-backed allocation
 v_int <- create_fmalloc_vector("integer", 10)
-#> Allocation size check: 40 bytes (10 elements) - within safe limits
-#> Creating fmalloc vector: type=13, length=10
-#> fmalloc allocated 120 bytes at 0x7af07b6023e0
-#> Successfully created fmalloc vector
 v_num <- create_fmalloc_vector("numeric", 10)
-#> Allocation size check: 80 bytes (10 elements) - within safe limits
-#> Creating fmalloc vector: type=14, length=10
-#> fmalloc allocated 160 bytes at 0x7af07b602460
-#> Successfully created fmalloc vector
 
 # Use the vectors normally
 v_int[1:3] <- c(1L, 2L, 3L)
@@ -56,11 +48,9 @@ print(v_num[1:3])
 # Clean up - force garbage collection before cleanup to avoid warnings  
 rm(v_int, v_num)
 gc()
-#> fmalloc freed memory at 0x7af07b6023e0
-#> fmalloc freed memory at 0x7af07b602460
 #>          used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells 522144 27.9    1133131 60.6   717417 38.4
-#> Vcells 986236  7.6    8388608 64.0  2021519 15.5
+#> Ncells 522110 27.9    1133034 60.6   717417 38.4
+#> Vcells 986132  7.6    8388608 64.0  2021519 15.5
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
@@ -78,20 +68,14 @@ large_file <- tempfile(fileext = ".bin")
 init_fmalloc(large_file, size_gb = 0.1)
 #> Requested file size: 0.10 GB (107374182 bytes)
 #> Creating file with size: 107374182 bytes (0.10 GB)
-#> fmalloc initialized with file: /tmp/RtmpC9tYa9/file523f6e072296.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpK0ytnS/filee1e032303134.bin (init: true)
 #> [1] TRUE
 
 # Create larger vectors
 vec1 <- create_fmalloc_vector("integer", 1000)
-#> Allocation size check: 4000 bytes (1000 elements) - within safe limits
 #> Creating fmalloc vector: type=13, length=1000
-#> fmalloc allocated 4080 bytes at 0x7af074e023e0
 #> Successfully created fmalloc vector
 vec2 <- create_fmalloc_vector("numeric", 500)
-#> Allocation size check: 4000 bytes (500 elements) - within safe limits
-#> Creating fmalloc vector: type=14, length=500
-#> fmalloc allocated 4080 bytes at 0x7af074e033e0
-#> Successfully created fmalloc vector
 
 # Fill with data
 vec1[1:10] <- 1:10
@@ -100,16 +84,14 @@ vec2[1:10] <- (1:10) * 1.5
 cat("Sample data:", vec1[1:5], "\n")
 #> Sample data: 1 2 3 4 5
 cat("Random access:", vec1[sample(10, 3)], "\n")
-#> Random access: 3 8 4
+#> Random access: 3 9 5
 
 # Clean up - force garbage collection before cleanup to avoid warnings
 rm(vec1, vec2)
 gc()
-#> fmalloc freed memory at 0x7af074e023e0
-#> fmalloc freed memory at 0x7af074e033e0
 #>          used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells 522747 28.0    1133131 60.6   717417 38.4
-#> Vcells 988086  7.6    8388608 64.0  2021519 15.5
+#> Ncells 522715 28.0    1133034 60.6   717417 38.4
+#> Vcells 987936  7.6    8388608 64.0  2021519 15.5
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
