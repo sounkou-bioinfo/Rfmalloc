@@ -29,7 +29,6 @@
 #include <string.h>
 #include <assert.h>
 #include <sys/stat.h>
-#include <sys/ioctl.h>
 #include <sys/mman.h>
 
 #ifndef USE_DL_PREFIX
