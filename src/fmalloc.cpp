@@ -1,15 +1,19 @@
-#include <R.h>
-#include <Rinternals.h>
-#include <R_ext/Rallocators.h>
+#include <cstring>
+#include <stdexcept>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <cstring>
 #include <errno.h>
-#include <stdexcept>
-
-// Include fmalloc headers (C++ interface)
 #include "fmalloc.hpp"
+#include <R.h>
+#include <Rinternals.h>
+#include <R_ext/Rallocators.h>
+#ifdef length
+#undef length
+#endif
+#ifdef error
+#undef error
+#endif
 
 // Global fmalloc info structure
 static struct fm_info *global_fm_info = nullptr;

@@ -28,9 +28,16 @@
 #include <fcntl.h>
 #include <string.h>
 #include <assert.h>
+#ifdef _WIN32
 #include <sys/stat.h>
+#else
+#include <sys/stat.h>
+#endif
 #ifndef _WIN32
 #include <sys/mman.h>
+#else
+// Define MAP_FAILED for Windows compatibility
+#define MAP_FAILED ((void *) -1)
 #endif
 
 #ifndef USE_DL_PREFIX

@@ -26,46 +26,36 @@ devtools::install_github("sounkou-bioinfo/Rfmalloc")
 ## System Requirements
 
 - C++11 compiler
-- POSIX-compliant system (Linux, macOS)
-- pthreads library
+- POSIX-compliant system (Linux, macOS) or Windows
+- pthreads library (on POSIX systems)
 
 ## Basic Usage
-
-### File-backed Allocation with Realloc Support
-
-Use fmalloc for persistent memory allocation with full
-malloc/free/realloc support:
 
 ``` r
 library(Rfmalloc)
 
 # Initialize fmalloc with a backing file
 alloc_file <- tempfile(fileext = ".bin")
-init_result <- init_fmalloc(alloc_file)
-#> fmalloc initialized with file: /tmp/Rtmp3Z7hNt/file989cb5c3da905.bin (init: true)
-print(paste("Initialization result:", init_result))
-#> [1] "Initialization result: TRUE"
+init_fmalloc(alloc_file)
+#> fmalloc initialized with file: /tmp/RtmpDAQ653/file9dca691c300f.bin (init: true)
+#> [1] TRUE
 
-# Create vectors using fmalloc
+# Create vectors using file-backed allocation
 v_int <- create_fmalloc_vector("integer", 10)
 #> Creating fmalloc vector: type=13, length=10
-#> fmalloc allocated 120 bytes at 0x70ff884023e0
+#> fmalloc allocated 120 bytes at 0x712dc28023e0
 #> Successfully created fmalloc vector
 v_num <- create_fmalloc_vector("numeric", 10)
 #> Creating fmalloc vector: type=14, length=10
-#> fmalloc allocated 160 bytes at 0x70ff88402460
+#> fmalloc allocated 160 bytes at 0x712dc2802460
 #> Successfully created fmalloc vector
 
-# Simple assignment (no reallocation)
+# Use the vectors normally
 v_int[1:3] <- c(1L, 2L, 3L)
 v_num[1:3] <- c(1.1, 2.2, 3.3)
 
-print("Integer vector:")
-#> [1] "Integer vector:"
 print(v_int[1:3])
 #> [1] 1 2 3
-print("Numeric vector:")
-#> [1] "Numeric vector:"
 print(v_num[1:3])
 #> [1] 1.1 2.2 3.3
 
@@ -73,17 +63,11 @@ print(v_num[1:3])
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
-
-# Remove temporary file
-if (file.exists(alloc_file)) {
-  file.remove(alloc_file)
-}
+file.remove(alloc_file)
 #> [1] TRUE
 ```
 
 ## Technical Details
-
-### fmalloc Implementation
 
 The fmalloc allocator provides:
 
@@ -94,26 +78,13 @@ The fmalloc allocator provides:
 - **Persistent storage** - Data stored in files survives process
   restarts
 - **Efficient algorithms** - Based on proven ptmalloc3 memory management
-- **Memory-mapped regions** - Direct file-to-memory mapping for
-  performance
-
-### Realloc Support
-
-fmalloc includes full realloc support through the `dlrealloc()`
-function:
-
-- **Memory expansion** - Grow allocated regions efficiently
-- **Memory shrinking** - Reduce allocation size when needed
-- **Copy optimization** - Minimizes data copying during reallocation
-- **R integration** - Seamlessly works with R’s internal memory
-  management
 
 ## Error Handling
 
 The package includes comprehensive error handling for:
 
 - Invalid file paths and permissions
-- Memory allocation failures
+- Memory allocation failures  
 - Type validation
 - Resource cleanup
 

@@ -21,6 +21,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <io.h>
+#include <sys/stat.h>
 #else
 #include <unistd.h>
 #include <fcntl.h>
@@ -37,6 +38,7 @@ struct fm_info *fmalloc_init(const char *filepath, bool *init)
 	void *mem;
 	uint64_t *magicp;
 	size_t len;
+	int fd = -1; // Initialize fd for both Windows and POSIX
 
 #ifdef _WIN32
 	HANDLE file_handle, map_handle;
@@ -82,7 +84,6 @@ struct fm_info *fmalloc_init(const char *filepath, bool *init)
 	
 #else
 	struct stat st;
-	int fd;
 	
 	if (stat(filepath, &st) < 0) {
 		perror("stat");
