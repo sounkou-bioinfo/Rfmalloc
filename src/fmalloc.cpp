@@ -87,7 +87,7 @@ static void fmalloc_r_free(R_allocator_t *allocator, void* ptr) {
 extern "C" {
 
 // Initialize fmalloc
-SEXP init_fmalloc_impl(SEXP filepath_sexp) {
+SEXP init_fmalloc_impl(SEXP filepath_sexp, SEXP size_gb_sexp) {
     if (global_fm_info) {
         Rf_warning("fmalloc already initialized");
         return ScalarLogical(FALSE);
@@ -104,26 +104,57 @@ SEXP init_fmalloc_impl(SEXP filepath_sexp) {
         return R_NilValue;
     }
     
+    // Parse optional size parameter
+    size_t requested_size = 32 * 1024 * 1024; // Default 32MB
+    if (!Rf_isNull(size_gb_sexp)) {
+        if (TYPEOF(size_gb_sexp) != REALSXP || LENGTH(size_gb_sexp) != 1) {
+            Rf_error("size_gb must be a single numeric value");
+            return R_NilValue;
+        }
+        double size_gb = REAL(size_gb_sexp)[0];
+        if (size_gb <= 0) {
+            Rf_error("size_gb must be positive");
+            return R_NilValue;
+        }
+        if (size_gb > 1000) { // Safety limit: 1TB
+            Rf_error("size_gb too large (maximum 1000 GB)");
+            return R_NilValue;
+        }
+        requested_size = (size_t)(size_gb * 1024.0 * 1024.0 * 1024.0);
+        Rprintf("Requested file size: %.2f GB (%zu bytes)\n", size_gb, requested_size);
+    }
+    
     // Check if file exists, create if it doesn't
     struct stat st;
     bool file_exists = (stat(filepath, &st) == 0);
     
     if (!file_exists) {
-        // Create the file with a minimum size (32MB to be safe)
+        // Create the file with requested size
         // fmalloc requires at least FMALLOC_MIN_CHUNK (16MB) + 8KB overhead
+        size_t min_size = 16 * 1024 * 1024 + 8192;
+        if (requested_size < min_size) {
+            requested_size = min_size;
+            Rprintf("Adjusting size to minimum required: %zu bytes\n", requested_size);
+        }
+        
         int fd = open(filepath, O_RDWR | O_CREAT, 0666);
         if (fd < 0) {
             Rf_error("Cannot create file: %s (errno: %d)", filepath, errno);
             return R_NilValue;
         }
         
-        size_t initial_size = 32 * 1024 * 1024; // 32MB
-        if (ftruncate(fd, initial_size) != 0) {
+        Rprintf("Creating file with size: %zu bytes (%.2f GB)\n", 
+                requested_size, requested_size / (1024.0 * 1024.0 * 1024.0));
+        
+        if (ftruncate(fd, requested_size) != 0) {
             close(fd);
-            Rf_error("Cannot set initial file size for: %s (errno: %d)", filepath, errno);
+            Rf_error("Cannot set file size for: %s (errno: %d)", filepath, errno);
             return R_NilValue;
         }
         close(fd);
+    } else {
+        Rprintf("Using existing file: %s (size: %lld bytes)\n", 
+                filepath, (long long)st.st_size);
     }
     
     bool init_flag = false;
@@ -241,7 +272,7 @@ SEXP cleanup_fmalloc_impl() {
 
 // Registration array
 static const R_CallMethodDef CallEntries[] = {
-    {"init_fmalloc_impl", (DL_FUNC) &init_fmalloc_impl, 1},
+    {"init_fmalloc_impl", (DL_FUNC) &init_fmalloc_impl, 2},
     {"create_fmalloc_vector_impl", (DL_FUNC) &create_fmalloc_vector_impl, 2},
     {"cleanup_fmalloc_impl", (DL_FUNC) &cleanup_fmalloc_impl, 0},
     {nullptr, nullptr, 0}

@@ -4,10 +4,13 @@
 \alias{init_fmalloc}
 \title{Initialize fmalloc}
 \usage{
-init_fmalloc(filepath)
+init_fmalloc(filepath, size_gb = NULL)
 }
 \arguments{
 \item{filepath}{Character string specifying the file path for fmalloc data}
+
+\item{size_gb}{Numeric value specifying the size of the backing file in GB (optional)
+If not specified, uses default size or existing file size}
 }
 \value{
 Logical indicating whether the file was newly initialized
@@ -20,8 +23,11 @@ memory allocation backed by memory-mapped files.
 }
 \examples{
 \dontrun{
-# Initialize fmalloc
+# Initialize fmalloc with default size
 init_result <- init_fmalloc("fmalloc_data.bin")
+
+# Initialize fmalloc with specific size (50 GB)
+init_result <- init_fmalloc("large_data.bin", size_gb = 50)
 
 # Create vectors using fmalloc (supports realloc patterns)
 v <- create_fmalloc_vector("integer", 1000)

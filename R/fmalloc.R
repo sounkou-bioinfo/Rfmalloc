@@ -6,13 +6,18 @@
 #' memory allocation backed by memory-mapped files.
 #'
 #' @param filepath Character string specifying the file path for fmalloc data
+#' @param size_gb Numeric value specifying the size of the backing file in GB (optional)
+#'                If not specified, uses default size or existing file size
 #'
 #' @return Logical indicating whether the file was newly initialized
 #'
 #' @examples
 #' \dontrun{
-#' # Initialize fmalloc
+#' # Initialize fmalloc with default size
 #' init_result <- init_fmalloc("fmalloc_data.bin")
+#'
+#' # Initialize fmalloc with specific size (50 GB)
+#' init_result <- init_fmalloc("large_data.bin", size_gb = 50)
 #'
 #' # Create vectors using fmalloc (supports realloc patterns)
 #' v <- create_fmalloc_vector("integer", 1000)
@@ -22,12 +27,18 @@
 #' }
 #'
 #' @export
-init_fmalloc <- function(filepath) {
+init_fmalloc <- function(filepath, size_gb = NULL) {
     if (!is.character(filepath) || length(filepath) != 1) {
         stop("filepath must be a single character string")
     }
 
-    .Call("init_fmalloc_impl", filepath)
+    if (!is.null(size_gb)) {
+        if (!is.numeric(size_gb) || length(size_gb) != 1 || size_gb <= 0) {
+            stop("size_gb must be a positive numeric value")
+        }
+    }
+
+    .Call("init_fmalloc_impl", filepath, size_gb)
 }
 
 #' Create Vector Using fmalloc
