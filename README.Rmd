@@ -13,14 +13,15 @@ knitr::opts_chunk$set(
 
 # Rfmalloc
 
-<!-- badges: start -->
-[![R-CMD-check](https://github.com/sounkou-bioinfo/Rfmalloc/workflows/R-CMD-check/badge.svg)](https://github.com/sounkou-bioinfo/Rfmalloc/actions)
-<!-- badges: end -->
 
-Rfmalloc provides memory-mapped file allocation capabilities for R using the fmalloc library. It offers two main approaches for efficient persistent storage and memory usage:
+Rfmalloc provides persistent memory allocation capabilities for R using the fmalloc library. It offers file-backed memory allocation with full malloc, free, and realloc support for efficient persistent storage.
 
-1. **ALTREP-based memory-mapped vectors** - Custom vector types that directly map file contents to memory
-2. **Custom allocators using fmalloc** - Alternative memory allocation backed by memory-mapped files
+## Key Features
+
+- **File-backed allocation** - Memory allocated from memory-mapped files
+- **Full realloc support** - Supports malloc, free, and realloc patterns  
+- **Persistent storage** - Data persists across R sessions
+- **Efficient memory management** - Based on ptmalloc3 algorithm
 
 ## Installation
 
@@ -39,64 +40,60 @@ devtools::install_github("sounkou-bioinfo/Rfmalloc")
 
 ## Basic Usage
 
-### Memory-Mapped Vectors (ALTREP)
+### File-backed Allocation with Realloc Support
 
-Create persistent integer vectors backed by files:
+Use fmalloc for persistent memory allocation with full malloc/free/realloc support:
 
 ```{r eval=TRUE}
 library(Rfmalloc)
 
-# Create a memory-mapped vector
-vec_file <- tempfile(fileext = ".bin")
-v <- create_mmap_vector(vec_file, length = 1000)
-
-# Use like a regular vector
-v[1:10] <- 1:10
-print(v[1:10])
-
-# Data persists across sessions
-v2 <- create_mmap_vector(vec_file, length = 1000)
-print(v2[1:10])  # Same values as before
-```
-
-### Custom Allocators with fmalloc
-
-Use fmalloc for alternative memory allocation:
-
-```{r eval=TRUE}
-
 # Initialize fmalloc with a backing file
 alloc_file <- tempfile(fileext = ".bin")
-init_fmalloc(alloc_file)
+init_result <- init_fmalloc(alloc_file)
+print(paste("Initialization result:", init_result))
 
 # Create vectors using fmalloc
-v_int <- create_fmalloc_vector("integer", 100)
-v_num <- create_fmalloc_vector("numeric", 100)
-print(head(v_int))
-print(head(v_num))
+v_int <- create_fmalloc_vector("integer", 10)
+v_num <- create_fmalloc_vector("numeric", 10)
+
+# Simple assignment (no reallocation)
+v_int[1:3] <- c(1L, 2L, 3L)
+v_num[1:3] <- c(1.1, 2.2, 3.3)
+
+print("Integer vector:")
+print(v_int[1:3])
+print("Numeric vector:")
+print(v_num[1:3])
+
 # Clean up
 cleanup_fmalloc()
+
+# Remove temporary file
+if (file.exists(alloc_file)) {
+  file.remove(alloc_file)
+}
 ```
 
 ## Technical Details
 
-### ALTREP Implementation
+### fmalloc Implementation
 
-The ALTREP (ALTernative REPresentations) implementation provides:
+The fmalloc allocator provides:
 
-- Direct memory mapping of file contents
-- Efficient access to large datasets
-- Persistent storage across R sessions
-- Memory-efficient operations on large vectors
+- **File-backed allocation** - Memory allocated from memory-mapped files instead of heap
+- **Full realloc support** - Complete malloc/free/realloc patterns via dlrealloc()  
+- **Persistent storage** - Data stored in files survives process restarts
+- **Efficient algorithms** - Based on proven ptmalloc3 memory management
+- **Memory-mapped regions** - Direct file-to-memory mapping for performance
 
-### fmalloc Integration
+### Realloc Support
 
-The fmalloc allocator offers:
+fmalloc includes full realloc support through the `dlrealloc()` function:
 
-- Memory allocation backed by memory-mapped files
-- Support for multiple data types (integer, numeric, logical)
-- Custom memory management strategies
-- Integration with R's allocator framework
+- **Memory expansion** - Grow allocated regions efficiently
+- **Memory shrinking** - Reduce allocation size when needed
+- **Copy optimization** - Minimizes data copying during reallocation
+- **R integration** - Seamlessly works with R's internal memory management
 
 ## Error Handling
 

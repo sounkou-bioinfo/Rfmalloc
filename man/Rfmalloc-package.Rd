@@ -40,8 +40,8 @@ persistent memory allocation.
 \seealso{
 Useful links:
 \itemize{
-  \item \url{https://github.com/sounkou-bio/fmalloc}
-  \item Report bugs at \url{https://github.com/sounkou-bio/fmalloc/issues}
+  \item \url{https://github.com/sounkou-bioinfo/Rfmalloc}
+  \item Report bugs at \url{https://github.com/sounkou-bioinfo/Rfmalloc/issues}
 }
 
 }

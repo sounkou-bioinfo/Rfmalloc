@@ -15,13 +15,15 @@ Logical indicating whether the file was newly initialized
 \description{
 Initializes the fmalloc memory allocator with a backing file.
 This must be called before using fmalloc-based allocation functions.
+fmalloc supports malloc, free, and realloc patterns for persistent
+memory allocation backed by memory-mapped files.
 }
 \examples{
 \dontrun{
 # Initialize fmalloc
 init_result <- init_fmalloc("fmalloc_data.bin")
 
-# Create vectors using fmalloc
+# Create vectors using fmalloc (supports realloc patterns)
 v <- create_fmalloc_vector("integer", 1000)
 
 # Clean up

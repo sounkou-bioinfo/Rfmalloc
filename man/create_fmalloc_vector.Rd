@@ -7,7 +7,7 @@
 create_fmalloc_vector(type = "integer", length)
 }
 \arguments{
-\item{type}{Character string specifying the vector type ("integer", "numeric", "logical", "character")}
+\item{type}{Character string specifying the vector type ("integer", "numeric", "logical")}
 
 \item{length}{Integer specifying the length of the vector to create}
 }
@@ -15,19 +15,21 @@ create_fmalloc_vector(type = "integer", length)
 A vector of the specified type and length, allocated using fmalloc
 }
 \description{
-Creates a vector using the fmalloc allocator. The fmalloc system must
-be initialized first using \code{init_fmalloc()}.
+Creates a vector using the fmalloc allocator with realloc support.
+The fmalloc system must be initialized first using \code{init_fmalloc()}.
+The underlying allocator supports malloc, free, and realloc patterns
+for efficient memory management backed by memory-mapped files.
 }
 \examples{
 \dontrun{
 # Initialize fmalloc first
 init_fmalloc("fmalloc_data.bin")
 
-# Create vectors
+# Create vectors with realloc support
 v1 <- create_fmalloc_vector("integer", 1000)
 v2 <- create_fmalloc_vector("numeric", 500)
 
-# Use the vectors normally
+# Use the vectors normally - R will handle realloc internally
 v1[1:10] <- 1:10
 v2[1:5] <- runif(5)
 

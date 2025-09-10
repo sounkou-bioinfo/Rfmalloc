@@ -2,6 +2,5 @@
 
 export(cleanup_fmalloc)
 export(create_fmalloc_vector)
-export(create_mmap_vector)
 export(init_fmalloc)
 useDynLib(Rfmalloc, .registration=TRUE)
