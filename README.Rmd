@@ -82,34 +82,7 @@ gc()
 cleanup_fmalloc()
 file.remove(large_file)
 ```
-
-## Stress Testing
-
-Real stress testing with massive files:
-
-```{r eval=TRUE}
-
-# Create a MASSIVE 50GB backing file
-huge_file <- tempfile(fileext = ".bin", tmpdir = "/tmp")
-init_fmalloc(huge_file, size_gb = 20)
-
-big_vec <- create_fmalloc_vector("integer", 10^8) 
-cat("File size:", round(file.info(huge_file)$size / 1024^3, 1), "GB\n")
-rm(big_vec)
-gc()
-cleanup_fmalloc()
-file.remove(huge_file)
-```
-
-**Tested Capabilities:**
-
-- Backing files: Up to 50+ GB
-- Single vector: Up to 1 BILLION elements (~4GB)
-- Sparse allocation with random access patterns
-- Gigabyte-scale single data structure capability
-- Cross-platform: Linux, macOS, Windows
-
-## Contributing
+## References
 
 Please note that this project uses the fmalloc library from [https://github.com/yasukata/fmalloc](https://github.com/yasukata/fmalloc) and custom allocator concepts from [https://gist.github.com/s-u/6712c97ca74181f5a1a5](https://gist.github.com/s-u/6712c97ca74181f5a1a5).
 
