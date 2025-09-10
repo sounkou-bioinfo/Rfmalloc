@@ -32,7 +32,9 @@ static void *fmalloc_r_alloc(R_allocator_t *allocator, size_t length) {
         fmalloc_set_target(global_fm_info);
         void *mem = fmalloc(length);
         
-        if (!mem) {
+        if (mem) {
+            Rprintf("fmalloc allocated %zu bytes at %p\n", length, mem);
+        } else {
             Rf_warning("fmalloc failed to allocate %zu bytes", length);
         }
         
@@ -48,16 +50,19 @@ static void *fmalloc_r_alloc(R_allocator_t *allocator, size_t length) {
 
 static void fmalloc_r_free(R_allocator_t *allocator, void* ptr) {
     if (!ptr) {
+        Rprintf("fmalloc_r_free called with NULL pointer\n");
         return; // R handles null pointer frees
     }
     
     if (!global_fm_info) {
         // If fmalloc is not initialized, don't try to free - let R handle it
+        Rprintf("fmalloc_r_free called but fmalloc not initialized (ptr: %p)\n", ptr);
         return;
     }
     
     try {
         fmalloc_set_target(global_fm_info);
+        Rprintf("fmalloc freed memory at %p\n", ptr);
         dlfree(ptr); // fmalloc's free function
     } catch (const std::exception& e) {
         // Don't error on free failures - just warn
@@ -166,7 +171,9 @@ SEXP create_fmalloc_vector_impl(SEXP template_vec, SEXP length_sexp) {
     
     try {
         R_allocator_t allocator = { fmalloc_r_alloc, fmalloc_r_free, nullptr, nullptr };
+        Rprintf("Creating fmalloc vector: type=%d, length=%d\n", vec_type, length);
         SEXP result = Rf_allocVector3(vec_type, length, &allocator);
+        Rprintf("Successfully created fmalloc vector\n");
         return result;
     } catch (const std::exception& e) {
         Rf_error("Failed to create fmalloc vector: %s", e.what());
@@ -181,6 +188,7 @@ SEXP create_fmalloc_vector_impl(SEXP template_vec, SEXP length_sexp) {
 SEXP cleanup_fmalloc_impl() {
     if (global_fm_info) {
         try {
+            Rprintf("Cleaning up fmalloc...\n");
             // Note: We don't call any cleanup functions on the fmalloc library
             // as it manages its own memory mapping. We just reset our pointer.
             global_fm_info = nullptr;
@@ -190,6 +198,8 @@ SEXP cleanup_fmalloc_impl() {
         } catch (...) {
             Rf_warning("Unknown error during fmalloc cleanup");
         }
+    } else {
+        Rprintf("cleanup_fmalloc called but fmalloc not initialized\n");
     }
     return R_NilValue;
 }
