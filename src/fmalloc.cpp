@@ -288,6 +288,28 @@ SEXP init_fmalloc_impl(SEXP filepath_sexp) {
         return R_NilValue;
     }
     
+    // Check if file exists, create if it doesn't
+    struct stat st;
+    bool file_exists = (stat(filepath, &st) == 0);
+    
+    if (!file_exists) {
+        // Create the file with a minimum size (32MB to be safe)
+        // fmalloc requires at least FMALLOC_MIN_CHUNK (16MB) + 8KB overhead
+        int fd = open(filepath, O_RDWR | O_CREAT, 0666);
+        if (fd < 0) {
+            Rf_error("Cannot create file: %s (errno: %d)", filepath, errno);
+            return R_NilValue;
+        }
+        
+        size_t initial_size = 32 * 1024 * 1024; // 32MB
+        if (ftruncate(fd, initial_size) != 0) {
+            close(fd);
+            Rf_error("Cannot set initial file size for: %s (errno: %d)", filepath, errno);
+            return R_NilValue;
+        }
+        close(fd);
+    }
+    
     bool init_flag = false;
     
     // Wrap the fmalloc_init call in a try-catch to handle C++ exceptions
