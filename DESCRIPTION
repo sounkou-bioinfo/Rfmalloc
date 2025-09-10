@@ -14,5 +14,5 @@ RoxygenNote: 7.3.2
 Suggests: 
     tinytest
 SystemRequirements: C++11, pthreads
-URL: https://github.com/sounkou-bio/fmalloc
-BugReports: https://github.com/sounkou-bio/fmalloc/issues
+URL: https://github.com/sounkou-bioinfo/Rfmalloc
+BugReports: https://github.com/sounkou-bioinfo/Rfmalloc/issues

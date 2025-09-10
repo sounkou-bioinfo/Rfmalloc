@@ -1,26 +1,32 @@
+---
+output: github_document
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "man/figures/README-",
+  out.width = "100%"
+)
+```
 
 # Rfmalloc
 
 <!-- badges: start -->
-
 [![R-CMD-check](https://github.com/sounkou-bioinfo/Rfmalloc/workflows/R-CMD-check/badge.svg)](https://github.com/sounkou-bioinfo/Rfmalloc/actions)
 <!-- badges: end -->
 
-Rfmalloc provides memory-mapped file allocation capabilities for R using
-the fmalloc library. It offers two main approaches for efficient
-persistent storage and memory usage:
+Rfmalloc provides memory-mapped file allocation capabilities for R using the fmalloc library. It offers two main approaches for efficient persistent storage and memory usage:
 
-1.  **ALTREP-based memory-mapped vectors** - Custom vector types that
-    directly map file contents to memory
-2.  **Custom allocators using fmalloc** - Alternative memory allocation
-    backed by memory-mapped files
+1. **ALTREP-based memory-mapped vectors** - Custom vector types that directly map file contents to memory
+2. **Custom allocators using fmalloc** - Alternative memory allocation backed by memory-mapped files
 
 ## Installation
 
-You can install the development version of Rfmalloc from
-[GitHub](https://github.com/) with:
+You can install the development version of Rfmalloc from [GitHub](https://github.com/) with:
 
-``` r
+```{r eval=FALSE}
 # install.packages("devtools")
 devtools::install_github("sounkou-bioinfo/Rfmalloc")
 ```
@@ -37,7 +43,7 @@ devtools::install_github("sounkou-bioinfo/Rfmalloc")
 
 Create persistent integer vectors backed by files:
 
-``` r
+```{r eval=FALSE}
 library(Rfmalloc)
 
 # Create a memory-mapped vector
@@ -57,7 +63,7 @@ print(v2[1:10])  # Same values as before
 
 Use fmalloc for alternative memory allocation:
 
-``` r
+```{r eval=FALSE}
 library(Rfmalloc)
 
 # Initialize fmalloc with a backing file
@@ -90,7 +96,7 @@ The fmalloc allocator offers:
 - Memory allocation backed by memory-mapped files
 - Support for multiple data types (integer, numeric, logical)
 - Custom memory management strategies
-- Integration with R’s allocator framework
+- Integration with R's allocator framework
 
 ## Error Handling
 
@@ -103,10 +109,8 @@ The package includes comprehensive error handling for:
 
 ## Contributing
 
-Please note that this project uses the fmalloc library from
-<https://github.com/yasukata/fmalloc> and custom allocator concepts from
-<https://gist.github.com/s-u/6712c97ca74181f5a1a5>.
+Please note that this project uses the fmalloc library from [https://github.com/yasukata/fmalloc](https://github.com/yasukata/fmalloc) and custom allocator concepts from [https://gist.github.com/s-u/6712c97ca74181f5a1a5](https://gist.github.com/s-u/6712c97ca74181f5a1a5).
 
 ## License
 
-This project is licensed under GPL (\>= 2).
+This project is licensed under GPL (>= 2).
