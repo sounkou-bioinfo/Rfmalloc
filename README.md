@@ -47,10 +47,12 @@ v <- create_mmap_vector(vec_file, length = 1000)
 # Use like a regular vector
 v[1:10] <- 1:10
 print(v[1:10])
+#>  [1]  1  2  3  4  5  6  7  8  9 10
 
 # Data persists across sessions
 v2 <- create_mmap_vector(vec_file, length = 1000)
 print(v2[1:10])  # Same values as before
+#>  [1]  1  2  3  4  5  6  7  8  9 10
 ```
 
 ### Custom Allocators with fmalloc
@@ -58,15 +60,14 @@ print(v2[1:10])  # Same values as before
 Use fmalloc for alternative memory allocation:
 
 ``` r
-library(Rfmalloc)
 
 # Initialize fmalloc with a backing file
 alloc_file <- tempfile(fileext = ".bin")
 init_fmalloc(alloc_file)
 
 # Create vectors using fmalloc
-v_int <- create_fmalloc_vector(integer(0), 100)
-v_num <- create_fmalloc_vector(numeric(0), 100)
+v_int <- create_fmalloc_vector("integer", 100)
+v_num <- create_fmalloc_vector("numeric", 100)
 
 # Clean up
 cleanup_fmalloc()

@@ -9,8 +9,13 @@ test_file <- tempfile(fileext = ".bin")
 cat("Testing fmalloc allocator functionality...\n")
 
 # Test error conditions first (these should work without fmalloc initialization)
-expect_error(create_fmalloc_vector(integer(0), 50), "fmalloc not initialized")
-expect_error(create_fmalloc_vector(integer(0), -1), "positive integer")
+expect_error(create_fmalloc_vector("integer", 50), "fmalloc not initialized")
+expect_error(create_fmalloc_vector("integer", -1), "positive integer")
+expect_error(create_fmalloc_vector(123, 50), "character string")
+expect_error(
+    create_fmalloc_vector("invalid_type", 50),
+    "Unsupported vector type"
+)
 expect_error(init_fmalloc(123), "character string")
 expect_error(init_fmalloc(""), "cannot be empty")
 
@@ -28,15 +33,15 @@ tryCatch(
         cat("fmalloc initialization successful!\n")
 
         # Test vector creation with different types
-        v_int <- create_fmalloc_vector(integer(0), 50)
+        v_int <- create_fmalloc_vector("integer", 50)
         expect_true(is.integer(v_int))
         expect_equal(length(v_int), 50)
 
-        v_num <- create_fmalloc_vector(numeric(0), 30)
+        v_num <- create_fmalloc_vector("numeric", 30)
         expect_true(is.numeric(v_num))
         expect_equal(length(v_num), 30)
 
-        v_log <- create_fmalloc_vector(logical(0), 20)
+        v_log <- create_fmalloc_vector("logical", 20)
         expect_true(is.logical(v_log))
         expect_equal(length(v_log), 20)
 

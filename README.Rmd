@@ -43,7 +43,7 @@ devtools::install_github("sounkou-bioinfo/Rfmalloc")
 
 Create persistent integer vectors backed by files:
 
-```{r eval=FALSE}
+```{r eval=TRUE}
 library(Rfmalloc)
 
 # Create a memory-mapped vector
@@ -64,15 +64,14 @@ print(v2[1:10])  # Same values as before
 Use fmalloc for alternative memory allocation:
 
 ```{r eval=FALSE}
-library(Rfmalloc)
 
 # Initialize fmalloc with a backing file
 alloc_file <- tempfile(fileext = ".bin")
 init_fmalloc(alloc_file)
 
 # Create vectors using fmalloc
-v_int <- create_fmalloc_vector(integer(0), 100)
-v_num <- create_fmalloc_vector(numeric(0), 100)
+v_int <- create_fmalloc_vector("integer", 100)
+v_num <- create_fmalloc_vector("numeric", 100)
 
 # Clean up
 cleanup_fmalloc()
