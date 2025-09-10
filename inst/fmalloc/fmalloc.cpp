@@ -18,6 +18,14 @@
 
 #include "fmalloc.hpp"
 
+#ifdef _WIN32
+#include <windows.h>
+#include <io.h>
+#else
+#include <unistd.h>
+#include <fcntl.h>
+#endif
+
 __thread uint64_t __fm_addr_base = 0;
 
 extern void do_ptmalloc_init(unsigned long chunk_size);
@@ -25,13 +33,57 @@ extern void do_ptmalloc_init(unsigned long chunk_size);
 /* init routine */
 struct fm_info *fmalloc_init(const char *filepath, bool *init)
 {
-	struct stat st;
 	struct fm_super *s;
 	void *mem;
 	uint64_t *magicp;
-	int fd;
 	size_t len;
 
+#ifdef _WIN32
+	HANDLE file_handle, map_handle;
+	WIN32_FILE_ATTRIBUTE_DATA file_info;
+	
+	// Get file size on Windows
+	if (!GetFileAttributesExA(filepath, GetFileExInfoStandard, &file_info)) {
+		fprintf(stderr, "GetFileAttributesEx failed for file: %s\n", filepath);
+		exit(1);
+	}
+	len = ((size_t)file_info.nFileSizeHigh << 32) | file_info.nFileSizeLow;
+	
+	// Open file on Windows
+	file_handle = CreateFileA(filepath, GENERIC_READ | GENERIC_WRITE, 
+	                         FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, 
+	                         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	if (file_handle == INVALID_HANDLE_VALUE) {
+		fprintf(stderr, "CreateFile failed for file: %s\n", filepath);
+		exit(1);
+	}
+	
+	// Create file mapping on Windows
+	map_handle = CreateFileMappingA(file_handle, NULL, PAGE_READWRITE, 0, 0, NULL);
+	if (map_handle == NULL) {
+		fprintf(stderr, "CreateFileMapping failed for file: %s\n", filepath);
+		CloseHandle(file_handle);
+		exit(1);
+	}
+	
+	// Map view of file on Windows
+	mem = MapViewOfFile(map_handle, FILE_MAP_ALL_ACCESS, 0, 0, 0);
+	if (mem == NULL) {
+		fprintf(stderr, "MapViewOfFile failed for file: %s\n", filepath);
+		CloseHandle(map_handle);
+		CloseHandle(file_handle);
+		exit(1);
+	}
+	
+	// Store handles for cleanup (you may want to store these globally)
+	// For now we'll close them after mapping since Windows keeps the mapping
+	CloseHandle(map_handle);
+	CloseHandle(file_handle);
+	
+#else
+	struct stat st;
+	int fd;
+	
 	if (stat(filepath, &st) < 0) {
 		perror("stat");
 		exit(1);
@@ -48,6 +100,9 @@ struct fm_info *fmalloc_init(const char *filepath, bool *init)
 
 	mem = mmap(0, len, PROT_WRITE | PROT_READ, MAP_SHARED, fd, 0);
 	assert(mem != MAP_FAILED);
+	
+	close(fd);
+#endif
 
 	s = (struct fm_super *) mem;
 

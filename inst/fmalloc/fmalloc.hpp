@@ -29,7 +29,9 @@
 #include <string.h>
 #include <assert.h>
 #include <sys/stat.h>
+#ifndef _WIN32
 #include <sys/mman.h>
+#endif
 
 #ifndef USE_DL_PREFIX
 #define USE_DL_PREFIX 1

@@ -1,13 +1,107 @@
 #!/bin/sh
 
-# Configure script for fmalloc R package on Windows
-# This package is not supported on Windows due to POSIX dependencies
+# Configure script for fmalloc R package
+# This script builds the fmalloc library using R's compiler settings
 
-echo "Error: Rfmalloc is not supported on Windows."
-echo "This package requires POSIX-compliant systems (Linux, macOS) due to:"
-echo "  - Memory mapping functions (mmap, munmap)"
-echo "  - POSIX thread support"
-echo "  - Unix-specific file operations"
-echo ""
-echo "Please use this package on Linux or macOS systems."
-exit 1
+echo "Configuring fmalloc R package..."
+
+# Check if we have the fmalloc source
+if [ ! -d "inst/fmalloc" ]; then
+    echo "Error: fmalloc source not found in inst/fmalloc"
+    exit 1
+fi
+
+# Get R configuration
+R_HOME=${R_HOME:-$(R RHOME)}
+if [ -z "$R_HOME" ]; then
+    echo "Error: R_HOME not found. Please install R."
+    exit 1
+fi
+
+echo "R_HOME: $R_HOME"
+
+# Get current directory
+THISDir=`dirname $0`
+THISDir=`realpath ${THISDir}`
+
+# Get R compiler settings using full path to R
+MAKE=`"${R_HOME}/bin/R" CMD config MAKE`
+CC=`"${R_HOME}/bin/R" CMD config CC`
+CXX=`"${R_HOME}/bin/R" CMD config CXX`
+AR=`"${R_HOME}/bin/R" CMD config AR`
+RANLIB=`"${R_HOME}/bin/R" CMD config RANLIB`
+R_CPPFLAGS=`"${R_HOME}/bin/R" CMD config CPPFLAGS`
+R_CFLAGS=`"${R_HOME}/bin/R" CMD config CFLAGS`
+R_CXXFLAGS=`"${R_HOME}/bin/R" CMD config CXXFLAGS`
+R_CPICFLAGS=`"${R_HOME}/bin/R" CMD config CPICFLAGS`
+
+# Fix AR and RANLIB if they're just "R" (which conflicts with R executable)
+case "$AR" in
+    "R") AR="ar" ;;
+esac
+case "$RANLIB" in 
+    "R") RANLIB="ranlib" ;;
+esac
+
+echo "CC: $CC"
+echo "CXX: $CXX" 
+echo "AR: $AR"
+echo "RANLIB: $RANLIB"
+
+# Build fmalloc library
+echo "Building fmalloc library..."
+cd inst/fmalloc || exit 1
+
+# Export variables for make
+export CC CXX AR RANLIB
+
+# Export C and C++ flags using R configuration
+export CFLAGS="$R_CFLAGS $R_CPPFLAGS $R_CPICFLAGS"
+export CXXFLAGS="$R_CXXFLAGS $R_CPPFLAGS $R_CPICFLAGS"
+
+# Add R-specific flags to ensure compatibility
+export EXTRA_CFLAGS="$R_CPPFLAGS $R_CPICFLAGS"
+
+# For Windows, we need to build with posix target but with Windows adaptations
+echo "Detected Windows - using posix target with Windows adaptations"
+BUILD_TARGET="posix"
+
+# Clean and build the library using the appropriate target
+make clean 2>/dev/null || true
+if make "$BUILD_TARGET" WARN_FLAGS='-Wall -Wno-address-of-packed-member -Wno-class-memaccess'; then
+    echo "fmalloc library built successfully"
+else
+    echo "Error: Failed to build fmalloc library"
+    exit 1
+fi
+
+# Verify library was created
+if [ -f "libfmalloc.a" ]; then
+    echo "libfmalloc.a created successfully"
+else
+    echo "Error: libfmalloc.a was not created"
+    exit 1
+fi
+
+cd ../..
+
+# Create Makevars file for R package compilation
+echo "Creating src/Makevars.win..."
+mkdir -p src
+
+# Create Makevars.win for Windows
+cat > src/Makevars.win << 'EOF'
+# Makevars.win for fmalloc R package (Windows)
+
+# Include directories
+PKG_CPPFLAGS = -I../inst/fmalloc -DHAVE_CONFIG_H
+
+# Linker flags - Rtools includes pthread support
+PKG_LIBS = -L../inst/fmalloc ../inst/fmalloc/libfmalloc.a -lpthread
+
+# C++ standard
+CXX_STD = CXX11
+EOF
+
+echo "Configure completed successfully!"
+echo "Created src/Makevars.win with appropriate compiler and linker flags."
