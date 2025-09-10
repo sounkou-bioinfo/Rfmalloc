@@ -1,0 +1,20 @@
+#!/bin/sh
+
+# Cleanup script for fmalloc R package
+# This script cleans up build artifacts after package installation
+
+echo "Cleaning up fmalloc build artifacts..."
+
+# Clean up fmalloc build directory
+if [ -d "inst/fmalloc" ]; then
+    cd inst/fmalloc || exit 1
+    make clean 2>/dev/null || true
+    rm -f *.o *.a *.so
+    cd ../.. || exit 1
+fi
+
+# Clean up any temporary files
+rm -f src/*.o src/*.so
+rm -f config.log config.status
+
+echo "Cleanup completed."

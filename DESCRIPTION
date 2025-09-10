@@ -1,0 +1,18 @@
+Package: Rfmalloc
+Title: Memory-Mapped File Allocation for R
+Version: 0.1.0
+Authors@R: 
+    person(given = "Sounkou Mahamane", family = "Toure", email = "sounkoutoure@gmail.com", role = c("aut", "cre"))
+Description: Provides memory-mapped file allocation capabilities for R using 
+    the fmalloc library. Supports both custom allocators and ALTREP-based 
+    memory-mapped vectors for efficient persistent storage and memory usage. fmalloc from https://github.com/yasukata/fmalloc
+    and custom allocators from https://gist.github.com/s-u/6712c97ca74181f5a1a5
+License: GPL (>= 2)
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Suggests: 
+    tinytest
+SystemRequirements: C++11, pthreads
+URL: https://github.com/sounkou-bio/fmalloc
+BugReports: https://github.com/sounkou-bio/fmalloc/issues

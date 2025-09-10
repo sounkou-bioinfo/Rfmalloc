@@ -1,0 +1,21 @@
+@echo off
+REM Cleanup script for fmalloc R package (Windows)
+REM This script cleans up build artifacts after package installation
+
+echo Cleaning up fmalloc build artifacts...
+
+REM Clean up fmalloc build directory
+if exist "inst\fmalloc" (
+    cd inst\fmalloc
+    if exist Makefile (
+        make clean 2>nul
+    )
+    del /Q *.o *.a *.so *.dll 2>nul
+    cd ..\..
+)
+
+REM Clean up any temporary files
+del /Q src\*.o src\*.so src\*.dll 2>nul
+del /Q config.log config.status 2>nul
+
+echo Cleanup completed.

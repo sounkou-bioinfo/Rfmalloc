@@ -1,0 +1,13 @@
+# Makevars for fmalloc R package
+
+# Include directories
+PKG_CPPFLAGS = -I../inst/fmalloc -DHAVE_CONFIG_H
+
+# Linker flags - include pthread and the fmalloc library
+PKG_LIBS = -L../inst/fmalloc -lfmalloc -lpthread
+
+# C++ standard
+CXX_STD = CXX11
+
+# Additional flags for position independent code
+PKG_CXXFLAGS = -fPIC
