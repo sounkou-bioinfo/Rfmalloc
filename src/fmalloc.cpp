@@ -35,7 +35,14 @@ static void *fmalloc_r_alloc(R_allocator_t *allocator, size_t length) {
         if (mem) {
             Rprintf("fmalloc allocated %zu bytes at %p\n", length, mem);
         } else {
-            Rf_warning("fmalloc failed to allocate %zu bytes", length);
+            // Check errno for specific error
+            const char *error_msg = "Unknown allocation failure";
+            if (errno == ENOMEM) {
+                error_msg = "Out of memory";
+            }
+            Rf_error("fmalloc failed to allocate %zu bytes: %s (errno: %d)", 
+                     length, error_msg, errno);
+            return nullptr;
         }
         
         return mem;
@@ -66,10 +73,10 @@ static void fmalloc_r_free(R_allocator_t *allocator, void* ptr) {
         dlfree(ptr); // fmalloc's free function
     } catch (const std::exception& e) {
         // Don't error on free failures - just warn
-        Rf_warning("fmalloc free failed: %s", e.what());
+        Rf_warning("fmalloc free failed for %p: %s", ptr, e.what());
     } catch (...) {
-        // Don't error on free failures - just warn
-        Rf_warning("fmalloc free failed: unknown error");
+        // Don't error on free failures - just warn  
+        Rf_warning("fmalloc free failed for %p: unknown error", ptr);
     }
 }
 
@@ -118,7 +125,31 @@ SEXP init_fmalloc_impl(SEXP filepath_sexp) {
     bool init_flag = false;
     
     // Wrap the fmalloc_init call in a try-catch to handle C++ exceptions
+    // Note: fmalloc_init() may call exit(1) on errors, which we cannot catch
+    // We validate conditions beforehand to minimize this risk
     try {
+        // Check file accessibility before calling fmalloc_init
+        int test_fd = open(filepath, O_RDWR);
+        if (test_fd < 0) {
+            Rf_error("Cannot access file: %s (errno: %d)", filepath, errno);
+            return R_NilValue;
+        }
+        
+        struct stat test_st;
+        if (fstat(test_fd, &test_st) < 0) {
+            close(test_fd);
+            Rf_error("Cannot stat file: %s (errno: %d)", filepath, errno);
+            return R_NilValue;
+        }
+        close(test_fd);
+        
+        // Check minimum file size (fmalloc needs at least 16MB + overhead)
+        if (test_st.st_size < (16 * 1024 * 1024 + 8192)) {
+            Rf_error("File too small: %s (size: %lld, minimum: %lld)", 
+                     filepath, (long long)test_st.st_size, (long long)(16 * 1024 * 1024 + 8192));
+            return R_NilValue;
+        }
+        
         global_fm_info = fmalloc_init(filepath, &init_flag);
     } catch (const std::exception& e) {
         Rf_error("fmalloc initialization failed with exception: %s", e.what());
