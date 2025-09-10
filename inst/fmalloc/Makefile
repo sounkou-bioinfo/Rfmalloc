@@ -21,7 +21,7 @@ CC ?= g++
 
 SYS_FLAGS  =
 OPT_FLAGS  = -g -O2 #-O # -O2
-WARN_FLAGS = -Wall
+WARN_FLAGS = -Wall -Wno-address-of-packed-member -Wno-class-memaccess
 SH_FLAGS   = -shared -fpic
 
 INC_FLAGS  = -Isysdeps/generic

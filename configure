@@ -20,18 +20,31 @@ fi
 
 echo "R_HOME: $R_HOME"
 
-# Get R compiler settings
-CC=${CC:-$(R CMD config CC)}
-CXX=${CXX:-$(R CMD config CXX)}
-CFLAGS=${CFLAGS:-$(R CMD config CFLAGS)}
-CXXFLAGS=${CXXFLAGS:-$(R CMD config CXXFLAGS)}
-CPPFLAGS=${CPPFLAGS:-$(R CMD config CPPFLAGS)}
-LDFLAGS=${LDFLAGS:-$(R CMD config LDFLAGS)}
-AR=${AR:-$(R CMD config AR)}
-RANLIB=${RANLIB:-$(R CMD config RANLIB)}
+# Get current directory
+THISDir=`dirname $0`
+THISDir=`realpath ${THISDir}`
+
+# Get R compiler settings using full path to R
+MAKE=`"${R_HOME}/bin/R" CMD config MAKE`
+CC=`"${R_HOME}/bin/R" CMD config CC`
+CXX=`"${R_HOME}/bin/R" CMD config CXX`
+AR=`"${R_HOME}/bin/R" CMD config AR`
+RANLIB=`"${R_HOME}/bin/R" CMD config RANLIB`
+R_CPPFLAGS=`"${R_HOME}/bin/R" CMD config CPPFLAGS`
+R_CFLAGS=`"${R_HOME}/bin/R" CMD config CFLAGS`
+R_CXXFLAGS=`"${R_HOME}/bin/R" CMD config CXXFLAGS`
+R_CPICFLAGS=`"${R_HOME}/bin/R" CMD config CPICFLAGS`
+
+# Fix AR and RANLIB if they're just "R" (which conflicts with R executable)
+case "$AR" in
+    "R") AR="ar" ;;
+esac
+case "$RANLIB" in 
+    "R") RANLIB="ranlib" ;;
+esac
 
 echo "CC: $CC"
-echo "CXX: $CXX"
+echo "CXX: $CXX" 
 echo "AR: $AR"
 echo "RANLIB: $RANLIB"
 
@@ -42,31 +55,33 @@ cd inst/fmalloc || exit 1
 # Export variables for make
 export CC CXX AR RANLIB
 
-# Export C and C++ flags separately
-export CFLAGS="$CFLAGS $CPPFLAGS -fPIC"
-export CXXFLAGS="$CXXFLAGS $CPPFLAGS -fPIC"
+# Export C and C++ flags using R configuration
+export CFLAGS="$R_CFLAGS $R_CPPFLAGS $R_CPICFLAGS"
+export CXXFLAGS="$R_CXXFLAGS $R_CPPFLAGS $R_CPICFLAGS"
 
 # Add R-specific flags to ensure compatibility
-export EXTRA_CFLAGS="$CPPFLAGS -fPIC"
+export EXTRA_CFLAGS="$R_CPPFLAGS $R_CPICFLAGS"
 
-# Build the library using the linux-pthread target which sets correct include paths
+# Clean and build the library using the linux-pthread target
 make clean 2>/dev/null || true
-if make linux-pthread; then
+if make linux-pthread WARN_FLAGS='-Wall -Wno-address-of-packed-member -Wno-class-memaccess'; then
     echo "fmalloc library built successfully"
 else
-    echo "Warning: Failed to build fmalloc library, but continuing with package setup"
+    echo "Error: Failed to build fmalloc library"
+    exit 1
 fi
 
-# Check if library was created (but don't fail if not)
+# Verify library was created
 if [ -f "libfmalloc.a" ]; then
     echo "libfmalloc.a created successfully"
 else
-    echo "Warning: libfmalloc.a was not created, but proceeding anyway"
+    echo "Error: libfmalloc.a was not created"
+    exit 1
 fi
 
 cd ../..
 
-# ALWAYS create Makevars file regardless of fmalloc build status
+# Create Makevars file for R package compilation
 echo "Creating src/Makevars..."
 mkdir -p src
 
