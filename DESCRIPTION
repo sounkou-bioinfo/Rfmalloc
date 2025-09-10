@@ -13,7 +13,6 @@ Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.2
 Suggests: 
     tinytest
-SystemRequirements: C++11, pthreads, POSIX-compliant system (Linux, macOS)
-OS_type: unix
+SystemRequirements: C++11, pthreads
 URL: https://github.com/sounkou-bioinfo/Rfmalloc
 BugReports: https://github.com/sounkou-bioinfo/Rfmalloc/issues
