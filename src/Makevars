@@ -4,7 +4,7 @@
 PKG_CPPFLAGS = -I../inst/fmalloc -DHAVE_CONFIG_H
 
 # Linker flags - include pthread and the fmalloc library
-PKG_LIBS = -L../inst/fmalloc -lfmalloc -lpthread
+PKG_LIBS = -L../inst/fmalloc ../inst/fmalloc/libfmalloc.a -lpthread
 
 # C++ standard
 CXX_STD = CXX11

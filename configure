@@ -62,9 +62,30 @@ export CXXFLAGS="$R_CXXFLAGS $R_CPPFLAGS $R_CPICFLAGS"
 # Add R-specific flags to ensure compatibility
 export EXTRA_CFLAGS="$R_CPPFLAGS $R_CPICFLAGS"
 
-# Clean and build the library using the linux-pthread target
+# Determine the appropriate build target based on the operating system
+echo "Detecting operating system..."
+case "$(uname -s)" in
+    Linux*)
+        BUILD_TARGET="linux-pthread"
+        echo "Detected Linux - using linux-pthread target"
+        ;;
+    Darwin*)
+        BUILD_TARGET="posix"
+        echo "Detected macOS - using posix target"
+        ;;
+    CYGWIN*|MINGW*|MSYS*)
+        BUILD_TARGET="posix"
+        echo "Detected Windows - using posix target"
+        ;;
+    *)
+        BUILD_TARGET="posix"
+        echo "Unknown OS - using posix target as fallback"
+        ;;
+esac
+
+# Clean and build the library using the appropriate target
 make clean 2>/dev/null || true
-if make linux-pthread WARN_FLAGS='-Wall -Wno-address-of-packed-member -Wno-class-memaccess'; then
+if make "$BUILD_TARGET" WARN_FLAGS='-Wall -Wno-address-of-packed-member -Wno-class-memaccess'; then
     echo "fmalloc library built successfully"
 else
     echo "Error: Failed to build fmalloc library"
@@ -92,7 +113,7 @@ cat > src/Makevars << 'EOF'
 PKG_CPPFLAGS = -I../inst/fmalloc -DHAVE_CONFIG_H
 
 # Linker flags - include pthread and the fmalloc library
-PKG_LIBS = -L../inst/fmalloc -lfmalloc -lpthread
+PKG_LIBS = -L../inst/fmalloc ../inst/fmalloc/libfmalloc.a -lpthread
 
 # C++ standard
 CXX_STD = CXX11
@@ -101,15 +122,15 @@ CXX_STD = CXX11
 PKG_CXXFLAGS = -fPIC
 EOF
 
-# Create Makevars.win for Windows (if needed)
+# Create Makevars.win for Windows
 cat > src/Makevars.win << 'EOF'
 # Makevars.win for fmalloc R package (Windows)
 
 # Include directories
 PKG_CPPFLAGS = -I../inst/fmalloc -DHAVE_CONFIG_H
 
-# Linker flags
-PKG_LIBS = -L../inst/fmalloc -lfmalloc -lpthread
+# Linker flags - Rtools includes pthread support
+PKG_LIBS = -L../inst/fmalloc ../inst/fmalloc/libfmalloc.a -lpthread
 
 # C++ standard
 CXX_STD = CXX11
