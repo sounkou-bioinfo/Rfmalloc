@@ -17,8 +17,11 @@ static struct fm_info *global_fm_info = nullptr;
 //==============================================================================
 
 static void *fmalloc_r_alloc(R_allocator_t *allocator, size_t length) {
-    if (!global_fm_info) {
-        Rf_error("fmalloc not initialized");
+    // Use allocator->data to access fm_info instead of global variable
+    struct fm_info *fm_info = (struct fm_info*)allocator->data;
+    
+    if (!fm_info) {
+        Rf_error("fmalloc not initialized in allocator");
         return nullptr;
     }
     
@@ -26,20 +29,25 @@ static void *fmalloc_r_alloc(R_allocator_t *allocator, size_t length) {
         return nullptr; // R handles zero-length allocations
     }
     
+    // Minimal logging - only show what R requests
+    if (length >= 1024 * 1024) {
+        Rprintf("Large allocation: %.2f MB requested\n", (double)length / (1024.0 * 1024.0));
+        if (length > 4 * 1024 * 1024) {
+            Rprintf("*** WARNING: >4MB may trigger mmap error ***\n");
+        }
+    }
+    
     try {
-        fmalloc_set_target(global_fm_info);
+        // Set target for this specific fm_info (not global)
+        fmalloc_set_target(fm_info);
         void *mem = fmalloc(length);
         
         if (mem) {
-            Rprintf("fmalloc allocated %zu bytes at %p\n", length, mem);
-        } else {
-            // Check errno for specific error
-            const char *error_msg = "Unknown allocation failure";
-            if (errno == ENOMEM) {
-                error_msg = "Out of memory";
+            if (length >= 1024 * 1024) {
+                Rprintf("SUCCESS: fmalloc allocated %zu bytes\n", length);
             }
-            Rf_error("fmalloc failed to allocate %zu bytes: %s (errno: %d)", 
-                     length, error_msg, errno);
+        } else {
+            Rf_error("fmalloc failed to allocate %zu bytes (errno: %d)", length, errno);
             return nullptr;
         }
         
@@ -59,15 +67,16 @@ static void fmalloc_r_free(R_allocator_t *allocator, void* ptr) {
         return; // R handles null pointer frees
     }
     
-    if (!global_fm_info) {
-        // If fmalloc is not initialized, don't try to free - let R handle it
-        Rprintf("fmalloc_r_free called but fmalloc not initialized (ptr: %p)\n", ptr);
+    // Use allocator->data to access fm_info
+    struct fm_info *fm_info = (struct fm_info*)allocator->data;
+    if (!fm_info) {
+        Rprintf("fmalloc_r_free called but no fm_info in allocator (ptr: %p)\n", ptr);
         return;
     }
     
     try {
-        fmalloc_set_target(global_fm_info);
-        Rprintf("fmalloc freed memory at %p\n", ptr);
+        // Set target for this specific fm_info
+        fmalloc_set_target(fm_info);  
         dlfree(ptr); // fmalloc's free function
     } catch (const std::exception& e) {
         // Don't error on free failures - just warn
@@ -180,6 +189,11 @@ SEXP init_fmalloc_impl(SEXP filepath_sexp, SEXP size_gb_sexp) {
         }
         
         global_fm_info = fmalloc_init(filepath, &init_flag);
+        
+        // Set target once during initialization - all subsequent operations will use this
+        if (global_fm_info) {
+            fmalloc_set_target(global_fm_info);
+        }
     } catch (const std::exception& e) {
         Rf_error("fmalloc initialization failed with exception: %s", e.what());
         return R_NilValue;
@@ -222,18 +236,24 @@ SEXP create_fmalloc_vector_impl(SEXP template_vec, SEXP length_sexp) {
         return allocVector(TYPEOF(template_vec), 0);
     }
     
-    // Validate vector type
+    // Get R's internal vector information using R API
     int vec_type = TYPEOF(template_vec);
     if (vec_type != INTSXP && vec_type != REALSXP && vec_type != LGLSXP) {
         Rf_error("Unsupported vector type: %d", vec_type);
         return R_NilValue;
     }
     
-    try {
-        R_allocator_t allocator = { fmalloc_r_alloc, fmalloc_r_free, nullptr, nullptr };
+    // Minimal logging for vector creation
+    if (length >= 1000) {
         Rprintf("Creating fmalloc vector: type=%d, length=%d\n", vec_type, length);
+    }
+    
+    try {
+        R_allocator_t allocator = { fmalloc_r_alloc, fmalloc_r_free, nullptr, global_fm_info };
         SEXP result = Rf_allocVector3(vec_type, length, &allocator);
-        Rprintf("Successfully created fmalloc vector\n");
+        if (length >= 1000) {
+            Rprintf("Successfully created fmalloc vector\n");
+        }
         return result;
     } catch (const std::exception& e) {
         Rf_error("Failed to create fmalloc vector: %s", e.what());
