@@ -1,17 +1,10 @@
 
 # Rfmalloc
 
-Rfmalloc provides persistent memory allocation capabilities for R using
-the fmalloc library. It offers file-backed memory allocation with full
-malloc, free, and realloc support for efficient persistent storage.
-
-## Key Features
-
-- **File-backed allocation** - Memory allocated from memory-mapped files
-- **Full realloc support** - Supports malloc, free, and realloc
-  patterns  
-- **Persistent storage** - Data persists across R sessions
-- **Efficient memory management** - Based on ptmalloc3 algorithm
+Rfmalloc provides persistent custom R memory allocation using
+the fmalloc library. It was supposed to offers large file-backed memory allocation with full
+malloc, free, and realloc support for efficient persistent storage. But there appear to be an issue with the chunk allocation and system mmap fallback for very large R vectors.
+So i would not recommend using this if you are not just allocating a bunch of small vectors. Plus `Rf_allocVector3` is non [api](https://github.com/r-devel/r-svn/blob/b8ffe27b6b430f67b20518071f018f07bff00f4d/src/include/R_ext/Rallocators.h#L27)
 
 ## Installation
 
@@ -58,7 +51,7 @@ file.remove(alloc_file)
 #> [1] TRUE
 ```
 
-## Larger Examples
+## Largish Examples
 
 ``` r
 library(Rfmalloc)
@@ -101,10 +94,5 @@ file.remove(large_file)
 
 ## References
 
-Please note that this project uses the fmalloc library from
-<https://github.com/yasukata/fmalloc> and custom allocator concepts from
-<https://gist.github.com/s-u/6712c97ca74181f5a1a5>.
+This exploratory project used the fmalloc library from <https://github.com/yasukata/fmalloc> and a mmap custom allocator example from Simon Urbanek at this gist <https://gist.github.com/s-u/6712c97ca74181f5a1a5>.
 
-## License
-
-This project is licensed under GPL (\>= 2).
