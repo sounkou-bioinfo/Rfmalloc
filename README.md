@@ -2,7 +2,7 @@
 # Rfmalloc
 
 Rfmalloc provides persistent custom R memory allocation using
-the fmalloc library. It was supposed to offers large file-backed memory allocation with full
+the fmalloc library. It was supposed to offer large file-backed memory allocation with full
 malloc, free, and realloc support for efficient persistent storage. But there appear to be an issue with the chunk allocation and system mmap fallback for very large R vectors.
 So i would not recommend using this if you are not just allocating a bunch of small vectors. Plus `Rf_allocVector3` is non [api](https://github.com/r-devel/r-svn/blob/b8ffe27b6b430f67b20518071f018f07bff00f4d/src/include/R_ext/Rallocators.h#L27) . Just use mmamp like Simon Urbanek does in the gist in the references, or just forget about this given non api status. [bettermc](https://github.com/akersting/bettermc) used to be the only mainline R package that uses Rf_allocVector3 though [others are cargo, luajr, profmem and MonetDBLite](https://github.com/search?q=org%3Acran%20allocvector3&type=code)
 
