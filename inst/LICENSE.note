@@ -1,0 +1,42 @@
+Rfmalloc bundles a patched copy of fmalloc as a vendored third-party component.
+
+Bundled component: fmalloc
+Upstream repository: https://github.com/yasukata/fmalloc
+Vendored source directory: inst/fmalloc
+
+fmalloc copyright:
+- Kenichi Yasukata
+
+fmalloc licensing:
+- The fmalloc source files and COPYRIGHT notice state the Apache License,
+  Version 2.0.
+- See inst/fmalloc/COPYRIGHT and the upstream repository for the complete
+  fmalloc license text and notices.
+
+Bundled component: ptmalloc3
+Upstream project: ptmalloc3 by Wolfram Gloger
+Vendored source files: inst/fmalloc/ptmalloc3.c, inst/fmalloc/malloc-private.h,
+  inst/fmalloc/sysdeps/*, and related support files
+
+ptmalloc3 copyright:
+- Wolfram Gloger
+
+ptmalloc3 licensing:
+- The bundled COPYRIGHT notice permits use, copying, modification,
+  distribution, and sale under the conditions stated there.
+- Some bundled GNU C Library support files carry GNU Lesser General Public
+  License, version 2.1 or later, notices in their source headers.
+
+Bundled component: Doug Lea malloc / dlmalloc
+Upstream source: malloc-2.8.3
+Vendored source files: inst/fmalloc/malloc.c and inst/fmalloc/malloc-2.8.3.h
+
+Doug Lea malloc licensing:
+- The bundled malloc.c and malloc-2.8.3.h source headers state that Doug Lea's
+  malloc implementation was released to the public domain.
+
+Rfmalloc package licensing:
+- The Rfmalloc package code is licensed under GPL (>= 2), as declared in
+  DESCRIPTION.
+- This notice documents the bundled fmalloc/ptmalloc3/dlmalloc components and
+  does not modify the license terms declared for the Rfmalloc package itself.
