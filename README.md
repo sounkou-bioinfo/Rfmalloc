@@ -64,7 +64,7 @@ library(Rfmalloc)
 alloc_file <- tempfile(fileext = ".bin")
 init_fmalloc(alloc_file)
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/Rtmpo8KoAG/file38c30300084ef.bin (init: true)
+#> fmalloc initialized with file: /tmp/Rtmp3h3cRX/file38ee1659fb313.bin (init: true)
 #> [1] TRUE
 
 v_int <- create_fmalloc_vector("integer", 10)
@@ -103,8 +103,8 @@ v_lst
 rm(v_int, v_num, v_raw, v_cplx, v_chr, v_lst)
 gc()
 #>          used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells 528939 28.3    1152117 61.6   718274 38.4
-#> Vcells 997337  7.7    8388608 64.0  2007149 15.4
+#> Ncells 528943 28.3    1152128 61.6   718274 38.4
+#> Vcells 997408  7.7    8388608 64.0  2007149 15.4
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
@@ -120,7 +120,7 @@ library(Rfmalloc)
 handle_file <- tempfile(fileext = ".bin")
 rt <- open_fmalloc(handle_file)
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/Rtmpo8KoAG/file38c303f2e504a.bin (init: true)
+#> fmalloc initialized with file: /tmp/Rtmp3h3cRX/file38ee14b1b5857.bin (init: true)
 
 v <- create_fmalloc_vector("integer", 10, runtime = rt)
 v[1:3] <- 10:12
@@ -130,8 +130,8 @@ v[1:3]
 rm(v)
 gc()
 #>          used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells 529007 28.3    1152117 61.6   718274 38.4
-#> Vcells 998037  7.7    8388608 64.0  2007149 15.4
+#> Ncells 529011 28.3    1152128 61.6   718274 38.4
+#> Vcells 998108  7.7    8388608 64.0  2007149 15.4
 cleanup_fmalloc(rt)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
@@ -140,36 +140,24 @@ unlink(handle_file)
 
 ## Larger Allocation Example
 
+This is the kind of stress case the package is meant for. It is not
+evaluated when rendering the README, because it creates a 5 GB backing
+file and allocates about 4 GB of integer payload.
+
 ``` r
 library(Rfmalloc)
 
 large_file <- tempfile(fileext = ".bin")
-init_fmalloc(large_file, size_gb = 0.1)
-#> Requested file size: 0.10 GB (107374182 bytes)
-#> Creating file with size: 107374182 bytes (0.10 GB)
-#> fmalloc initialized with file: /tmp/Rtmpo8KoAG/file38c306db57dfe.bin (init: true)
-#> [1] TRUE
+init_fmalloc(large_file, size_gb = 5)
 
-# About 20 MB of integer payload, larger than the historical 16 MB chunk limit.
-big_int <- create_fmalloc_vector("integer", 5e6)
-#> Creating fmalloc ALTREP vector: type=integer, length=5000000
-#> Large allocation: 19.07 MB requested
-#> SUCCESS: fmalloc allocated 20000000 bytes
-#> Successfully created fmalloc ALTREP vector
+# 1 billion integers = about 4 GB of payload, backed by fmalloc.
+big_int <- create_fmalloc_vector("integer", 1e9)
 big_int[1:5] <- 1:5
-#> Large allocation: 19.07 MB requested
-#> SUCCESS: fmalloc allocated 20000000 bytes
 big_int[1:5]
-#> [1] 1 2 3 4 5
 
 rm(big_int)
 gc()
-#>          used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells 529032 28.3    1152117 61.6   718274 38.4
-#> Vcells 998204  7.7    8388608 64.0  2007149 15.4
 cleanup_fmalloc()
-#> Cleaning up fmalloc...
-#> fmalloc cleaned up
 unlink(large_file)
 ```
 
@@ -188,11 +176,11 @@ file_b <- tempfile(fileext = ".bin")
 
 rt_a <- open_fmalloc(file_a)
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/Rtmpo8KoAG/file38c3066826460.bin (init: true)
+#> fmalloc initialized with file: /tmp/Rtmp3h3cRX/file38ee176d8eaf8.bin (init: true)
 rt_b <- open_fmalloc(file_b, size_gb = 0.1)
 #> Requested file size: 0.10 GB (107374182 bytes)
 #> Creating file with size: 107374182 bytes (0.10 GB)
-#> fmalloc initialized with file: /tmp/Rtmpo8KoAG/file38c3064c3cf62.bin (init: true)
+#> fmalloc initialized with file: /tmp/Rtmp3h3cRX/file38ee15632caa9.bin (init: true)
 
 vec_a <- create_fmalloc_vector("integer", 10, runtime = rt_a)
 vec_b <- create_fmalloc_vector("numeric", 10, runtime = rt_b)
@@ -216,16 +204,16 @@ vec_a[1]
 rm(vec_a)
 gc()
 #>           used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells  530212 28.4    1152117 61.6   718274 38.4
-#> Vcells 1000858  7.7    8388608 64.0  2007149 15.4
+#> Ncells  530199 28.4    1152128 61.6   718274 38.4
+#> Vcells 1000821  7.7    8388608 64.0  2007149 15.4
 cleanup_fmalloc(rt_b)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 rm(vec_b)
 gc()
 #>           used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells  530207 28.4    1152117 61.6   718274 38.4
-#> Vcells 1000865  7.7    8388608 64.0  2007149 15.4
+#> Ncells  530200 28.4    1152128 61.6   718274 38.4
+#> Vcells 1000834  7.7    8388608 64.0  2007149 15.4
 unlink(c(file_a, file_b))
 ```
 
@@ -250,7 +238,7 @@ reopen_file <- tempfile(fileext = ".bin")
 
 first_init <- init_fmalloc(reopen_file)
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/Rtmpo8KoAG/file38c3067f2a55e.bin (init: true)
+#> fmalloc initialized with file: /tmp/Rtmp3h3cRX/file38ee12665568.bin (init: true)
 first_vec <- create_fmalloc_vector("integer", 100)
 first_vec[1:3] <- 1:3
 first_init
@@ -261,15 +249,15 @@ first_vec[1:3]
 rm(first_vec)
 gc()
 #>           used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells  530122 28.4    1152117 61.6   718274 38.4
-#> Vcells 1000890  7.7    8388608 64.0  2007149 15.4
+#> Ncells  530115 28.4    1152128 61.6   718274 38.4
+#> Vcells 1000859  7.7    8388608 64.0  2007149 15.4
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 
 second_init <- init_fmalloc(reopen_file)
-#> Using existing file: /tmp/Rtmpo8KoAG/file38c3067f2a55e.bin (size: 33562624 bytes)
-#> fmalloc initialized with file: /tmp/Rtmpo8KoAG/file38c3067f2a55e.bin (init: false)
+#> Using existing file: /tmp/Rtmp3h3cRX/file38ee12665568.bin (size: 33562624 bytes)
+#> fmalloc initialized with file: /tmp/Rtmp3h3cRX/file38ee12665568.bin (init: false)
 second_init
 #> [1] FALSE
 exists("first_vec")
@@ -301,7 +289,7 @@ library(lobstr)
 addr_file <- tempfile(fileext = ".bin")
 init_fmalloc(addr_file)
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/Rtmpo8KoAG/file38c30454029a0.bin (init: true)
+#> fmalloc initialized with file: /tmp/Rtmp3h3cRX/file38ee16cc655ff.bin (init: true)
 #> [1] TRUE
 
 cow_a <- create_fmalloc_vector("integer", 10)
@@ -313,33 +301,33 @@ data.frame(
   address = c(obj_addr(cow_a), obj_addr(cow_b))
 )
 #>   object        address
-#> 1  cow_a 0x60b545902a90
-#> 2  cow_b 0x60b545902a90
+#> 1  cow_a 0x6255ff3d55a0
+#> 2  cow_b 0x6255ff3d55a0
 capture.output(.Internal(inspect(cow_a)))[1]
-#> [1] "@60b545902a90 13 INTSXP g0c0 [REF(3)] fmalloc_altrep integer length=10 data=0x7621ea402418 bytes=40"
+#> [1] "@6255ff3d55a0 13 INTSXP g0c0 [REF(3)] fmalloc_altrep integer length=10 data=0x71d171802418 bytes=40"
 
 tracemem(cow_a)
-#> [1] "<0x60b545902a90>"
+#> [1] "<0x6255ff3d55a0>"
 cow_a[1] <- 99L
-#> tracemem[0x60b545902a90 -> 0x60b5447a50a8]: eval eval withVisible withCallingHandlers eval eval with_handlers doWithOneRestart withOneRestart withRestartList doWithOneRestart withOneRestart withRestartList withRestarts <Anonymous> evaluate in_dir in_input_dir eng_r block_exec call_block process_group withCallingHandlers with_options <Anonymous> process_file <Anonymous> <Anonymous>
+#> tracemem[0x6255ff3d55a0 -> 0x6255ff06bfe8]: eval eval withVisible withCallingHandlers eval eval with_handlers doWithOneRestart withOneRestart withRestartList doWithOneRestart withOneRestart withRestartList withRestarts <Anonymous> evaluate in_dir in_input_dir eng_r block_exec call_block process_group withCallingHandlers with_options <Anonymous> process_file <Anonymous> <Anonymous>
 
 data.frame(
   object = c("cow_a", "cow_b"),
   address = c(obj_addr(cow_a), obj_addr(cow_b))
 )
 #>   object        address
-#> 1  cow_a 0x60b5447a50a8
-#> 2  cow_b 0x60b545902a90
+#> 1  cow_a 0x6255ff06bfe8
+#> 2  cow_b 0x6255ff3d55a0
 capture.output(.Internal(inspect(cow_a)))[1]
-#> [1] "@60b5447a50a8 13 INTSXP g0c0 [REF(1),TR] fmalloc_altrep integer length=10 data=0x7621ea402448 bytes=40"
+#> [1] "@6255ff06bfe8 13 INTSXP g0c0 [REF(1),TR] fmalloc_altrep integer length=10 data=0x71d171802448 bytes=40"
 capture.output(.Internal(inspect(cow_b)))[1]
-#> [1] "@60b545902a90 13 INTSXP g0c0 [REF(3),TR] fmalloc_altrep integer length=10 data=0x7621ea402418 bytes=40"
+#> [1] "@6255ff3d55a0 13 INTSXP g0c0 [REF(3),TR] fmalloc_altrep integer length=10 data=0x71d171802418 bytes=40"
 
 rm(cow_a, cow_b)
 gc()
 #>           used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells  533203 28.5    1152117 61.6   751780 40.2
-#> Vcells 1006157  7.7    8388608 64.0  2007149 15.4
+#> Ncells  533196 28.5    1152128 61.6   751773 40.2
+#> Vcells 1006125  7.7    8388608 64.0  2007149 15.4
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up

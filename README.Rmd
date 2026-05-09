@@ -120,14 +120,18 @@ unlink(handle_file)
 
 ## Larger Allocation Example
 
-```{r}
+This is the kind of stress case the package is meant for. It is not evaluated
+when rendering the README, because it creates a 5 GB backing file and allocates
+about 4 GB of integer payload.
+
+```{r eval=FALSE}
 library(Rfmalloc)
 
 large_file <- tempfile(fileext = ".bin")
-init_fmalloc(large_file, size_gb = 0.1)
+init_fmalloc(large_file, size_gb = 5)
 
-# About 20 MB of integer payload, larger than the historical 16 MB chunk limit.
-big_int <- create_fmalloc_vector("integer", 5e6)
+# 1 billion integers = about 4 GB of payload, backed by fmalloc.
+big_int <- create_fmalloc_vector("integer", 1e9)
 big_int[1:5] <- 1:5
 big_int[1:5]
 
