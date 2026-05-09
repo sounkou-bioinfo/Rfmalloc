@@ -1,9 +1,9 @@
-# Test custom allocator edge cases and duplication behavior
+# Test ALTREP fmalloc edge cases and duplication behavior
 
 library(tinytest)
 library(Rfmalloc)
 
-cat("Testing custom allocator edge cases and duplication behavior...\n")
+cat("Testing ALTREP fmalloc edge cases and duplication behavior...\n")
 
 # Test file setup
 test_file <- tempfile(fileext = ".bin")
@@ -24,7 +24,7 @@ test_fmalloc_available <- function() {
 }
 
 if (test_fmalloc_available()) {
-    cat("fmalloc available, running custom allocator tests...\n")
+    cat("fmalloc available, running ALTREP fmalloc tests...\n")
 
     # Reinitialize for tests
     init_fmalloc(test_file)
@@ -236,7 +236,7 @@ if (test_fmalloc_available()) {
     # Final cleanup
     cleanup_fmalloc()
 } else {
-    cat("fmalloc not available, skipping custom allocator tests\n")
+    cat("fmalloc not available, skipping ALTREP fmalloc tests\n")
 }
 
 # Always clean up test file
@@ -244,4 +244,4 @@ if (file.exists(test_file)) {
     unlink(test_file)
 }
 
-cat("Custom allocator edge case tests completed!\n")
+cat("ALTREP fmalloc edge case tests completed!\n")

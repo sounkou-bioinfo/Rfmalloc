@@ -58,6 +58,20 @@
 #define FMALLOC_OFF (PAGE_SIZE * 2)
 #define FMALLOC_MIN_CHUNK (1UL << 24)
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef void (*fmalloc_error_callback_t)(const char *message, void *user_data);
+void fmalloc_set_error_callback(fmalloc_error_callback_t callback, void *user_data);
+const char *fmalloc_get_last_error(void);
+void fmalloc_clear_last_error(void);
+void fmalloc_report_error(const char *fmt, ...);
+
+#ifdef __cplusplus
+}
+#endif
+
 /*
  * data layout on a file
  *
@@ -118,12 +132,12 @@ struct fm_super {
 			return 0;
 		int idx = m2i(data_base(), mem);
 		if (idx < 0 || (uint64_t) idx >= num_chunk) {
-			fprintf(stderr, "fmalloc munmap invalid pointer %p\n", mem);
+			fmalloc_report_error("fmalloc munmap invalid pointer %p", mem);
 			return -1;
 		}
 		uint64_t nchunks = (length + chunk_size - 1) / chunk_size;
 		if ((uint64_t) idx + nchunks > num_chunk) {
-			fprintf(stderr, "fmalloc munmap range outside backing file\n");
+			fmalloc_report_error("fmalloc munmap range outside backing file");
 			return -1;
 		}
 		bitmap_release_run(idx, nchunks);
@@ -142,7 +156,7 @@ struct fm_super {
 		uint64_t nchunks = (length + chunk_size - 1) / chunk_size;
 		int idx = bitmap_grab_run(nchunks);
 		if (idx < 0) {
-			fprintf(stderr, "bitmap_grab failed for %llu chunks (%zu bytes)\n",
+			fmalloc_report_error("bitmap_grab failed for %llu chunks (%zu bytes)",
 				    (unsigned long long) nchunks, length);
 			return MAP_FAILED;
 		}
@@ -225,14 +239,20 @@ struct fm_super {
 struct fm_info {
 	int fd;
 	void *mem;
+	size_t len;
 	struct fm_super *s;
 
-	fm_info(int _fd, void *_mem, struct fm_super *_s) : fd(_fd), mem(_mem), s(_s)
+	fm_info(int _fd, void *_mem, size_t _len, struct fm_super *_s) : fd(_fd), mem(_mem), len(_len), s(_s)
 	{
 	}
 };
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct fm_info *fmalloc_init(const char *filepath, bool *init);
+void fmalloc_destroy(struct fm_info *fi);
 void fmalloc_set_target(struct fm_info *fi);
 
 void *fmalloc(size_t size);
@@ -242,5 +262,9 @@ void ffree(void *addr);
 size_t fmalloc_mmap_round(size_t length);
 void *fmalloc_mmap(size_t length);
 int fmalloc_munmap(void *addr, size_t length);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

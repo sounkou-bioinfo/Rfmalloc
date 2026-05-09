@@ -1,9 +1,9 @@
-# Test R's copy-on-write behavior with custom allocators
+# Test R's copy-on-write behavior with fmalloc ALTREP vectors
 
 library(tinytest)
 library(Rfmalloc)
 
-cat("Testing R's copy-on-write behavior with fmalloc custom allocators...\n")
+cat("Testing R's copy-on-write behavior with fmalloc ALTREP vectors...\n")
 
 test_file <- tempfile(fileext = ".bin")
 
@@ -29,7 +29,7 @@ fmalloc_available <- tryCatch(
 )
 
 if (fmalloc_available) {
-    cat("Testing COW behavior with fmalloc allocators...\n")
+    cat("Testing COW behavior with fmalloc ALTREP vectors...\n")
 
     init_fmalloc(test_file)
 
@@ -279,8 +279,8 @@ if (file.exists(test_file)) {
 
 cat("Copy-on-write behavior tests completed!\n")
 
-cat("\n=== SUMMARY: R Custom Allocator Duplication Behavior ===\n")
-cat("When using R custom allocators like fmalloc:\n")
+cat("\n=== SUMMARY: R ALTREP fmalloc Duplication Behavior ===\n")
+cat("When using fmalloc ALTREP vectors:\n")
 cat("1. R uses copy-on-write (COW) semantics for memory efficiency\n")
 cat("2. Assignment (x <- y) initially creates references, not copies\n")
 cat(
@@ -293,6 +293,6 @@ cat(
     "7. This behavior ensures memory safety but can lead to unexpected duplications\n"
 )
 cat(
-    "8. Custom allocators must handle both original allocations and COW duplications\n"
+    "8. ALTREP fmalloc vectors must handle both original allocations and COW duplications\n"
 )
 cat("=========================================================\n")

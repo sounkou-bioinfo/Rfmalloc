@@ -18,7 +18,9 @@
 
 #include "fmalloc.hpp"
 
-#include <assert.h>
+#include <cstdarg>
+#include <cstdio>
+#include <cstring>
 #include <mutex>
 
 #ifdef _WIN32
@@ -33,6 +35,49 @@
 __thread uint64_t __fm_addr_base = 0;
 
 static std::mutex fm_bitmap_mutex;
+static std::mutex fm_error_mutex;
+static fmalloc_error_callback_t fm_error_callback = nullptr;
+static void *fm_error_user_data = nullptr;
+static thread_local char fm_last_error[512] = "";
+
+void fmalloc_set_error_callback(fmalloc_error_callback_t callback, void *user_data)
+{
+	std::lock_guard<std::mutex> lock(fm_error_mutex);
+	fm_error_callback = callback;
+	fm_error_user_data = user_data;
+}
+
+const char *fmalloc_get_last_error(void)
+{
+	return fm_last_error[0] ? fm_last_error : nullptr;
+}
+
+void fmalloc_clear_last_error(void)
+{
+	fm_last_error[0] = '\0';
+}
+
+void fmalloc_report_error(const char *fmt, ...)
+{
+	char message[sizeof(fm_last_error)];
+	va_list args;
+	va_start(args, fmt);
+	vsnprintf(message, sizeof(message), fmt, args);
+	va_end(args);
+	message[sizeof(message) - 1] = '\0';
+	strncpy(fm_last_error, message, sizeof(fm_last_error));
+	fm_last_error[sizeof(fm_last_error) - 1] = '\0';
+
+	fmalloc_error_callback_t callback = nullptr;
+	void *user_data = nullptr;
+	{
+		std::lock_guard<std::mutex> lock(fm_error_mutex);
+		callback = fm_error_callback;
+		user_data = fm_error_user_data;
+	}
+	if (callback)
+		callback(message, user_data);
+}
 
 extern void do_ptmalloc_init(unsigned long chunk_size);
 extern void fmalloc_ptmalloc_set_current_arena(unsigned long chunk_size);
@@ -51,9 +96,10 @@ struct fm_info *fmalloc_init(const char *filepath, bool *init)
 	WIN32_FILE_ATTRIBUTE_DATA file_info;
 	
 	// Get file size on Windows
+	fmalloc_clear_last_error();
 	if (!GetFileAttributesExA(filepath, GetFileExInfoStandard, &file_info)) {
-		fprintf(stderr, "GetFileAttributesEx failed for file: %s\n", filepath);
-		exit(1);
+		fmalloc_report_error("GetFileAttributesEx failed for file: %s", filepath);
+		return nullptr;
 	}
 	len = ((size_t)file_info.nFileSizeHigh << 32) | file_info.nFileSizeLow;
 	
@@ -62,25 +108,25 @@ struct fm_info *fmalloc_init(const char *filepath, bool *init)
 	                         FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, 
 	                         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 	if (file_handle == INVALID_HANDLE_VALUE) {
-		fprintf(stderr, "CreateFile failed for file: %s\n", filepath);
-		exit(1);
+		fmalloc_report_error("CreateFile failed for file: %s", filepath);
+		return nullptr;
 	}
 	
 	// Create file mapping on Windows
 	map_handle = CreateFileMappingA(file_handle, NULL, PAGE_READWRITE, 0, 0, NULL);
 	if (map_handle == NULL) {
-		fprintf(stderr, "CreateFileMapping failed for file: %s\n", filepath);
+		fmalloc_report_error("CreateFileMapping failed for file: %s", filepath);
 		CloseHandle(file_handle);
-		exit(1);
+		return nullptr;
 	}
 	
 	// Map view of file on Windows
 	mem = MapViewOfFile(map_handle, FILE_MAP_ALL_ACCESS, 0, 0, 0);
 	if (mem == NULL) {
-		fprintf(stderr, "MapViewOfFile failed for file: %s\n", filepath);
+		fmalloc_report_error("MapViewOfFile failed for file: %s", filepath);
 		CloseHandle(map_handle);
 		CloseHandle(file_handle);
-		exit(1);
+		return nullptr;
 	}
 	
 	// Store handles for cleanup (you may want to store these globally)
@@ -91,22 +137,26 @@ struct fm_info *fmalloc_init(const char *filepath, bool *init)
 #else
 	struct stat st;
 	
+	fmalloc_clear_last_error();
 	if (stat(filepath, &st) < 0) {
-		perror("stat");
-		exit(1);
+		fmalloc_report_error("stat failed for file: %s", filepath);
+		return nullptr;
 	}
 
 	len = st.st_size;
 
 	fd = open(filepath, O_RDWR, 0644);
 	if (fd < 0) {
-		perror("open");
-		fprintf(stderr, "file: %s (%d)\n", filepath, fd);
-		exit(1);
+		fmalloc_report_error("open failed for file: %s", filepath);
+		return nullptr;
 	}
 
 	mem = mmap(0, len, PROT_WRITE | PROT_READ, MAP_SHARED, fd, 0);
-	assert(mem != MAP_FAILED);
+	if (mem == MAP_FAILED) {
+		fmalloc_report_error("mmap failed for file: %s", filepath);
+		close(fd);
+		return nullptr;
+	}
 	
 	close(fd);
 #endif
@@ -131,7 +181,21 @@ struct fm_info *fmalloc_init(const char *filepath, bool *init)
 	do_ptmalloc_init(s->chunk_size);
 	fmalloc_ptmalloc_set_current_arena(s->chunk_size);
 
-	return new fm_info(fd, mem, s);
+	return new fm_info(fd, mem, len, s);
+}
+
+void fmalloc_destroy(struct fm_info *fi)
+{
+	if (!fi)
+		return;
+#ifdef _WIN32
+	if (fi->mem)
+		UnmapViewOfFile(fi->mem);
+#else
+	if (fi->mem && fi->len > 0)
+		munmap(fi->mem, fi->len);
+#endif
+	delete fi;
 }
 
 void fmalloc_set_target(struct fm_info *fi)

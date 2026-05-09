@@ -1,28 +1,31 @@
-#' fmalloc: Memory-Mapped File Allocation for R
+#' Rfmalloc: Memory-Mapped File Allocation for R
 #'
-#' The fmalloc package provides memory-mapped file allocation capabilities for R.
-#' It offers two main approaches:
-#'
-#' 1. **ALTREP-based memory-mapped vectors**: Using R's Alternative Representation
-#'    framework to create vectors backed by memory-mapped files.
-#' 2. **fmalloc allocator**: Using the fmalloc library for sophisticated
-#'    persistent memory allocation.
+#' Rfmalloc provides experimental memory-mapped file allocation capabilities for
+#' R using a patched copy of the fmalloc library. The current package exposes
+#' ALTREP file-backed vector allocation for logical, integer, numeric, raw,
+#' complex, character, and list vectors with fmalloc payload storage.
 #'
 #' @section Main Functions:
 #' \describe{
-#'   \item{\code{\link{create_mmap_vector}}}{Create ALTREP memory-mapped vectors}
-#'   \item{\code{\link{init_fmalloc}}}{Initialize the fmalloc allocator}
-#'   \item{\code{\link{create_fmalloc_vector}}}{Create vectors using fmalloc}
-#'   \item{\code{\link{cleanup_fmalloc}}}{Clean up fmalloc resources}
+#'   \item{\code{\link{open_fmalloc}}}{Open an explicit fmalloc runtime handle.}
+#'   \item{\code{\link{init_fmalloc}}}{Open and install a default fmalloc runtime.}
+#'   \item{\code{\link{create_fmalloc_vector}}}{Create vectors using fmalloc.}
+#'   \item{\code{\link{cleanup_fmalloc}}}{Request cleanup of an fmalloc runtime.}
 #' }
 #'
-#' @section Features:
+#' @section Current Scope:
 #' \itemize{
-#'   \item Persistent storage of R vectors in files
-#'   \item Memory-efficient handling of large datasets
-#'   \item ALTREP integration for seamless R vector operations
-#'   \item Cross-platform support (Linux, macOS, Windows)
+#'   \item ALTREP file-backed allocation for logical, integer, numeric, raw,
+#'         complex, character, and list vectors.
+#'   \item Large allocations spanning multiple fmalloc chunks.
+#'   \item Multiple runtime handles in one R process.
+#'   \item Native lifetime tracking so runtime mappings outlive reachable
+#'         vectors allocated from them.
 #' }
+#'
+#' @section Future Work:
+#' Future work includes persistent object metadata, fmalloc-backed subset results,
+#' and richer persistence semantics for pointer-containing vector types.
 #'
 #' @docType package
 #' @name Rfmalloc-package

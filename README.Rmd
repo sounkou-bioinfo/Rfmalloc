@@ -19,10 +19,10 @@ memory-mapped backing file using a patched copy of
 file-backed R vector storage without routing large allocations back through the
 process heap.
 
-The current package exposes an `Rf_allocVector3()`-based custom allocator for
-integer, numeric, and logical vectors. This is useful for experiments and stress
-testing, but `Rf_allocVector3()` is not part of R's public API, so this package
-should still be treated as research software.
+The current package exposes ALTREP vectors whose fixed-width atomic payloads are
+allocated directly from fmalloc. This keeps the implementation on R's documented
+C/ALTREP surface instead of relying on the non-API `Rf_allocVector3()` vector
+allocator hook.
 
 ## Current Status
 
@@ -32,17 +32,23 @@ are now carved from contiguous runs in the fmalloc backing file instead.
 
 Implemented now:
 
-- file-backed allocation for integer, numeric, and logical vectors;
+- ALTREP file-backed allocation for logical, integer, numeric, raw, complex,
+  character, and list vectors;
 - large allocations spanning multiple fmalloc chunks;
 - `malloc`, `free`, and `realloc` support through the patched fmalloc layer;
-- reopening backing files created by the current allocator format.
+- reopening backing files created by the current allocator format;
+- explicit runtime handles, so multiple fmalloc runtimes can be open in one R
+  process;
+- native lifetime tracking from ALTREP vector handles to runtime mappings, so a
+  runtime mapping is not destroyed while vectors allocated from it are still
+  reachable.
 
 Still experimental / future work:
 
-- ALTREP wrappers so R-level duplication, subsetting, and copy-on-write can stay
-  file-backed;
+- fmalloc-backed subset/coercion results where appropriate;
 - richer persistence semantics and metadata;
-- support for more vector types;
+- richer persistence semantics for pointer-containing R types; character and
+  list vectors are session-local because their elements are R object pointers;
 - production-grade lifecycle management for mapped files.
 
 ## Installation
@@ -54,6 +60,8 @@ devtools::install_github("sounkou-bioinfo/Rfmalloc")
 
 ## Basic Usage
 
+The compatibility API keeps a package-default runtime:
+
 ```{r}
 library(Rfmalloc)
 
@@ -62,17 +70,47 @@ init_fmalloc(alloc_file)
 
 v_int <- create_fmalloc_vector("integer", 10)
 v_num <- create_fmalloc_vector("numeric", 10)
+v_raw <- create_fmalloc_vector("raw", 4)
+v_cplx <- create_fmalloc_vector("complex", 4)
+v_chr <- create_fmalloc_vector("character", 3)
+v_lst <- create_fmalloc_vector("list", 2)
 
 v_int[1:3] <- c(1L, 2L, 3L)
 v_num[1:3] <- c(1.1, 2.2, 3.3)
+v_raw[] <- as.raw(1:4)
+v_cplx[] <- c(1+1i, 2+2i, 3+3i, 4+4i)
+v_chr[] <- c("a", "b", "c")
+v_lst[[1]] <- data.frame(x = 1:2)
 
 v_int[1:3]
 v_num[1:3]
+v_raw
+v_cplx
+v_chr
+v_lst
 
-rm(v_int, v_num)
+rm(v_int, v_num, v_raw, v_cplx, v_chr, v_lst)
 gc()
 cleanup_fmalloc()
 unlink(alloc_file)
+```
+
+For new code, prefer explicit runtime handles:
+
+```{r}
+library(Rfmalloc)
+
+handle_file <- tempfile(fileext = ".bin")
+rt <- open_fmalloc(handle_file)
+
+v <- create_fmalloc_vector("integer", 10, runtime = rt)
+v[1:3] <- 10:12
+v[1:3]
+
+rm(v)
+gc()
+cleanup_fmalloc(rt)
+unlink(handle_file)
 ```
 
 ## Larger Allocation Example
@@ -94,13 +132,55 @@ cleanup_fmalloc()
 unlink(large_file)
 ```
 
+## Multiple Runtimes and Lifetime
+
+Runtime handles make it possible to use more than one backing file in the same R
+process. Allocator entry is serialized with native mutexes because the current
+fmalloc/ptmalloc layer still has process-global target state internally.
+
+```{r}
+library(Rfmalloc)
+
+file_a <- tempfile(fileext = ".bin")
+file_b <- tempfile(fileext = ".bin")
+
+rt_a <- open_fmalloc(file_a)
+rt_b <- open_fmalloc(file_b, size_gb = 0.1)
+
+vec_a <- create_fmalloc_vector("integer", 10, runtime = rt_a)
+vec_b <- create_fmalloc_vector("numeric", 10, runtime = rt_b)
+vec_a[1] <- 101L
+vec_b[1] <- 202
+
+data.frame(
+  vector = c("vec_a", "vec_b"),
+  value = c(vec_a[1], vec_b[1])
+)
+
+cleanup_fmalloc(rt_a)
+vec_a[1]
+
+rm(vec_a)
+gc()
+cleanup_fmalloc(rt_b)
+rm(vec_b)
+gc()
+unlink(c(file_a, file_b))
+```
+
+Calling `cleanup_fmalloc(rt_a)` marks `rt_a` closed. If vectors from `rt_a` are
+still reachable, the native mapping is kept alive until those vectors are
+garbage-collected. This is implemented with a native live-vector count and an
+ALTREP-held external pointer for each fmalloc-backed vector; no user-visible
+attribute is added to the vector.
+
 ## Reopening Is Not Vector Recovery Yet
 
 A backing file can be reopened, but this currently reopens only the allocator
 state. We are **not** getting the R vector object back yet. The package does not
-currently store a root table such as `(name, type, length, offset)`, and a plain
-`SEXP` allocated by `Rf_allocVector3()` cannot be safely reconstructed as an R
-object after it has been dropped by R's garbage collector.
+currently store a root table such as `(name, type, length, offset)`, so an
+ALTREP vector cannot yet be safely reconstructed after it has been dropped by
+R's garbage collector.
 
 ```{r}
 library(Rfmalloc)
@@ -130,12 +210,11 @@ fmalloc allocator metadata. It does **not** mean `first_vec` was recovered. Real
 object recovery needs a higher-level object catalog and likely an ALTREP vector
 constructor that can recreate an R vector from `(file, offset, type, length)`.
 
-## Watching R's Duplication with `lobstr`
+## Watching ALTREP-Controlled Duplication with `lobstr`
 
 `lobstr::obj_addr()` and R's internal inspector are useful for seeing why the
-current custom-allocator approach is not enough. The initial vector is backed by
-fmalloc, but when R performs copy-on-write it duplicates through R's ordinary
-vector allocation path.
+vectors are ALTREP from the beginning. R's copy-on-write path dispatches to the
+ALTREP `Duplicate` method, and the duplicate allocates its payload from fmalloc.
 
 ```{r}
 library(Rfmalloc)
@@ -172,35 +251,28 @@ unlink(addr_file)
 
 The two names start as references to the same `SEXP`. After the write to
 `cow_a`, `tracemem()` reports a duplicate and `lobstr::obj_addr()` shows that
-`cow_a` moved to a new object while `cow_b` still points at the original object.
-That automatic duplicate is made by R's normal `allocVector()` path, not by the
-fmalloc allocator used for the original `Rf_allocVector3()` call.
+`cow_a` moved to a new ALTREP object while `cow_b` still points at the original
+ALTREP object. That automatic duplicate is handled by Rfmalloc's ALTREP
+`Duplicate` method, not by R's ordinary `allocVector()` path.
 
 `lobstr::obj_addr()` shows the R object header address, not necessarily the data
-payload pointer. For allocator debugging we may add a small `.Call()` helper that
-prints both the `SEXP` address and `DATAPTR()` and whether the payload lies
-inside the current fmalloc mapping.
+payload pointer. The payload pointer returned by `DATAPTR()` is a real writable
+pointer into the fmalloc mapping for fixed-width atomic types. Character and list
+vectors use ALTREP string/list element methods plus an R-visible sidecar so the
+GC can see referenced R objects.
 
-## Why ALTREP Is Still the Likely Next Step
+## Why ALTREP Is Required for Copy-on-Write Control
 
-Allocating the initial vector storage in the backing file is not enough to make
-all R operations file-backed. R's normal duplication paths often call
-`allocVector()`, not `Rf_allocVector3()`, so copy-on-write or subsetting may
-produce ordinary heap-backed vectors.
+Plain vectors allocated through custom allocator hooks do not control R's
+ordinary duplication path. R saves enough allocator state to free those objects,
+but ordinary vector duplication does not consult a per-object allocator copy
+callback, and the `R_allocator_t::res` field is reserved.
 
-We cannot already pass an automatic duplication method through the current
-standard-vector custom allocator. R saves the custom allocator so the original
-object can be freed correctly, but ordinary vector duplication does not consult a
-per-object allocator hook. The `R_allocator_t::res` field is reserved and is not
-a supported copy callback.
-
-A UFO/Travel-like direction is still interesting, but for this package the next
-practical layer is likely ALTREP: implement `Dataptr`, `Elt`, `Get_region`, and
-especially `Duplicate` so R can preserve file-backed storage during ordinary
-vector operations. The ALTREP `Duplicate` method is the supported place where we
-can allocate the copied vector through fmalloc as well. Pointer-access
-instrumentation is only needed if we want more transparent interception than
-ALTREP provides.
+Rfmalloc therefore constructs ALTREP vectors from the beginning. ALTREP gives the
+package a supported `Duplicate` method, so copy-on-write can create another
+fmalloc-backed vector instead of falling back to R's ordinary heap allocator.
+For all current vector constructors, this also means Rfmalloc no longer needs
+the non-API `Rf_allocVector3()` path.
 
 ## References
 

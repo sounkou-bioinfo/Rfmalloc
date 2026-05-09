@@ -4,20 +4,26 @@
 \alias{cleanup_fmalloc}
 \title{Clean Up fmalloc}
 \usage{
-cleanup_fmalloc()
+cleanup_fmalloc(runtime = NULL)
+}
+\arguments{
+\item{runtime}{Optional runtime handle returned by \code{\link[=open_fmalloc]{open_fmalloc()}}. If not
+supplied, the current default runtime is cleaned up.}
 }
 \value{
 NULL (invisibly)
 }
 \description{
-Cleans up the fmalloc allocator and releases resources.
-Call this when you're done using fmalloc-based allocation.
+Requests cleanup of an fmalloc runtime. If vectors allocated from the runtime
+are still reachable, the native mapping is kept alive until those vectors are
+garbage-collected.
 }
 \examples{
 \dontrun{
 init_fmalloc("data.bin")
 v <- create_fmalloc_vector("integer", 100)
-# ... use vector ...
+rm(v)
+gc()
 cleanup_fmalloc()
 }
 

@@ -1,0 +1,17 @@
+^\.github$
+^\.vscode$
+^\.lintr$
+^\.git$
+^\.gitignore$
+^Makefile$
+^cleanup$
+^cleanup\.win$
+^src/.*\.o$
+^src/.*\.so$
+^src/symbols\.rds$
+^inst/fmalloc/.*\.o$
+^inst/fmalloc/libfmalloc\.a$
+^inst/fmalloc/libfmalloc\.so$
+^inst/fmalloc/examples/
+^.*\.Rcheck$
+^.*\.tar\.gz$

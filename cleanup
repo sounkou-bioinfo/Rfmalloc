@@ -13,7 +13,8 @@ if [ -d "inst/fmalloc" ]; then
     cd ../.. || exit 1
 fi
 
-# Clean up any temporary files
+# Clean up generated and temporary files
+rm -f src/Makevars
 rm -f src/*.o src/*.so
 rm -f config.log config.status
 

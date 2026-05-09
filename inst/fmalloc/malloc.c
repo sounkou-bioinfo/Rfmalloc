@@ -543,7 +543,7 @@ MAX_RELEASE_CHECK_RATE   default: 255 unless not HAVE_MMAP
 #define FOOTERS 0
 #endif  /* FOOTERS */
 #ifndef ABORT
-#define ABORT  abort()
+#define ABORT  do { } while (0)
 #endif  /* ABORT */
 #ifndef ABORT_ON_ASSERT_FAILURE
 #define ABORT_ON_ASSERT_FAILURE 1
@@ -1233,7 +1233,12 @@ int mspace_mallopt(int, int);
 #pragma warning( disable : 4146 ) /* no "unsigned" warnings */
 #endif /* WIN32 */
 
-#include <stdio.h>       /* for printing in malloc_stats */
+#include <stdio.h>       /* for formatting malloc_stats */
+#ifdef __cplusplus
+extern "C" void fmalloc_report_error(const char *fmt, ...);
+#else
+void fmalloc_report_error(const char *fmt, ...);
+#endif
 
 #ifndef LACKS_ERRNO_H
 #include <errno.h>       /* for MALLOC_FAILURE_ACTION */
@@ -3255,9 +3260,8 @@ static void internal_malloc_stats(mstate m) {
       }
     }
 
-    fprintf(stderr, "max system bytes = %10lu\n", (unsigned long)(maxfp));
-    fprintf(stderr, "system bytes     = %10lu\n", (unsigned long)(fp));
-    fprintf(stderr, "in use bytes     = %10lu\n", (unsigned long)(used));
+    fmalloc_report_error("max system bytes = %10lu; system bytes = %10lu; in use bytes = %10lu",
+                         (unsigned long)(maxfp), (unsigned long)(fp), (unsigned long)(used));
 
     POSTACTION(m);
   }

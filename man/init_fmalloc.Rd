@@ -7,33 +7,31 @@
 init_fmalloc(filepath, size_gb = NULL)
 }
 \arguments{
-\item{filepath}{Character string specifying the file path for fmalloc data}
+\item{filepath}{Character string specifying the file path for fmalloc data.}
 
-\item{size_gb}{Numeric value specifying the size of the backing file in GB (optional)
-If not specified, uses default size or existing file size}
+\item{size_gb}{Numeric value specifying the size of the backing file in GB
+(optional). If not specified, uses the package default size for new files
+or the existing file size.}
 }
 \value{
-Logical indicating whether the file was newly initialized
+Logical indicating whether the file was newly initialized.
 }
 \description{
-Initializes the fmalloc memory allocator with a backing file.
-This must be called before using fmalloc-based allocation functions.
-fmalloc supports malloc, free, and realloc patterns for persistent
-memory allocation backed by memory-mapped files.
+Compatibility wrapper that opens an fmalloc runtime and installs it as the
+package default runtime used by \code{\link[=create_fmalloc_vector]{create_fmalloc_vector()}} when no explicit
+runtime is supplied.
+}
+\details{
+For new code, prefer \code{\link[=open_fmalloc]{open_fmalloc()}} and pass the returned runtime handle to
+\code{\link[=create_fmalloc_vector]{create_fmalloc_vector()}}.
 }
 \examples{
 \dontrun{
-# Initialize fmalloc with default size
-init_result <- init_fmalloc("fmalloc_data.bin")
-
-# Initialize fmalloc with specific size (50 GB)
-init_result <- init_fmalloc("large_data.bin", size_gb = 50)
-
-# Create vectors using fmalloc (supports realloc patterns)
+alloc_file <- tempfile(fileext = ".bin")
+init_fmalloc(alloc_file)
 v <- create_fmalloc_vector("integer", 1000)
-
-# Clean up
 cleanup_fmalloc()
+unlink(alloc_file)
 }
 
 }

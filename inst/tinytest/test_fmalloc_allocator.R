@@ -1,4 +1,4 @@
-# Test fmalloc allocator functionality
+# Test fmalloc ALTREP vector functionality
 
 library(tinytest)
 library(Rfmalloc)
@@ -6,7 +6,7 @@ library(Rfmalloc)
 # Test fmalloc initialization and cleanup
 test_file <- tempfile(fileext = ".bin")
 
-cat("Testing fmalloc allocator functionality...\n")
+cat("Testing fmalloc ALTREP vector functionality...\n")
 
 # Test error conditions first (these should work without fmalloc initialization)
 expect_error(create_fmalloc_vector("integer", 50), "fmalloc not initialized")
@@ -56,6 +56,22 @@ tryCatch(
         expect_true(is.logical(v_log))
         expect_equal(length(v_log), 20)
 
+        v_raw <- create_fmalloc_vector("raw", 8)
+        expect_true(is.raw(v_raw))
+        expect_equal(length(v_raw), 8)
+
+        v_cplx <- create_fmalloc_vector("complex", 6)
+        expect_true(is.complex(v_cplx))
+        expect_equal(length(v_cplx), 6)
+
+        v_chr <- create_fmalloc_vector("character", 4)
+        expect_true(is.character(v_chr))
+        expect_equal(length(v_chr), 4)
+
+        v_lst <- create_fmalloc_vector("list", 3)
+        expect_true(is.list(v_lst))
+        expect_equal(length(v_lst), 3)
+
         # Test setting values
         v_int[1:10] <- 1:10
         expect_equal(v_int[1:10], 1:10)
@@ -66,14 +82,34 @@ tryCatch(
         v_log[1:3] <- c(TRUE, FALSE, TRUE)
         expect_equal(v_log[1:3], c(TRUE, FALSE, TRUE))
 
+        v_raw[] <- as.raw(1:8)
+        expect_equal(v_raw, as.raw(1:8))
+
+        v_cplx[] <- c(1+1i, 2+2i, 3+3i, 4+4i, 5+5i, 6+6i)
+        expect_equal(v_cplx[1:3], c(1+1i, 2+2i, 3+3i))
+
+        v_chr[] <- c("a", "b", "c", "d")
+        expect_equal(v_chr, c("a", "b", "c", "d"))
+
+        v_lst[[1]] <- 1:2
+        v_lst[[2]] <- data.frame(x = 1)
+        expect_equal(v_lst[[1]], 1:2)
+        expect_equal(v_lst[[2]]$x, 1)
+
+        v_dup <- v_chr
+        v_dup[1] <- "z"
+        expect_equal(v_chr[1], "a")
+        expect_equal(v_dup[1], "z")
+        expect_true(.Call("is_fmalloc_altrep_impl", v_dup, PACKAGE = "Rfmalloc"))
+
         # Clean up vectors
-        rm(v_zero, v_int, v_num, v_log)
+        rm(v_zero, v_int, v_num, v_log, v_raw, v_cplx, v_chr, v_lst, v_dup)
         gc()
 
         # Test cleanup
         cleanup_fmalloc()
 
-        cat("fmalloc allocator tests passed!\n")
+        cat("fmalloc ALTREP vector tests passed!\n")
     },
     error = function(e) {
         cat("fmalloc tests skipped due to error:", e$message, "\n")

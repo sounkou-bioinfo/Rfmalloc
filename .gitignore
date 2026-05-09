@@ -65,3 +65,5 @@ src/symbols.rds
 *RBCFLib_*tar.gz
 RBCFLib.Rcheck
 **libbcftools.a
+inst/fmalloc/libfmalloc.a
+inst/fmalloc/libfmalloc.so

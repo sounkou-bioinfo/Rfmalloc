@@ -334,7 +334,7 @@ arena_get2(struct malloc_arena* a_tsd, size_t size)
 static inline void FMALLOC_CALL_MUNMAP(void *mem)
 {
 	if (__malloc_initialized < 0) {
-		fprintf(stderr, "malloc is not initialized, this should not happen\n");
+		fmalloc_report_error("malloc is not initialized");
 		return;
 	}
 	(void) fmalloc_munmap(mem, fmalloc_chunk_size);
@@ -343,7 +343,7 @@ static inline void FMALLOC_CALL_MUNMAP(void *mem)
 static inline void *FMALLOC_CALL_MMAP(void)
 {
 	if (__malloc_initialized < 0) {
-		fprintf(stderr, "malloc is not initialized, this should not happen\n");
+		fmalloc_report_error("malloc is not initialized");
 		return MAP_FAILED;
 	}
 	return fmalloc_mmap(fmalloc_chunk_size);
@@ -693,8 +693,8 @@ ptmalloc_init(void)
                                      0);
     assert(mspace == arena_to_mspace(&main_arena));
     if (mspace != arena_to_mspace(&main_arena)) {
-      fprintf(stderr, "invalid mspace creation\n");
-      exit(1);
+      fmalloc_report_error("invalid mspace creation");
+      return;
     }
   } else
     init_mparams();
@@ -1124,8 +1124,8 @@ public_mSTATs(void)
   for (i=0, ar_ptr = &main_arena;; ++i) {
     struct malloc_state* msp = (struct malloc_state *) arena_to_mspace(ar_ptr);
 
-    fprintf(stderr, "Arena %d:\n", i);
-    mspace_malloc_stats(msp);
+    (void)i;
+    (void)msp;
 #if THREAD_STATS
     stat_lock_direct += ar_ptr->stat_lock_direct;
     stat_lock_loop += ar_ptr->stat_lock_loop;
@@ -1134,8 +1134,7 @@ public_mSTATs(void)
     if (MALLOC_DEBUG > 1) {
       struct malloc_segment* mseg = &msp->seg;
       while (mseg) {
-	fprintf(stderr, " seg %08lx-%08lx\n", (unsigned long)mseg->base,
-		(unsigned long)(mseg->base + mseg->size));
+	(void)mseg;
 	mseg = mseg->next;
       }
     }
@@ -1144,13 +1143,9 @@ public_mSTATs(void)
       break;
   }
 #if THREAD_STATS
-  fprintf(stderr, "locked directly  = %10ld\n", stat_lock_direct);
-  fprintf(stderr, "locked in loop   = %10ld\n", stat_lock_loop);
-  fprintf(stderr, "locked waiting   = %10ld\n", stat_lock_wait);
-  fprintf(stderr, "locked total     = %10ld\n",
-          stat_lock_direct + stat_lock_loop + stat_lock_wait);
-  if (main_arena.stat_starter > 0)
-    fprintf(stderr, "starter hooks    = %10ld\n", main_arena.stat_starter);
+  (void)stat_lock_direct;
+  (void)stat_lock_loop;
+  (void)stat_lock_wait;
 #endif
 }
 
@@ -1166,8 +1161,8 @@ static void init_main_arena_for_current_mapping(void)
                                      0);
     assert(mspace == arena_to_mspace(&main_arena));
     if (mspace != arena_to_mspace(&main_arena)) {
-      fprintf(stderr, "invalid mspace creation\n");
-      exit(1);
+      fmalloc_report_error("invalid mspace creation");
+      return;
     }
     main_arena.__malloc_initialized = 1;
   } else {

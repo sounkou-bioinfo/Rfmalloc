@@ -4,37 +4,35 @@
 \alias{create_fmalloc_vector}
 \title{Create Vector Using fmalloc}
 \usage{
-create_fmalloc_vector(type = "integer", length)
+create_fmalloc_vector(type = "integer", length, runtime = NULL)
 }
 \arguments{
-\item{type}{Character string specifying the vector type ("integer", "numeric", "logical")}
+\item{type}{Character string specifying the vector type. Supported values are
+\code{"logical"}, \code{"integer"}, \code{"numeric"}/\code{"double"}, \code{"raw"},
+\code{"complex"}, \code{"character"}, and \code{"list"}. Fixed-width atomic types
+expose a direct writable fmalloc \code{DATAPTR}; character and list vectors use
+ALTREP element access with an R-visible reference sidecar for GC safety.}
 
-\item{length}{Integer specifying the non-negative length of the vector to create}
+\item{length}{Integer specifying the non-negative length of the vector to
+create.}
+
+\item{runtime}{Optional runtime handle returned by \code{\link[=open_fmalloc]{open_fmalloc()}}. If not
+supplied, the default runtime established by \code{\link[=init_fmalloc]{init_fmalloc()}} is used.}
 }
 \value{
-A vector of the specified type and length, allocated using fmalloc
+A vector of the specified type and length, allocated using fmalloc.
 }
 \description{
-Creates a vector using the fmalloc allocator with realloc support.
-The fmalloc system must be initialized first using \code{init_fmalloc()}.
-The underlying allocator supports malloc, free, and realloc patterns
-for efficient memory management backed by memory-mapped files.
+Creates an ALTREP vector using a file-backed fmalloc runtime. The returned
+object is ALTREP from creation time. Fixed-width atomic payload bytes are
+allocated directly with fmalloc, and ALTREP duplication keeps copy-on-write
+copies fmalloc-backed without using R's non-API \code{Rf_allocVector3()} path.
 }
 \examples{
 \dontrun{
-# Initialize fmalloc first
-init_fmalloc("fmalloc_data.bin")
-
-# Create vectors with realloc support
-v1 <- create_fmalloc_vector("integer", 1000)
-v2 <- create_fmalloc_vector("numeric", 500)
-
-# Use the vectors normally - R will handle realloc internally
-v1[1:10] <- 1:10
-v2[1:5] <- runif(5)
-
-# Clean up
-cleanup_fmalloc()
+rt <- open_fmalloc(tempfile(fileext = ".bin"))
+v <- create_fmalloc_vector("integer", 1000, runtime = rt)
+cleanup_fmalloc(rt)
 }
 
 }

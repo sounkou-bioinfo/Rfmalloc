@@ -3,4 +3,5 @@
 export(cleanup_fmalloc)
 export(create_fmalloc_vector)
 export(init_fmalloc)
+export(open_fmalloc)
 useDynLib(Rfmalloc, .registration=TRUE)

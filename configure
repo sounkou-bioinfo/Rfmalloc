@@ -115,8 +115,6 @@ PKG_CPPFLAGS = -I../inst/fmalloc -DHAVE_CONFIG_H
 # Linker flags - include pthread and the fmalloc library
 PKG_LIBS = -L../inst/fmalloc ../inst/fmalloc/libfmalloc.a -lpthread
 
-# Additional flags for position independent code
-PKG_CXXFLAGS = -fPIC
 EOF
 
 # Create Makevars.win for Windows
