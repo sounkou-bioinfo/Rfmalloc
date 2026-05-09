@@ -4,7 +4,7 @@
 \alias{init_fmalloc}
 \title{Initialize fmalloc}
 \usage{
-init_fmalloc(filepath, size_gb = NULL)
+init_fmalloc(filepath, size_gb = NULL, mode = c("persistent", "scratch"))
 }
 \arguments{
 \item{filepath}{Character string specifying the file path for fmalloc data.}
@@ -12,6 +12,11 @@ init_fmalloc(filepath, size_gb = NULL)
 \item{size_gb}{Numeric value specifying the size of the backing file in GB
 (optional). If not specified, uses the package default size for new files
 or the existing file size.}
+
+\item{mode}{Runtime mode. \code{"persistent"} keeps committed vector payloads in
+the backing file and serializes fixed-width atomic vectors by reference.
+\code{"scratch"} uses the backing file as a large temporary allocation arena and
+serializes vectors by value.}
 }
 \value{
 Logical indicating whether the file was newly initialized.

@@ -20,9 +20,9 @@ file-backed R vector storage without routing large allocations back through the
 process heap.
 
 The current package exposes ALTREP vectors whose fixed-width atomic payloads are
-allocated directly from fmalloc. This keeps the implementation on R's documented
-C/ALTREP surface instead of relying on the non-API `Rf_allocVector3()` vector
-allocator hook.
+allocated directly from fmalloc. This uses the ALTREP C entry points available in
+R's installed headers instead of relying on the non-API `Rf_allocVector3()`
+vector allocator hook.
 
 ## Current Status
 
@@ -39,18 +39,28 @@ Implemented now:
 - reopening backing files created by the current allocator format;
 - explicit runtime handles, so multiple fmalloc runtimes can be open in one R
   process;
+- explicit runtime modes: `persistent` keeps committed vector payloads in the
+  file, while `scratch` returns payloads to fmalloc when ALTREP handles are
+  garbage-collected;
+- persistent ALTREP serialization for fixed-width atomic and character vectors
+  using physical allocation metadata: path, file UUID, type, length, payload
+  offset, and byte size;
+- ALTREP `Coerce` for supported fmalloc-backed target types, so coercions such
+  as `as.numeric(x)` and `as.character(x)` allocate their result in the same
+  fmalloc runtime;
 - native lifetime tracking from ALTREP vector handles to runtime mappings, so a
   runtime mapping is not destroyed while vectors allocated from it are still
   reachable.
 
 Still experimental / future work:
 
-- ALTREP `Extract_subset` and `Coerce` methods for operations such as `x[i]`
-  and `as.numeric(x)` when their results should remain fmalloc-backed; today
-  those operations may return ordinary R heap vectors;
-- richer persistence semantics and metadata;
-- richer persistence semantics for pointer-containing R types; character and
-  list vectors are session-local because their elements are R object pointers;
+- ALTREP `Extract_subset` methods for operations such as `x[i]` when their
+  results should remain fmalloc-backed; today those operations may return
+  ordinary R heap vectors;
+- a real allocation catalog for listing and validating persistent allocations;
+- richer persistence semantics for pointer-containing R types; list vectors are
+  session-local containers, although their fmalloc-vector elements can serialize
+  through their own persistent references;
 - stronger mapped-file lifecycle behavior: clearer close semantics, recovery from
   interrupted sessions, stale backing-file diagnostics, and platform-specific
   mapping edge cases.
@@ -85,7 +95,7 @@ v_int[1:3] <- c(1L, 2L, 3L)
 v_num[1:3] <- c(1.1, 2.2, 3.3)
 v_raw[] <- as.raw(1:4)
 v_cplx[] <- c(1+1i, 2+2i, 3+3i, 4+4i)
-v_chr[] <- c("a", "b", "c")
+v_chr[] <- c("alpha", "beta", NA_character_)
 v_lst[[1]] <- data.frame(x = 1:2)
 
 v_int[1:3]
@@ -148,6 +158,90 @@ cleanup_fmalloc()
 unlink(large_file)
 ```
 
+## Runtime Modes
+
+`open_fmalloc()` and `init_fmalloc()` accept `mode = "persistent"` or
+`mode = "scratch"`. The default is `"persistent"`.
+
+- In persistent mode, committed vector payloads are not returned to fmalloc by
+  vector finalizers. Fixed-width atomic vectors serialize by reference to the
+  physical allocation in the backing file.
+- In scratch mode, the backing file is a temporary allocation arena. Vector
+  finalizers may return payloads to fmalloc, and serialization falls back to
+  ordinary R values.
+
+```{r}
+library(Rfmalloc)
+
+persist_file <- tempfile(fileext = ".bin")
+rt <- open_fmalloc(persist_file, mode = "persistent")
+
+x <- create_fmalloc_vector("integer", 5, runtime = rt)
+x[] <- 1:5
+roundtrip <- unserialize(serialize(x, NULL))
+roundtrip[]
+
+rm(x, roundtrip)
+gc()
+cleanup_fmalloc(rt)
+unlink(persist_file)
+```
+
+## Inspecting fmalloc ALTREP Metadata
+
+R's internal inspector dispatches to the ALTREP `Inspect` hook. Rfmalloc's
+inspector reports the vector type, length, payload byte count, runtime mode,
+runtime state, payload offset, file UUID, and backing-file path.
+
+```{r}
+library(Rfmalloc)
+
+inspect_file <- tempfile(fileext = ".bin")
+rt <- open_fmalloc(inspect_file, mode = "persistent")
+
+inspect_vec <- create_fmalloc_vector("integer", 4, runtime = rt)
+inspect_vec[] <- 1:4
+.Internal(inspect(inspect_vec))
+
+rm(inspect_vec)
+gc()
+cleanup_fmalloc(rt)
+unlink(inspect_file)
+```
+
+`inspect()` output is an internal R diagnostic, so exact formatting can vary
+between R versions. The `fmalloc_altrep ...` line comes from Rfmalloc's ALTREP
+`Inspect` method.
+
+## Character Vectors
+
+Rfmalloc character vectors are ALTSTRING vectors. They do not allocate R
+`CHARSXP` objects inside fmalloc. R's current sources keep `CHARSXP` allocation
+on internal string-cache paths, and `allocVector3()` is explicitly not a public
+API. Instead, Rfmalloc stores string bytes, lengths, encodings, and NA flags in
+fmalloc allocations. `STRING_ELT()` materializes an ordinary R `CHARSXP` with
+`mkCharLenCE()` when R asks for an element.
+
+```{r}
+library(Rfmalloc)
+
+char_file <- tempfile(fileext = ".bin")
+rt <- open_fmalloc(char_file, mode = "persistent")
+
+chars <- create_fmalloc_vector("character", 3, runtime = rt)
+chars[] <- c("one", NA_character_, "three")
+chars[]
+
+from_int <- create_fmalloc_vector("integer", 3, runtime = rt)
+from_int[] <- 1:3
+as.character(from_int)[]
+
+rm(chars, from_int)
+gc()
+cleanup_fmalloc(rt)
+unlink(char_file)
+```
+
 ## Multiple Runtimes and Lifetime
 
 Runtime handles make it possible to use more than one backing file in the same R
@@ -190,41 +284,43 @@ garbage-collected. This is implemented with a native live-vector count and an
 ALTREP-held external pointer for each fmalloc-backed vector; no user-visible
 attribute is added to the vector.
 
-## Reopening Is Not Vector Recovery Yet
+## Reopening and Persistent References
 
-A backing file can be reopened, but this currently reopens only the allocator
-state. We are **not** getting the R vector object back yet. The package does not
-currently store a root table such as `(name, type, length, offset)`, so an
-ALTREP vector cannot yet be safely reconstructed after it has been dropped by
-R's garbage collector.
+A backing file can be reopened. Persistent-mode fixed-width atomic and character
+ALTREP vectors can also be serialized by reference: the serialized state stores
+the backing path, file UUID, type, length, payload offset, and byte size. During
+unserialization, Rfmalloc reopens the file, verifies the UUID, and reconstructs
+an ALTREP around the same allocation.
 
 ```{r}
 library(Rfmalloc)
 
 reopen_file <- tempfile(fileext = ".bin")
 
-first_init <- init_fmalloc(reopen_file)
-first_vec <- create_fmalloc_vector("integer", 100)
+rt <- open_fmalloc(reopen_file, mode = "persistent")
+first_vec <- create_fmalloc_vector("integer", 100, runtime = rt)
 first_vec[1:3] <- 1:3
-first_init
-first_vec[1:3]
+blob <- serialize(first_vec, NULL)
 
 rm(first_vec)
 gc()
-cleanup_fmalloc()
+cleanup_fmalloc(rt)
+rm(rt)
+gc()
 
-second_init <- init_fmalloc(reopen_file)
-second_init
-exists("first_vec")
+recovered <- unserialize(blob)
+recovered[1:3]
+typeof(recovered)
 
-cleanup_fmalloc()
+rm(recovered)
+gc()
 unlink(reopen_file)
 ```
 
-The `FALSE` from `second_init` tells us the file already contained current
-fmalloc allocator metadata. It does **not** mean `first_vec` was recovered. Real
-object recovery needs a higher-level object catalog and likely an ALTREP vector
-constructor that can recreate an R vector from `(file, offset, type, length)`.
+This is reference-based recovery, not name-based object discovery. Rfmalloc does
+not yet keep a complete in-file object catalog that can list all allocations or
+recover dropped vectors by user names. The serialized reference itself is the
+locator for now.
 
 ## Watching ALTREP-Controlled Duplication with `lobstr`
 
@@ -272,9 +368,10 @@ duplicate is handled by Rfmalloc's ALTREP `Duplicate` method, not by R's ordinar
 
 `lobstr::obj_addr()` shows the R object header address, not necessarily the data
 payload pointer. The payload pointer returned by `DATAPTR()` is a real writable
-pointer into the fmalloc mapping for fixed-width atomic types. Character and list
-vectors use ALTREP string/list element methods plus an R-visible sidecar so the
-GC can see referenced R objects.
+pointer into the fmalloc mapping for fixed-width atomic types. Character vectors
+store string bytes in fmalloc and materialize ordinary R `CHARSXP` values on
+`STRING_ELT()` access. List vectors use ALTREP list element methods plus an
+R-visible sidecar so the GC can see referenced R objects.
 
 ## Why ALTREP Is Required for Copy-on-Write Control
 
@@ -283,11 +380,17 @@ ordinary duplication path. R saves enough allocator state to free those objects,
 but ordinary vector duplication does not consult a per-object allocator copy
 callback, and the `R_allocator_t::res` field is reserved.
 
-Rfmalloc therefore constructs ALTREP vectors from the beginning. ALTREP gives the
-package a supported `Duplicate` method, so copy-on-write can create another
+Rfmalloc therefore constructs ALTREP vectors from the beginning. The ALTREP C
+header declares a `Duplicate` method slot, so copy-on-write can create another
 fmalloc-backed vector instead of falling back to R's ordinary heap allocator.
 For all current vector constructors, this also means Rfmalloc no longer needs
 the non-API `Rf_allocVector3()` path.
+
+The public ALTREP header used by the installed R on this system exposes
+`Get_region` hooks for atomic vector reads and `Set_elt` hooks for strings and
+lists, but not an atomic `Set_region` hook. Atomic writes therefore go through
+R's normal writable `DATAPTR()` path; internal bulk copies use the direct
+fmalloc payload pointer.
 
 ## References
 

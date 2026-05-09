@@ -1,8 +1,9 @@
 Package: Rfmalloc
 Title: Memory-Mapped File Allocation for R
 Version: 0.1.0
-Authors@R: 
-    person(given = "Sounkou Mahamane", family = "Toure", email = "sounkoutoure@gmail.com", role = c("aut", "cre"))
+Authors@R: person(given = "Sounkou Mahamane", family = "Toure", email = "sounkoutoure@gmail.com", role = c("aut", "cre"))
+Author: Sounkou Mahamane Toure [aut, cre]
+Maintainer: Sounkou Mahamane Toure <sounkoutoure@gmail.com>
 Description: Provides experimental memory-mapped file allocation capabilities for R using
     the 'fmalloc' library. The package exposes ALTREP, file-backed vector
     allocation for logical, integer, numeric, raw, complex, character, and list

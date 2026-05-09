@@ -9,8 +9,9 @@ create_fmalloc_vector(type = "integer", length, runtime = NULL)
 \arguments{
 \item{type}{Character string specifying the vector type. Supported values are
 \code{"logical"}, \code{"integer"}, \code{"numeric"}/\code{"double"}, \code{"raw"},
-\code{"complex"}, \code{"character"}, and \code{"list"}. Fixed-width atomic types
-expose a direct writable fmalloc \code{DATAPTR}; character and list vectors use
+\code{"complex"}, \code{"character"}, and \code{"list"}. Fixed-width atomic types expose
+a direct writable fmalloc \code{DATAPTR}; character vectors store string bytes in
+fmalloc and materialize R \code{CHARSXP} values on demand; list vectors use
 ALTREP element access with an R-visible reference sidecar for GC safety.}
 
 \item{length}{Integer specifying the non-negative length of the vector to

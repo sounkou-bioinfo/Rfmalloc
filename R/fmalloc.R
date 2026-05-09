@@ -5,19 +5,24 @@
 #' Open an fmalloc Runtime
 #'
 #' Opens a file-backed fmalloc runtime and returns an external-pointer handle.
-#' Multiple runtime handles may be open in one R process. Vectors created with a
-#' handle keep that handle alive through a weak reference until the vector is
+#' Multiple runtime handles may be open in one R process. Runtime mode controls
+#' whether vector payloads are durable persistent allocations or scratch
+#' allocations that can be returned to fmalloc when their ALTREP handles are
 #' garbage-collected.
 #'
 #' @param filepath Character string specifying the file path for fmalloc data.
 #' @param size_gb Numeric value specifying the size of the backing file in GB
 #'   (optional). If not specified, uses the package default size for new files
 #'   or the existing file size.
+#' @param mode Runtime mode. `"persistent"` keeps committed vector payloads in
+#'   the backing file and serializes fixed-width atomic vectors by reference.
+#'   `"scratch"` uses the backing file as a large temporary allocation arena and
+#'   serializes vectors by value.
 #'
 #' @return An external pointer of class `fmalloc_runtime`.
 #'
 #' @export
-open_fmalloc <- function(filepath, size_gb = NULL) {
+open_fmalloc <- function(filepath, size_gb = NULL, mode = c("persistent", "scratch")) {
     if (!is.character(filepath) || length(filepath) != 1) {
         stop("filepath must be a single character string")
     }
@@ -27,8 +32,9 @@ open_fmalloc <- function(filepath, size_gb = NULL) {
             stop("size_gb must be a positive numeric value")
         }
     }
+    mode <- match.arg(mode)
 
-    .Call("open_fmalloc_impl", filepath, size_gb)
+    .Call("open_fmalloc_impl", filepath, size_gb, mode)
 }
 
 #' Initialize fmalloc
@@ -54,8 +60,9 @@ open_fmalloc <- function(filepath, size_gb = NULL) {
 #' }
 #'
 #' @export
-init_fmalloc <- function(filepath, size_gb = NULL) {
-    rt <- open_fmalloc(filepath, size_gb)
+init_fmalloc <- function(filepath, size_gb = NULL, mode = c("persistent", "scratch")) {
+    mode <- match.arg(mode)
+    rt <- open_fmalloc(filepath, size_gb, mode = mode)
 
     old_rt <- .fmalloc_state$default_runtime
     if (!is.null(old_rt)) {
@@ -76,8 +83,9 @@ init_fmalloc <- function(filepath, size_gb = NULL) {
 #'
 #' @param type Character string specifying the vector type. Supported values are
 #'   `"logical"`, `"integer"`, `"numeric"`/`"double"`, `"raw"`,
-#'   `"complex"`, `"character"`, and `"list"`. Fixed-width atomic types
-#'   expose a direct writable fmalloc `DATAPTR`; character and list vectors use
+#'   `"complex"`, `"character"`, and `"list"`. Fixed-width atomic types expose
+#'   a direct writable fmalloc `DATAPTR`; character vectors store string bytes in
+#'   fmalloc and materialize R `CHARSXP` values on demand; list vectors use
 #'   ALTREP element access with an R-visible reference sidecar for GC safety.
 #' @param length Integer specifying the non-negative length of the vector to
 #'   create.

@@ -4,7 +4,7 @@
 \alias{open_fmalloc}
 \title{Open an fmalloc Runtime}
 \usage{
-open_fmalloc(filepath, size_gb = NULL)
+open_fmalloc(filepath, size_gb = NULL, mode = c("persistent", "scratch"))
 }
 \arguments{
 \item{filepath}{Character string specifying the file path for fmalloc data.}
@@ -12,13 +12,19 @@ open_fmalloc(filepath, size_gb = NULL)
 \item{size_gb}{Numeric value specifying the size of the backing file in GB
 (optional). If not specified, uses the package default size for new files
 or the existing file size.}
+
+\item{mode}{Runtime mode. \code{"persistent"} keeps committed vector payloads in
+the backing file and serializes fixed-width atomic vectors by reference.
+\code{"scratch"} uses the backing file as a large temporary allocation arena and
+serializes vectors by value.}
 }
 \value{
 An external pointer of class \code{fmalloc_runtime}.
 }
 \description{
 Opens a file-backed fmalloc runtime and returns an external-pointer handle.
-Multiple runtime handles may be open in one R process. Vectors created with a
-handle keep that handle alive through a weak reference until the vector is
+Multiple runtime handles may be open in one R process. Runtime mode controls
+whether vector payloads are durable persistent allocations or scratch
+allocations that can be returned to fmalloc when their ALTREP handles are
 garbage-collected.
 }
