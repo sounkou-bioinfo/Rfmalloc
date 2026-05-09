@@ -5,68 +5,36 @@
 [![R-CMD-check](https://github.com/sounkou-bioinfo/Rfmalloc/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/sounkou-bioinfo/Rfmalloc/actions/workflows/R-CMD-check.yaml)
 <!-- badges: end -->
 
-Rfmalloc is an experimental R package for allocating vector storage from
-a memory-mapped backing file using a patched copy of
-[fmalloc](https://github.com/yasukata/fmalloc). The goal is to explore
-large, file-backed R vector storage without routing large allocations
-back through the process heap.
+Rfmalloc is an experimental R package for file-backed R vectors using a
+patched copy of [fmalloc](https://github.com/yasukata/fmalloc). The
+current R-facing vector API creates fmalloc-backed ALTREP vectors for
+atomic, character, and list storage.
 
-The current package exposes ALTREP vectors whose fixed-width atomic
-payloads and character-vector string storage are allocated directly from
-fmalloc. This uses the ALTREP C entry points available in R’s installed
-headers instead of relying on the non-API `Rf_allocVector3()` vector
-allocator hook.
+Earlier prototypes explored R’s custom allocator / `Rf_allocVector3()`
+path. The package has moved to direct ALTREP vectors for the public
+vector API. The patched fmalloc `malloc`/`free`/`realloc` layer is still
+built and installed for native consumers that use the C API or link
+against the bundled library.
 
 ## Current Status
 
-Recent allocator work fixed the stress-path that previously fell back
-into ptmalloc/dlmalloc’s system `mmap()` path for large requests. Large
-allocations are now carved from contiguous runs in the fmalloc backing
-file instead.
-
 Implemented now:
 
-- ALTREP file-backed allocation for logical, integer, numeric, raw,
-  complex, character, and list vectors;
-- large allocations spanning multiple fmalloc chunks;
-- `malloc`, `free`, and `realloc` support through the patched fmalloc
-  layer;
-- reopening backing files created by the current allocator format;
-- explicit runtime handles, so multiple fmalloc runtimes can be open in
-  one R process;
-- explicit runtime modes: `persistent` keeps committed vector payloads
-  in the file, while `scratch` returns payloads to fmalloc when ALTREP
-  handles are garbage-collected;
-- persistent ALTREP serialization for fixed-width atomic and character
-  vectors using physical allocation metadata: path, file UUID, type,
-  length, payload offset, and byte size;
-- ALTREP `Coerce` for supported fmalloc-backed target types, so
-  coercions such as `as.numeric(x)` and `as.character(x)` allocate their
-  result in the same fmalloc runtime;
-- ALTREP `Extract_subset` for vector indexing operations such as `x[i]`,
-  returning fmalloc-backed copy results;
-- an in-file persistent allocation catalog with record offsets,
-  generations, types, lengths, payload offsets, byte sizes, states, and
-  flags;
-- an installed C header plus `R_RegisterCCallable()` entry points for
-  other R packages that want to open runtimes and create fmalloc-backed
-  ALTREP vectors;
-- native lifetime tracking from ALTREP vector handles to runtime
-  mappings, so a runtime mapping is not destroyed while vectors
-  allocated from it are still reachable.
+- fmalloc-backed ALTREP vectors for logical, integer, numeric, raw,
+  complex, character, and list values;
+- explicit runtime handles and `persistent` / `scratch` runtime modes;
+- persistent serialization and reopening for fixed-width atomic and
+  character vectors;
+- fmalloc-backed coercion and subset-copy results for supported vector
+  types;
+- an in-file persistent allocation catalog used to validate serialized
+  references;
+- an installed C header and `R_RegisterCCallable()` API for other
+  packages.
 
-Still experimental / future work:
-
-- view-based ALTREP subsets for simple contiguous or strided indexing
-  patterns;
-- richer catalog tooling, including compaction/reset and stale-record
-  diagnostics;
-- richer persistence semantics for pointer-containing R types; list
-  vectors are session-local containers, although their fmalloc-vector
-  elements can serialize through their own persistent references;
-- stronger mapped-file lifecycle behavior: clearer close semantics,
-  recovery from interrupted sessions, stale backing-file diagnostics,
-  and platform-specific mapping edge cases.
+Still experimental: view-based subsets, richer catalog maintenance
+tooling, persistent list recovery semantics, and mapped-file recovery
+diagnostics.
 
 ## Installation
 
@@ -119,7 +87,7 @@ local({
   )
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpmRjboY/file751407d8b3008.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a29f6510d.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> $integer
@@ -162,16 +130,13 @@ local({
   v[1:3]
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpmRjboY/file75140504d3cf4.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a69783054.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> [1] 10 11 12
 ```
 
 ## Larger Allocation Example
-
-This is the kind of stress case the package is meant for: it creates a 5
-GB backing file and allocates about 4 GB of integer payload.
 
 ``` r
 library(Rfmalloc)
@@ -184,12 +149,8 @@ local({
     unlink(large_file)
   }, add = TRUE)
 
-  # 1 billion integers = about 4 GB of payload, backed by fmalloc.
-  # Keep creation and initialization in one local expression so README rendering
-  # does not keep an extra transient reference that would force a second 4 GB COW
-  # duplicate during `[<-`.
   big_int <- local({
-    x <- create_fmalloc_vector("integer", 1e9)
+    x <- create_fmalloc_vector("integer", 1e9) # about 4 GB of payload
     x[1:5] <- 1:5
     x
   })
@@ -197,7 +158,7 @@ local({
 })
 #> Requested file size: 5.00 GB (5368709120 bytes)
 #> Creating file with size: 5368709120 bytes (5.00 GB)
-#> fmalloc initialized with file: /tmp/RtmpmRjboY/file751405fd9e31f.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a22392348.bin (init: true, mode: persistent)
 #> Creating fmalloc ALTREP vector: type=integer, length=1000000000
 #> Large allocation: 3814.70 MB requested
 #> SUCCESS: fmalloc allocated 4000000000 bytes
@@ -236,9 +197,9 @@ local({
   roundtrip[]
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpmRjboY/file7514029c30c80.bin (init: true, mode: persistent)
-#> Using existing file: /tmp/RtmpmRjboY/file7514029c30c80.bin (size: 33562624 bytes)
-#> fmalloc initialized with file: /tmp/RtmpmRjboY/file7514029c30c80.bin (init: false, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a1f6dbdc1.bin (init: true, mode: persistent)
+#> Using existing file: /tmp/RtmpuijWbZ/file7b34a1f6dbdc1.bin (size: 33562624 bytes)
+#> fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a1f6dbdc1.bin (init: false, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> [1] 1 2 3 4 5
@@ -267,8 +228,8 @@ local({
   .Internal(inspect(inspect_vec))
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpmRjboY/file7514030d07d1b.bin (init: true, mode: persistent)
-#> @5a94b8d784e8 13 INTSXP g0c0 [REF(1)] fmalloc_altrep type=integer length=4 bytes=16 data=0x7329e28023e8 mode=persistent runtime=open offset=9192 uuid=ba8179b0a7a0daa2b2cb29f2c498d827 file=/tmp/RtmpmRjboY/file7514030d07d1b.bin
+#> fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a569dbf7b.bin (init: true, mode: persistent)
+#> @5862924f05b8 13 INTSXP g0c0 [REF(1)] fmalloc_altrep type=integer length=4 bytes=16 data=0x7b3bac2023e8 mode=persistent runtime=open offset=9192 uuid=b3a34f02d203379df41c6918d9c79b80 file=/tmp/RtmpuijWbZ/file7b34a569dbf7b.bin
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 ```
@@ -279,13 +240,10 @@ Rfmalloc’s ALTREP `Inspect` method.
 
 ## Character Vectors
 
-Rfmalloc character vectors are ALTSTRING vectors. They do not allocate R
-`CHARSXP` objects inside fmalloc. R’s current sources keep `CHARSXP`
-allocation on internal string-cache paths, and `allocVector3()` is
-explicitly not a public API. Instead, Rfmalloc stores string bytes,
-lengths, encodings, and NA flags in fmalloc allocations. `STRING_ELT()`
-materializes an ordinary R `CHARSXP` with `mkCharLenCE()` when R asks
-for an element.
+Rfmalloc character vectors are ALTSTRING vectors. String bytes, lengths,
+encodings, and NA flags live in fmalloc storage. R `CHARSXP` values are
+materialized on `STRING_ELT()` access; Rfmalloc does not allocate
+`CHARSXP` objects inside fmalloc.
 
 ``` r
 library(Rfmalloc)
@@ -310,7 +268,7 @@ local({
   )
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpmRjboY/file751403b2250b2.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a4c6f234e.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> $chars
@@ -323,9 +281,7 @@ local({
 ## Multiple Runtimes and Lifetime
 
 Runtime handles make it possible to use more than one backing file in
-the same R process. Allocator entry is serialized with native mutexes
-because the current fmalloc/ptmalloc layer still has process-global
-target state internally.
+one R process.
 
 ``` r
 library(Rfmalloc)
@@ -358,10 +314,10 @@ local({
   )
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpmRjboY/file75140529962d1.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a39a21c1a.bin (init: true, mode: persistent)
 #> Requested file size: 0.10 GB (107374182 bytes)
 #> Creating file with size: 107374182 bytes (0.10 GB)
-#> fmalloc initialized with file: /tmp/RtmpmRjboY/file75140564c4f82.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a7c48226f.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> Cleaning up fmalloc...
@@ -432,13 +388,13 @@ local({
   output
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpmRjboY/file75140662f5a3d.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a6b32ad90.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
-#> Using existing file: /tmp/RtmpmRjboY/file75140662f5a3d.bin (size: 33562624 bytes)
-#> fmalloc initialized with file: /tmp/RtmpmRjboY/file75140662f5a3d.bin (init: false, mode: persistent)
-#> Using existing file: /tmp/RtmpmRjboY/file75140662f5a3d.bin (size: 33562624 bytes)
-#> fmalloc initialized with file: /tmp/RtmpmRjboY/file75140662f5a3d.bin (init: false, mode: persistent)
+#> Using existing file: /tmp/RtmpuijWbZ/file7b34a6b32ad90.bin (size: 33562624 bytes)
+#> fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a6b32ad90.bin (init: false, mode: persistent)
+#> Using existing file: /tmp/RtmpuijWbZ/file7b34a6b32ad90.bin (size: 33562624 bytes)
+#> fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a6b32ad90.bin (init: false, mode: persistent)
 #> $catalog
 #>   record_offset generation      type length
 #> 1          9440          2 character      3
@@ -468,7 +424,7 @@ local({
   scratch_copy
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpmRjboY/file7514066846321.bin (init: true, mode: scratch)
+#> fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a78731d72.bin (init: true, mode: scratch)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> [1] 1 2 3 4
@@ -484,136 +440,20 @@ Serialized references use the catalog record offset and generation for
 validation; the catalog can be listed, but it is not yet a high-level
 object store for recovering vectors by name.
 
-## Watching ALTREP-Controlled Duplication with `lobstr`
-
-`lobstr::obj_addr()` is useful for seeing why the vectors are ALTREP
-from the beginning. R’s copy-on-write path dispatches to the ALTREP
-`Duplicate` method, and the duplicate allocates its payload from
-fmalloc.
-
-``` r
-library(Rfmalloc)
-library(lobstr)
-
-local({
-  addr_file <- tempfile(fileext = ".bin")
-  init_fmalloc(addr_file)
-  on.exit({
-    cleanup_fmalloc()
-    unlink(addr_file)
-  }, add = TRUE)
-
-  cow_a <- create_fmalloc_vector("integer", 10)
-  cow_a[1:3] <- 1:3
-  cow_b <- cow_a
-
-  before <- data.frame(
-    object = c("cow_a", "cow_b"),
-    address = c(obj_addr(cow_a), obj_addr(cow_b))
-  )
-
-  cow_a[1] <- 99L
-
-  after <- data.frame(
-    object = c("cow_a", "cow_b"),
-    address = c(obj_addr(cow_a), obj_addr(cow_b))
-  )
-
-  list(before = before, after = after)
-})
-#> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpmRjboY/file75140394780ae.bin (init: true, mode: persistent)
-#> Cleaning up fmalloc...
-#> fmalloc cleaned up
-#> $before
-#>   object        address
-#> 1  cow_a 0x5a94b679eb00
-#> 2  cow_b 0x5a94b679eb00
-#> 
-#> $after
-#>   object        address
-#> 1  cow_a 0x5a94b673cbc8
-#> 2  cow_b 0x5a94b679eb00
-```
-
-The two names start as references to the same `SEXP`. After the write to
-`cow_a`, `lobstr::obj_addr()` shows that `cow_a` moved to a new ALTREP
-object while `cow_b` still points at the original ALTREP object. That
-automatic duplicate is handled by Rfmalloc’s ALTREP `Duplicate` method,
-not by R’s ordinary `allocVector()` path.
-
-`lobstr::obj_addr()` shows the R object header address, not necessarily
-the data payload pointer. The payload pointer returned by `DATAPTR()` is
-a real writable pointer into the fmalloc mapping for fixed-width atomic
-types. Character vectors store string bytes in fmalloc and materialize
-ordinary R `CHARSXP` values on `STRING_ELT()` access. List vectors use
-ALTREP list element methods plus an R-visible sidecar so the GC can see
-referenced R objects.
-
-## Why ALTREP Is Required for Copy-on-Write Control
-
-Plain vectors allocated through custom allocator hooks do not control
-R’s ordinary duplication path. R saves enough allocator state to free
-those objects, but ordinary vector duplication does not consult a
-per-object allocator copy callback, and the `R_allocator_t::res` field
-is reserved.
-
-Rfmalloc therefore constructs ALTREP vectors from the beginning. The
-ALTREP C header declares a `Duplicate` method slot, so copy-on-write can
-create another fmalloc-backed vector instead of falling back to R’s
-ordinary heap allocator. For all current vector constructors, this also
-means Rfmalloc no longer needs the non-API `Rf_allocVector3()` path.
-
-The public ALTREP header used by the installed R on this system exposes
-`Get_region` hooks for atomic vector reads and `Set_elt` hooks for
-strings and lists, but not an atomic `Set_region` hook. Atomic writes
-therefore go through R’s normal writable `DATAPTR()` path; internal bulk
-copies use the direct fmalloc payload pointer.
-
 ## Native C API for Other Packages
 
-Rfmalloc installs `inst/include/Rfmalloc.h` and registers a small
-C-callable API with `R_RegisterCCallable()`. A downstream package can
-add Rfmalloc to `LinkingTo` and `Imports`, include the header, and
-resolve the entry points at runtime through the inline wrappers in that
-header.
+Rfmalloc installs `inst/include/Rfmalloc.h` and registers C-callable
+entry points with `R_RegisterCCallable()`. Downstream packages can add
+Rfmalloc to `LinkingTo` and `Imports`, include the header, and use the
+inline wrappers.
 
-Current C-callable functions are:
-
-- `Rfmalloc_api_version()`;
-- `Rfmalloc_open_runtime(const char *filepath, double size_gb, const char *mode)`;
-- `Rfmalloc_default_runtime()`;
-- `Rfmalloc_create_vector(SEXP runtime, int sexptype, R_xlen_t length)`;
-- `Rfmalloc_list_allocations(SEXP runtime)`;
-- `Rfmalloc_cleanup_runtime(SEXP runtime)`.
-
-Returned `SEXP` objects follow normal R API ownership rules: protect
-them before further allocation and preserve them if they must outlive
-the current native call. The runtime object is explicit; downstream code
-should keep it reachable for as long as vectors allocated from it are
-needed.
-
-The native source is also split into smaller implementation chunks:
-
-- `src/fmalloc_runtime.inc` for runtime and backing-file handling;
-- `src/fmalloc_vector.inc` for vector storage, strings, catalog records,
-  and materialization;
-- `src/fmalloc_altrep.inc` for ALTREP methods and class registration;
-- `src/fmalloc_api.inc` for `.Call`, C-callable API, and package
-  registration.
-
-`src/fmalloc.cpp` is now the small unity translation unit that includes
-those pieces. Keeping one translation unit avoids changing symbol
-visibility while the internal boundaries settle; the installed
-`Rfmalloc.h` is the supported native surface for other packages.
+The current native surface exposes runtime open/cleanup, vector
+creation, default-runtime lookup, catalog listing, and an API-version
+query. Returned `SEXP` objects follow normal R API ownership rules.
 
 ## References
 
 - fmalloc: <https://github.com/yasukata/fmalloc>
-- Simon Urbanek’s mmap allocator example:
-  <https://gist.github.com/s-u/6712c97ca74181f5a1a5>
-- UFOs: <https://github.com/PRL-PRG/UFOs>
-- Travel: <https://github.com/Jiefei-Wang/Travel>
 
 ## License
 
