@@ -127,6 +127,57 @@ cleanup_fmalloc()
 unlink(reopen_file)
 ```
 
+## Watching R's Duplication with `lobstr`
+
+`lobstr::obj_addr()` and R's internal inspector are useful for seeing why the
+current custom-allocator approach is not enough. The initial vector is backed by
+fmalloc, but when R performs copy-on-write it duplicates through R's ordinary
+vector allocation path.
+
+```{r}
+library(Rfmalloc)
+library(lobstr)
+
+addr_file <- tempfile(fileext = ".bin")
+init_fmalloc(addr_file)
+
+cow_a <- create_fmalloc_vector("integer", 10)
+cow_a[1:3] <- 1:3
+cow_b <- cow_a
+
+data.frame(
+  object = c("cow_a", "cow_b"),
+  address = c(obj_addr(cow_a), obj_addr(cow_b))
+)
+capture.output(.Internal(inspect(cow_a)))[1]
+
+tracemem(cow_a)
+cow_a[1] <- 99L
+
+data.frame(
+  object = c("cow_a", "cow_b"),
+  address = c(obj_addr(cow_a), obj_addr(cow_b))
+)
+capture.output(.Internal(inspect(cow_a)))[1]
+capture.output(.Internal(inspect(cow_b)))[1]
+
+rm(cow_a, cow_b)
+gc()
+cleanup_fmalloc()
+unlink(addr_file)
+```
+
+The two names start as references to the same `SEXP`. After the write to
+`cow_a`, `tracemem()` reports a duplicate and `lobstr::obj_addr()` shows that
+`cow_a` moved to a new object while `cow_b` still points at the original object.
+That automatic duplicate is made by R's normal `allocVector()` path, not by the
+fmalloc allocator used for the original `Rf_allocVector3()` call.
+
+`lobstr::obj_addr()` shows the R object header address, not necessarily the data
+payload pointer. For allocator debugging we may add a small `.Call()` helper that
+prints both the `SEXP` address and `DATAPTR()` and whether the payload lies
+inside the current fmalloc mapping.
+
 ## Why ALTREP Is Still the Likely Next Step
 
 Allocating the initial vector storage in the backing file is not enough to make
@@ -134,11 +185,19 @@ all R operations file-backed. R's normal duplication paths often call
 `allocVector()`, not `Rf_allocVector3()`, so copy-on-write or subsetting may
 produce ordinary heap-backed vectors.
 
+We cannot already pass an automatic duplication method through the current
+standard-vector custom allocator. R saves the custom allocator so the original
+object can be freed correctly, but ordinary vector duplication does not consult a
+per-object allocator hook. The `R_allocator_t::res` field is reserved and is not
+a supported copy callback.
+
 A UFO/Travel-like direction is still interesting, but for this package the next
 practical layer is likely ALTREP: implement `Dataptr`, `Elt`, `Get_region`, and
 especially `Duplicate` so R can preserve file-backed storage during ordinary
-vector operations. Pointer-access instrumentation is only needed if we want more
-transparent interception than ALTREP provides.
+vector operations. The ALTREP `Duplicate` method is the supported place where we
+can allocate the copied vector through fmalloc as well. Pointer-access
+instrumentation is only needed if we want more transparent interception than
+ALTREP provides.
 
 ## References
 

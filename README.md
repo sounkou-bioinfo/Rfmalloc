@@ -51,7 +51,7 @@ library(Rfmalloc)
 alloc_file <- tempfile(fileext = ".bin")
 init_fmalloc(alloc_file)
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpCmT1z8/file1e1d7620a98b.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpISOFfQ/file1e9f634ccc1d9.bin (init: true)
 #> [1] TRUE
 
 v_int <- create_fmalloc_vector("integer", 10)
@@ -68,8 +68,8 @@ v_num[1:3]
 rm(v_int, v_num)
 gc()
 #>          used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells 523527 28.0    1136654 60.8   718274 38.4
-#> Vcells 983905  7.6    8388608 64.0  2007149 15.4
+#> Ncells 523591 28.0    1136837 60.8   718274 38.4
+#> Vcells 984631  7.6    8388608 64.0  2007149 15.4
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
@@ -85,7 +85,7 @@ large_file <- tempfile(fileext = ".bin")
 init_fmalloc(large_file, size_gb = 0.1)
 #> Requested file size: 0.10 GB (107374182 bytes)
 #> Creating file with size: 107374182 bytes (0.10 GB)
-#> fmalloc initialized with file: /tmp/RtmpCmT1z8/file1e1d763bf7456.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpISOFfQ/file1e9f626b54ca5.bin (init: true)
 #> [1] TRUE
 
 # About 20 MB of integer payload, larger than the historical 16 MB chunk limit.
@@ -101,8 +101,8 @@ big_int[1:5]
 rm(big_int)
 gc()
 #>          used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells 523785 28.0    1136654 60.8   718274 38.4
-#> Vcells 984783  7.6    8388608 64.0  3733972 28.5
+#> Ncells 523849 28.0    1136837 60.8   718274 38.4
+#> Vcells 985509  7.6    8388608 64.0  3734700 28.5
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
@@ -123,7 +123,7 @@ reopen_file <- tempfile(fileext = ".bin")
 
 first_init <- init_fmalloc(reopen_file)
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpCmT1z8/file1e1d7195c98c7.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpISOFfQ/file1e9f6256d02ac.bin (init: true)
 first_vec <- create_fmalloc_vector("integer", 100)
 first_vec[1:3] <- 1:3
 first_init
@@ -132,15 +132,15 @@ first_init
 rm(first_vec)
 gc()
 #>          used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells 523890 28.0    1136654 60.8   718274 38.4
-#> Vcells 984987  7.6    8388608 64.0  3733972 28.5
+#> Ncells 523954 28.0    1136837 60.8   718274 38.4
+#> Vcells 985713  7.6    8388608 64.0  3734700 28.5
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 
 second_init <- init_fmalloc(reopen_file)
-#> Using existing file: /tmp/RtmpCmT1z8/file1e1d7195c98c7.bin (size: 33562624 bytes)
-#> fmalloc initialized with file: /tmp/RtmpCmT1z8/file1e1d7195c98c7.bin (init: false)
+#> Using existing file: /tmp/RtmpISOFfQ/file1e9f6256d02ac.bin (size: 33562624 bytes)
+#> fmalloc initialized with file: /tmp/RtmpISOFfQ/file1e9f6256d02ac.bin (init: false)
 second_vec <- create_fmalloc_vector("numeric", 100)
 second_vec[1:3] <- c(10.5, 20.5, 30.5)
 second_init
@@ -151,13 +151,84 @@ second_vec[1:3]
 rm(second_vec)
 gc()
 #>          used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells 523940 28.0    1136654 60.8   718274 38.4
-#> Vcells 985074  7.6    8388608 64.0  3733972 28.5
+#> Ncells 524004 28.0    1136837 60.8   718274 38.4
+#> Vcells 985800  7.6    8388608 64.0  3734700 28.5
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 unlink(reopen_file)
 ```
+
+## Watching R’s Duplication with `lobstr`
+
+`lobstr::obj_addr()` and R’s internal inspector are useful for seeing
+why the current custom-allocator approach is not enough. The initial
+vector is backed by fmalloc, but when R performs copy-on-write it
+duplicates through R’s ordinary vector allocation path.
+
+``` r
+library(Rfmalloc)
+library(lobstr)
+
+addr_file <- tempfile(fileext = ".bin")
+init_fmalloc(addr_file)
+#> Creating file with size: 33562624 bytes (0.03 GB)
+#> fmalloc initialized with file: /tmp/RtmpISOFfQ/file1e9f672de8bd4.bin (init: true)
+#> [1] TRUE
+
+cow_a <- create_fmalloc_vector("integer", 10)
+cow_a[1:3] <- 1:3
+cow_b <- cow_a
+
+data.frame(
+  object = c("cow_a", "cow_b"),
+  address = c(obj_addr(cow_a), obj_addr(cow_b))
+)
+#>   object        address
+#> 1  cow_a 0x62bcf4b56c28
+#> 2  cow_b 0x62bcf4b56c28
+capture.output(.Internal(inspect(cow_a)))[1]
+#> [1] "@62bcf4b56c28 13 INTSXP g0c4 [REF(3)] (len=10, tl=0) 1,2,3,0,0,..."
+
+tracemem(cow_a)
+#> [1] "<0x62bcf4b56c28>"
+cow_a[1] <- 99L
+#> tracemem[0x62bcf4b56c28 -> 0x62bcf6e04428]: eval eval withVisible withCallingHandlers eval eval with_handlers doWithOneRestart withOneRestart withRestartList doWithOneRestart withOneRestart withRestartList withRestarts <Anonymous> evaluate in_dir in_input_dir eng_r block_exec call_block process_group withCallingHandlers with_options <Anonymous> process_file <Anonymous> <Anonymous>
+
+data.frame(
+  object = c("cow_a", "cow_b"),
+  address = c(obj_addr(cow_a), obj_addr(cow_b))
+)
+#>   object        address
+#> 1  cow_a 0x62bcf6e04428
+#> 2  cow_b 0x62bcf4b56c28
+capture.output(.Internal(inspect(cow_a)))[1]
+#> [1] "@62bcf6e04428 13 INTSXP g0c4 [REF(1),TR] (len=10, tl=0) 99,2,3,0,0,..."
+capture.output(.Internal(inspect(cow_b)))[1]
+#> [1] "@62bcf4b56c28 13 INTSXP g0c4 [REF(3),TR] (len=10, tl=0) 1,2,3,0,0,..."
+
+rm(cow_a, cow_b)
+gc()
+#>          used (Mb) gc trigger (Mb) max used (Mb)
+#> Ncells 530655 28.4    1136837 60.8   734646 39.3
+#> Vcells 999833  7.7    8388608 64.0  3734700 28.5
+cleanup_fmalloc()
+#> Cleaning up fmalloc...
+#> fmalloc cleaned up
+unlink(addr_file)
+```
+
+The two names start as references to the same `SEXP`. After the write to
+`cow_a`, `tracemem()` reports a duplicate and `lobstr::obj_addr()` shows
+that `cow_a` moved to a new object while `cow_b` still points at the
+original object. That automatic duplicate is made by R’s normal
+`allocVector()` path, not by the fmalloc allocator used for the original
+`Rf_allocVector3()` call.
+
+`lobstr::obj_addr()` shows the R object header address, not necessarily
+the data payload pointer. For allocator debugging we may add a small
+`.Call()` helper that prints both the `SEXP` address and `DATAPTR()` and
+whether the payload lies inside the current fmalloc mapping.
 
 ## Why ALTREP Is Still the Likely Next Step
 
@@ -166,12 +237,20 @@ to make all R operations file-backed. R’s normal duplication paths often
 call `allocVector()`, not `Rf_allocVector3()`, so copy-on-write or
 subsetting may produce ordinary heap-backed vectors.
 
+We cannot already pass an automatic duplication method through the
+current standard-vector custom allocator. R saves the custom allocator
+so the original object can be freed correctly, but ordinary vector
+duplication does not consult a per-object allocator hook. The
+`R_allocator_t::res` field is reserved and is not a supported copy
+callback.
+
 A UFO/Travel-like direction is still interesting, but for this package
 the next practical layer is likely ALTREP: implement `Dataptr`, `Elt`,
 `Get_region`, and especially `Duplicate` so R can preserve file-backed
-storage during ordinary vector operations. Pointer-access
-instrumentation is only needed if we want more transparent interception
-than ALTREP provides.
+storage during ordinary vector operations. The ALTREP `Duplicate` method
+is the supported place where we can allocate the copied vector through
+fmalloc as well. Pointer-access instrumentation is only needed if we
+want more transparent interception than ALTREP provides.
 
 ## References
 
