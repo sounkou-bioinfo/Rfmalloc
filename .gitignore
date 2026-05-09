@@ -67,3 +67,4 @@ RBCFLib.Rcheck
 **libbcftools.a
 inst/fmalloc/libfmalloc.a
 inst/fmalloc/libfmalloc.so
+docs

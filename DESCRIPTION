@@ -17,5 +17,5 @@ Suggests:
     lobstr,
     tinytest
 SystemRequirements: pthreads
-URL: https://github.com/sounkou-bioinfo/Rfmalloc
+URL: https://github.com/sounkou-bioinfo/Rfmalloc, https://sounkou-bioinfo.github.io/Rfmalloc/
 BugReports: https://github.com/sounkou-bioinfo/Rfmalloc/issues

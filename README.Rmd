@@ -13,6 +13,10 @@ knitr::opts_chunk$set(
 
 # Rfmalloc
 
+ <!-- badges: start -->
+  [![R-CMD-check](https://github.com/sounkou-bioinfo/Rfmalloc/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/sounkou-bioinfo/Rfmalloc/actions/workflows/R-CMD-check.yaml)
+  <!-- badges: end -->
+
 Rfmalloc is an experimental R package for allocating vector storage from a
 memory-mapped backing file using a patched copy of
 [fmalloc](https://github.com/yasukata/fmalloc). The goal is to explore large,

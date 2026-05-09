@@ -29,6 +29,8 @@ install2:
 rd: 
 	R -e 'roxygen2::roxygenise(".")'
 
+rdm:
+	R -e 'rmarkdown::render("README.Rmd", output_format = rmarkdown::md_document(variant = "gfm"), output_file = "README.md", quiet = FALSE, envir = new.env(parent = globalenv()))'
 clean:
 	@rm -rf $(PKGNAME)_$(PKGVERS).tar.gz $(PKGNAME).Rcheck
 	@rm -rf src/*.o src/*.so src/*.dSYM

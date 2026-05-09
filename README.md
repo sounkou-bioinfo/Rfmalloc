@@ -1,5 +1,8 @@
-
 # Rfmalloc
+
+<!-- badges: start -->
+[![R-CMD-check](https://github.com/sounkou-bioinfo/Rfmalloc/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/sounkou-bioinfo/Rfmalloc/actions/workflows/R-CMD-check.yaml)
+<!-- badges: end -->
 
 Rfmalloc is an experimental R package for allocating vector storage from
 a memory-mapped backing file using a patched copy of
@@ -112,7 +115,7 @@ local({
   )
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b5fd5a24e.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e6cd2338e.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> $integer
@@ -155,7 +158,7 @@ local({
   v[1:3]
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b74aa9ad2.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e755bb730.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> [1] 10 11 12
@@ -190,7 +193,7 @@ local({
 })
 #> Requested file size: 5.00 GB (5368709120 bytes)
 #> Creating file with size: 5368709120 bytes (5.00 GB)
-#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b1a0fee99.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e6a06e594.bin (init: true, mode: persistent)
 #> Creating fmalloc ALTREP vector: type=integer, length=1000000000
 #> Large allocation: 3814.70 MB requested
 #> SUCCESS: fmalloc allocated 4000000000 bytes
@@ -229,9 +232,9 @@ local({
   roundtrip[]
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b3803f31.bin (init: true, mode: persistent)
-#> Using existing file: /tmp/RtmpQlStDo/file72e7b3803f31.bin (size: 33562624 bytes)
-#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b3803f31.bin (init: false, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e50df2128.bin (init: true, mode: persistent)
+#> Using existing file: /tmp/RtmpZBn1VI/file74c2e50df2128.bin (size: 33562624 bytes)
+#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e50df2128.bin (init: false, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> [1] 1 2 3 4 5
@@ -260,8 +263,8 @@ local({
   .Internal(inspect(inspect_vec))
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b66c8e821.bin (init: true, mode: persistent)
-#> @576b3345e598 13 INTSXP g0c0 [REF(1)] fmalloc_altrep type=integer length=4 bytes=16 data=0x763d886023e8 mode=persistent runtime=open offset=9192 uuid=7f6dc67e0e0b9955e452230a99fe5fb4 file=/tmp/RtmpQlStDo/file72e7b66c8e821.bin
+#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2ed2e398f.bin (init: true, mode: persistent)
+#> @63d6f317fcc0 13 INTSXP g0c0 [REF(1)] fmalloc_altrep type=integer length=4 bytes=16 data=0x7d69536023e8 mode=persistent runtime=open offset=9192 uuid=897da0188fbd670e43639d1ee31dc82f file=/tmp/RtmpZBn1VI/file74c2ed2e398f.bin
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 ```
@@ -303,7 +306,7 @@ local({
   )
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b5c5a0941.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e101d0f44.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> $chars
@@ -351,10 +354,10 @@ local({
   )
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b3379f3f.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e3c9d9e9e.bin (init: true, mode: persistent)
 #> Requested file size: 0.10 GB (107374182 bytes)
 #> Creating file with size: 107374182 bytes (0.10 GB)
-#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b75f438b0.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e211c160.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> Cleaning up fmalloc...
@@ -425,13 +428,13 @@ local({
   output
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b2e0e1b90.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e75210802.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
-#> Using existing file: /tmp/RtmpQlStDo/file72e7b2e0e1b90.bin (size: 33562624 bytes)
-#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b2e0e1b90.bin (init: false, mode: persistent)
-#> Using existing file: /tmp/RtmpQlStDo/file72e7b2e0e1b90.bin (size: 33562624 bytes)
-#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b2e0e1b90.bin (init: false, mode: persistent)
+#> Using existing file: /tmp/RtmpZBn1VI/file74c2e75210802.bin (size: 33562624 bytes)
+#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e75210802.bin (init: false, mode: persistent)
+#> Using existing file: /tmp/RtmpZBn1VI/file74c2e75210802.bin (size: 33562624 bytes)
+#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e75210802.bin (init: false, mode: persistent)
 #> $catalog
 #>   record_offset generation      type length
 #> 1          9440          2 character      3
@@ -461,7 +464,7 @@ local({
   scratch_copy
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b36e8d1bc.bin (init: true, mode: scratch)
+#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e5a97c762.bin (init: true, mode: scratch)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> [1] 1 2 3 4
@@ -515,18 +518,18 @@ local({
   list(before = before, after = after)
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b76833136.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e7c4bd78e.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> $before
 #>   object        address
-#> 1  cow_a 0x576b30f21fa8
-#> 2  cow_b 0x576b30f21fa8
+#> 1  cow_a 0x63d6f0e11710
+#> 2  cow_b 0x63d6f0e11710
 #> 
 #> $after
 #>   object        address
-#> 1  cow_a 0x576b30efe3b0
-#> 2  cow_b 0x576b30f21fa8
+#> 1  cow_a 0x63d6f0c516a8
+#> 2  cow_b 0x63d6f0e11710
 ```
 
 The two names start as references to the same `SEXP`. After the write to
