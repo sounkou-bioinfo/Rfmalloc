@@ -51,7 +51,7 @@ library(Rfmalloc)
 alloc_file <- tempfile(fileext = ".bin")
 init_fmalloc(alloc_file)
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpISOFfQ/file1e9f634ccc1d9.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpJJy9E9/file1f65c859f0e6.bin (init: true)
 #> [1] TRUE
 
 v_int <- create_fmalloc_vector("integer", 10)
@@ -68,8 +68,8 @@ v_num[1:3]
 rm(v_int, v_num)
 gc()
 #>          used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells 523591 28.0    1136837 60.8   718274 38.4
-#> Vcells 984631  7.6    8388608 64.0  2007149 15.4
+#> Ncells 523594 28.0    1136845 60.8   718274 38.4
+#> Vcells 984766  7.6    8388608 64.0  2007149 15.4
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
@@ -85,7 +85,7 @@ large_file <- tempfile(fileext = ".bin")
 init_fmalloc(large_file, size_gb = 0.1)
 #> Requested file size: 0.10 GB (107374182 bytes)
 #> Creating file with size: 107374182 bytes (0.10 GB)
-#> fmalloc initialized with file: /tmp/RtmpISOFfQ/file1e9f626b54ca5.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpJJy9E9/file1f65c54bd30ec.bin (init: true)
 #> [1] TRUE
 
 # About 20 MB of integer payload, larger than the historical 16 MB chunk limit.
@@ -101,20 +101,22 @@ big_int[1:5]
 rm(big_int)
 gc()
 #>          used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells 523849 28.0    1136837 60.8   718274 38.4
-#> Vcells 985509  7.6    8388608 64.0  3734700 28.5
+#> Ncells 523852 28.0    1136845 60.8   718274 38.4
+#> Vcells 985644  7.6    8388608 64.0  3734835 28.5
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 unlink(large_file)
 ```
 
-## Reopening a Backing File
+## Reopening Is Not Vector Recovery Yet
 
-The allocator metadata lives in the mapped file, so a backing file
-created by the current format can be closed and reopened. Today this
-demonstrates allocator state reuse; recovering named R objects still
-needs a higher-level root-object or ALTREP layer.
+A backing file can be reopened, but this currently reopens only the
+allocator state. We are **not** getting the R vector object back yet.
+The package does not currently store a root table such as
+`(name, type, length, offset)`, and a plain `SEXP` allocated by
+`Rf_allocVector3()` cannot be safely reconstructed as an R object after
+it has been dropped by R’s garbage collector.
 
 ``` r
 library(Rfmalloc)
@@ -123,41 +125,42 @@ reopen_file <- tempfile(fileext = ".bin")
 
 first_init <- init_fmalloc(reopen_file)
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpISOFfQ/file1e9f6256d02ac.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpJJy9E9/file1f65c4c026475.bin (init: true)
 first_vec <- create_fmalloc_vector("integer", 100)
 first_vec[1:3] <- 1:3
 first_init
 #> [1] TRUE
+first_vec[1:3]
+#> [1] 1 2 3
 
 rm(first_vec)
 gc()
 #>          used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells 523954 28.0    1136837 60.8   718274 38.4
-#> Vcells 985713  7.6    8388608 64.0  3734700 28.5
+#> Ncells 523911 28.0    1136845 60.8   718274 38.4
+#> Vcells 985797  7.6    8388608 64.0  3734835 28.5
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 
 second_init <- init_fmalloc(reopen_file)
-#> Using existing file: /tmp/RtmpISOFfQ/file1e9f6256d02ac.bin (size: 33562624 bytes)
-#> fmalloc initialized with file: /tmp/RtmpISOFfQ/file1e9f6256d02ac.bin (init: false)
-second_vec <- create_fmalloc_vector("numeric", 100)
-second_vec[1:3] <- c(10.5, 20.5, 30.5)
+#> Using existing file: /tmp/RtmpJJy9E9/file1f65c4c026475.bin (size: 33562624 bytes)
+#> fmalloc initialized with file: /tmp/RtmpJJy9E9/file1f65c4c026475.bin (init: false)
 second_init
 #> [1] FALSE
-second_vec[1:3]
-#> [1] 10.5 20.5 30.5
+exists("first_vec")
+#> [1] FALSE
 
-rm(second_vec)
-gc()
-#>          used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells 524004 28.0    1136837 60.8   718274 38.4
-#> Vcells 985800  7.6    8388608 64.0  3734700 28.5
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 unlink(reopen_file)
 ```
+
+The `FALSE` from `second_init` tells us the file already contained
+current fmalloc allocator metadata. It does **not** mean `first_vec` was
+recovered. Real object recovery needs a higher-level object catalog and
+likely an ALTREP vector constructor that can recreate an R vector from
+`(file, offset, type, length)`.
 
 ## Watching R’s Duplication with `lobstr`
 
@@ -173,7 +176,7 @@ library(lobstr)
 addr_file <- tempfile(fileext = ".bin")
 init_fmalloc(addr_file)
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpISOFfQ/file1e9f672de8bd4.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpJJy9E9/file1f65c53a1bec5.bin (init: true)
 #> [1] TRUE
 
 cow_a <- create_fmalloc_vector("integer", 10)
@@ -185,33 +188,33 @@ data.frame(
   address = c(obj_addr(cow_a), obj_addr(cow_b))
 )
 #>   object        address
-#> 1  cow_a 0x62bcf4b56c28
-#> 2  cow_b 0x62bcf4b56c28
+#> 1  cow_a 0x640c649305d8
+#> 2  cow_b 0x640c649305d8
 capture.output(.Internal(inspect(cow_a)))[1]
-#> [1] "@62bcf4b56c28 13 INTSXP g0c4 [REF(3)] (len=10, tl=0) 1,2,3,0,0,..."
+#> [1] "@640c649305d8 13 INTSXP g0c4 [REF(3)] (len=10, tl=0) 1,2,3,0,0,..."
 
 tracemem(cow_a)
-#> [1] "<0x62bcf4b56c28>"
+#> [1] "<0x640c649305d8>"
 cow_a[1] <- 99L
-#> tracemem[0x62bcf4b56c28 -> 0x62bcf6e04428]: eval eval withVisible withCallingHandlers eval eval with_handlers doWithOneRestart withOneRestart withRestartList doWithOneRestart withOneRestart withRestartList withRestarts <Anonymous> evaluate in_dir in_input_dir eng_r block_exec call_block process_group withCallingHandlers with_options <Anonymous> process_file <Anonymous> <Anonymous>
+#> tracemem[0x640c649305d8 -> 0x640c6636a948]: eval eval withVisible withCallingHandlers eval eval with_handlers doWithOneRestart withOneRestart withRestartList doWithOneRestart withOneRestart withRestartList withRestarts <Anonymous> evaluate in_dir in_input_dir eng_r block_exec call_block process_group withCallingHandlers with_options <Anonymous> process_file <Anonymous> <Anonymous>
 
 data.frame(
   object = c("cow_a", "cow_b"),
   address = c(obj_addr(cow_a), obj_addr(cow_b))
 )
 #>   object        address
-#> 1  cow_a 0x62bcf6e04428
-#> 2  cow_b 0x62bcf4b56c28
+#> 1  cow_a 0x640c6636a948
+#> 2  cow_b 0x640c649305d8
 capture.output(.Internal(inspect(cow_a)))[1]
-#> [1] "@62bcf6e04428 13 INTSXP g0c4 [REF(1),TR] (len=10, tl=0) 99,2,3,0,0,..."
+#> [1] "@640c6636a948 13 INTSXP g0c4 [REF(1),TR] (len=10, tl=0) 99,2,3,0,0,..."
 capture.output(.Internal(inspect(cow_b)))[1]
-#> [1] "@62bcf4b56c28 13 INTSXP g0c4 [REF(3),TR] (len=10, tl=0) 1,2,3,0,0,..."
+#> [1] "@640c649305d8 13 INTSXP g0c4 [REF(3),TR] (len=10, tl=0) 1,2,3,0,0,..."
 
 rm(cow_a, cow_b)
 gc()
 #>          used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells 530655 28.4    1136837 60.8   734646 39.3
-#> Vcells 999833  7.7    8388608 64.0  3734700 28.5
+#> Ncells 530655 28.4    1136845 60.8   749471 40.1
+#> Vcells 999935  7.7    8388608 64.0  3734835 28.5
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up

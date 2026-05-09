@@ -94,12 +94,13 @@ cleanup_fmalloc()
 unlink(large_file)
 ```
 
-## Reopening a Backing File
+## Reopening Is Not Vector Recovery Yet
 
-The allocator metadata lives in the mapped file, so a backing file created by
-the current format can be closed and reopened. Today this demonstrates allocator
-state reuse; recovering named R objects still needs a higher-level root-object or
-ALTREP layer.
+A backing file can be reopened, but this currently reopens only the allocator
+state. We are **not** getting the R vector object back yet. The package does not
+currently store a root table such as `(name, type, length, offset)`, and a plain
+`SEXP` allocated by `Rf_allocVector3()` cannot be safely reconstructed as an R
+object after it has been dropped by R's garbage collector.
 
 ```{r}
 library(Rfmalloc)
@@ -110,22 +111,24 @@ first_init <- init_fmalloc(reopen_file)
 first_vec <- create_fmalloc_vector("integer", 100)
 first_vec[1:3] <- 1:3
 first_init
+first_vec[1:3]
 
 rm(first_vec)
 gc()
 cleanup_fmalloc()
 
 second_init <- init_fmalloc(reopen_file)
-second_vec <- create_fmalloc_vector("numeric", 100)
-second_vec[1:3] <- c(10.5, 20.5, 30.5)
 second_init
-second_vec[1:3]
+exists("first_vec")
 
-rm(second_vec)
-gc()
 cleanup_fmalloc()
 unlink(reopen_file)
 ```
+
+The `FALSE` from `second_init` tells us the file already contained current
+fmalloc allocator metadata. It does **not** mean `first_vec` was recovered. Real
+object recovery needs a higher-level object catalog and likely an ALTREP vector
+constructor that can recreate an R vector from `(file, offset, type, length)`.
 
 ## Watching R's Duplication with `lobstr`
 
