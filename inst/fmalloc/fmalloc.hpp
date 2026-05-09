@@ -51,9 +51,6 @@
 #define PAGE_SIZE (4096)
 #endif
 
-#ifndef FMALLOC_LEGACY_MAGIC
-#define FMALLOC_LEGACY_MAGIC (123456)
-#endif
 #ifndef FMALLOC_MAGIC
 #define FMALLOC_MAGIC (123457)
 #endif

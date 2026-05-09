@@ -35,8 +35,7 @@ Implemented now:
 - file-backed allocation for integer, numeric, and logical vectors;
 - large allocations spanning multiple fmalloc chunks;
 - `malloc`, `free`, and `realloc` support through the patched fmalloc layer;
-- reopening backing files created by the current allocator format;
-- explicit rejection of older incompatible fmalloc backing files.
+- reopening backing files created by the current allocator format.
 
 Still experimental / future work:
 
@@ -93,6 +92,39 @@ rm(big_int)
 gc()
 cleanup_fmalloc()
 unlink(large_file)
+```
+
+## Reopening a Backing File
+
+The allocator metadata lives in the mapped file, so a backing file created by
+the current format can be closed and reopened. Today this demonstrates allocator
+state reuse; recovering named R objects still needs a higher-level root-object or
+ALTREP layer.
+
+```{r}
+library(Rfmalloc)
+
+reopen_file <- tempfile(fileext = ".bin")
+
+first_init <- init_fmalloc(reopen_file)
+first_vec <- create_fmalloc_vector("integer", 100)
+first_vec[1:3] <- 1:3
+first_init
+
+rm(first_vec)
+gc()
+cleanup_fmalloc()
+
+second_init <- init_fmalloc(reopen_file)
+second_vec <- create_fmalloc_vector("numeric", 100)
+second_vec[1:3] <- c(10.5, 20.5, 30.5)
+second_init
+second_vec[1:3]
+
+rm(second_vec)
+gc()
+cleanup_fmalloc()
+unlink(reopen_file)
 ```
 
 ## Why ALTREP Is Still the Likely Next Step

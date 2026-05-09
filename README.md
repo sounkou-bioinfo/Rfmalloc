@@ -26,8 +26,7 @@ Implemented now:
 - large allocations spanning multiple fmalloc chunks;
 - `malloc`, `free`, and `realloc` support through the patched fmalloc
   layer;
-- reopening backing files created by the current allocator format;
-- explicit rejection of older incompatible fmalloc backing files.
+- reopening backing files created by the current allocator format.
 
 Still experimental / future work:
 
@@ -52,7 +51,7 @@ library(Rfmalloc)
 alloc_file <- tempfile(fileext = ".bin")
 init_fmalloc(alloc_file)
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpyiFs61/file148762fbedc99.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpCmT1z8/file1e1d7620a98b.bin (init: true)
 #> [1] TRUE
 
 v_int <- create_fmalloc_vector("integer", 10)
@@ -69,8 +68,8 @@ v_num[1:3]
 rm(v_int, v_num)
 gc()
 #>          used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells 523482 28.0    1136525 60.7   718274 38.4
-#> Vcells 983636  7.6    8388608 64.0  2007149 15.4
+#> Ncells 523527 28.0    1136654 60.8   718274 38.4
+#> Vcells 983905  7.6    8388608 64.0  2007149 15.4
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
@@ -86,7 +85,7 @@ large_file <- tempfile(fileext = ".bin")
 init_fmalloc(large_file, size_gb = 0.1)
 #> Requested file size: 0.10 GB (107374182 bytes)
 #> Creating file with size: 107374182 bytes (0.10 GB)
-#> fmalloc initialized with file: /tmp/RtmpyiFs61/file148763caeb430.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpCmT1z8/file1e1d763bf7456.bin (init: true)
 #> [1] TRUE
 
 # About 20 MB of integer payload, larger than the historical 16 MB chunk limit.
@@ -102,12 +101,62 @@ big_int[1:5]
 rm(big_int)
 gc()
 #>          used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells 523740 28.0    1136525 60.7   718274 38.4
-#> Vcells 984514  7.6    8388608 64.0  3733703 28.5
+#> Ncells 523785 28.0    1136654 60.8   718274 38.4
+#> Vcells 984783  7.6    8388608 64.0  3733972 28.5
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 unlink(large_file)
+```
+
+## Reopening a Backing File
+
+The allocator metadata lives in the mapped file, so a backing file
+created by the current format can be closed and reopened. Today this
+demonstrates allocator state reuse; recovering named R objects still
+needs a higher-level root-object or ALTREP layer.
+
+``` r
+library(Rfmalloc)
+
+reopen_file <- tempfile(fileext = ".bin")
+
+first_init <- init_fmalloc(reopen_file)
+#> Creating file with size: 33562624 bytes (0.03 GB)
+#> fmalloc initialized with file: /tmp/RtmpCmT1z8/file1e1d7195c98c7.bin (init: true)
+first_vec <- create_fmalloc_vector("integer", 100)
+first_vec[1:3] <- 1:3
+first_init
+#> [1] TRUE
+
+rm(first_vec)
+gc()
+#>          used (Mb) gc trigger (Mb) max used (Mb)
+#> Ncells 523890 28.0    1136654 60.8   718274 38.4
+#> Vcells 984987  7.6    8388608 64.0  3733972 28.5
+cleanup_fmalloc()
+#> Cleaning up fmalloc...
+#> fmalloc cleaned up
+
+second_init <- init_fmalloc(reopen_file)
+#> Using existing file: /tmp/RtmpCmT1z8/file1e1d7195c98c7.bin (size: 33562624 bytes)
+#> fmalloc initialized with file: /tmp/RtmpCmT1z8/file1e1d7195c98c7.bin (init: false)
+second_vec <- create_fmalloc_vector("numeric", 100)
+second_vec[1:3] <- c(10.5, 20.5, 30.5)
+second_init
+#> [1] FALSE
+second_vec[1:3]
+#> [1] 10.5 20.5 30.5
+
+rm(second_vec)
+gc()
+#>          used (Mb) gc trigger (Mb) max used (Mb)
+#> Ncells 523940 28.0    1136654 60.8   718274 38.4
+#> Vcells 985074  7.6    8388608 64.0  3733972 28.5
+cleanup_fmalloc()
+#> Cleaning up fmalloc...
+#> fmalloc cleaned up
+unlink(reopen_file)
 ```
 
 ## Why ALTREP Is Still the Likely Next Step

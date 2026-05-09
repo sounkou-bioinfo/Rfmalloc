@@ -114,19 +114,6 @@ struct fm_info *fmalloc_init(const char *filepath, bool *init)
 	s = (struct fm_super *) mem;
 
 	magicp = (uint64_t *) mem;
-	if (*magicp == FMALLOC_LEGACY_MAGIC) {
-		fprintf(stderr,
-			"unsupported legacy fmalloc backing file format in %s; "
-			"create a new backing file for this allocator version\n",
-			filepath);
-#ifdef _WIN32
-		UnmapViewOfFile(mem);
-#else
-		munmap(mem, len);
-		close(fd);
-#endif
-		return NULL;
-	}
 	if (*magicp != FMALLOC_MAGIC) {
 		int *initialized;
 
