@@ -67,35 +67,21 @@
 </h1></div>
 <!-- badges: start -->
 
-<p>Rfmalloc is an experimental R package for allocating vector storage from a memory-mapped backing file using a patched copy of <a href="https://github.com/yasukata/fmalloc" class="external-link">fmalloc</a>. The goal is to explore large, file-backed R vector storage without routing large allocations back through the process heap.</p>
-<p>The current package exposes ALTREP vectors whose fixed-width atomic payloads and character-vector string storage are allocated directly from fmalloc. This uses the ALTREP C entry points available in R’s installed headers instead of relying on the non-API <code>Rf_allocVector3()</code> vector allocator hook.</p>
+<p>Rfmalloc is an experimental R package for file-backed R vectors using a patched copy of <a href="https://github.com/yasukata/fmalloc" class="external-link">fmalloc</a>. The current R-facing vector API creates fmalloc-backed ALTREP vectors for atomic, character, and list storage.</p>
+<p>Earlier prototypes explored R’s custom allocator / <code>Rf_allocVector3()</code> path. The package has moved to direct ALTREP vectors for the public vector API. The patched fmalloc <code>malloc</code>/<code>free</code>/<code>realloc</code> layer is still built and installed for native consumers that use the C API or link against the bundled library.</p>
 <div class="section level2">
 <h2 id="current-status">Current Status<a class="anchor" aria-label="anchor" href="#current-status"></a>
 </h2>
-<p>Recent allocator work fixed the stress-path that previously fell back into ptmalloc/dlmalloc’s system <code>mmap()</code> path for large requests. Large allocations are now carved from contiguous runs in the fmalloc backing file instead.</p>
 <p>Implemented now:</p>
 <ul>
-<li>ALTREP file-backed allocation for logical, integer, numeric, raw, complex, character, and list vectors;</li>
-<li>large allocations spanning multiple fmalloc chunks;</li>
-<li>
-<code>malloc</code>, <code>free</code>, and <code>realloc</code> support through the patched fmalloc layer;</li>
-<li>reopening backing files created by the current allocator format;</li>
-<li>explicit runtime handles, so multiple fmalloc runtimes can be open in one R process;</li>
-<li>explicit runtime modes: <code>persistent</code> keeps committed vector payloads in the file, while <code>scratch</code> returns payloads to fmalloc when ALTREP handles are garbage-collected;</li>
-<li>persistent ALTREP serialization for fixed-width atomic and character vectors using physical allocation metadata: path, file UUID, type, length, payload offset, and byte size;</li>
-<li>ALTREP <code>Coerce</code> for supported fmalloc-backed target types, so coercions such as <code>as.numeric(x)</code> and <code>as.character(x)</code> allocate their result in the same fmalloc runtime;</li>
-<li>ALTREP <code>Extract_subset</code> for vector indexing operations such as <code>x[i]</code>, returning fmalloc-backed copy results;</li>
-<li>an in-file persistent allocation catalog with record offsets, generations, types, lengths, payload offsets, byte sizes, states, and flags;</li>
-<li>an installed C header plus <code>R_RegisterCCallable()</code> entry points for other R packages that want to open runtimes and create fmalloc-backed ALTREP vectors;</li>
-<li>native lifetime tracking from ALTREP vector handles to runtime mappings, so a runtime mapping is not destroyed while vectors allocated from it are still reachable.</li>
+<li>fmalloc-backed ALTREP vectors for logical, integer, numeric, raw, complex, character, and list values;</li>
+<li>explicit runtime handles and <code>persistent</code> / <code>scratch</code> runtime modes;</li>
+<li>persistent serialization and reopening for fixed-width atomic and character vectors;</li>
+<li>fmalloc-backed coercion and subset-copy results for supported vector types;</li>
+<li>an in-file persistent allocation catalog used to validate serialized references;</li>
+<li>an installed C header and <code>R_RegisterCCallable()</code> API for other packages.</li>
 </ul>
-<p>Still experimental / future work:</p>
-<ul>
-<li>view-based ALTREP subsets for simple contiguous or strided indexing patterns;</li>
-<li>richer catalog tooling, including compaction/reset and stale-record diagnostics;</li>
-<li>richer persistence semantics for pointer-containing R types; list vectors are session-local containers, although their fmalloc-vector elements can serialize through their own persistent references;</li>
-<li>stronger mapped-file lifecycle behavior: clearer close semantics, recovery from interrupted sessions, stale backing-file diagnostics, and platform-specific mapping edge cases.</li>
-</ul>
+<p>Still experimental: view-based subsets, richer catalog maintenance tooling, persistent list recovery semantics, and mapped-file recovery diagnostics.</p>
 </div>
 <div class="section level2">
 <h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
@@ -144,7 +130,7 @@
 <span>  <span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpmRjboY/file751407d8b3008.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a29f6510d.bin (init: true, mode: persistent)</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
 <span><span class="co">#&gt; fmalloc cleaned up</span></span>
 <span><span class="co">#&gt; $integer</span></span>
@@ -183,7 +169,7 @@
 <span>  <span class="va">v</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">3</span><span class="op">]</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpmRjboY/file75140504d3cf4.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a69783054.bin (init: true, mode: persistent)</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
 <span><span class="co">#&gt; fmalloc cleaned up</span></span>
 <span><span class="co">#&gt; [1] 10 11 12</span></span></code></pre></div>
@@ -191,7 +177,6 @@
 <div class="section level2">
 <h2 id="larger-allocation-example">Larger Allocation Example<a class="anchor" aria-label="anchor" href="#larger-allocation-example"></a>
 </h2>
-<p>This is the kind of stress case the package is meant for: it creates a 5 GB backing file and allocates about 4 GB of integer payload.</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/sounkou-bioinfo/Rfmalloc" class="external-link">Rfmalloc</a></span><span class="op">)</span></span>
 <span></span>
@@ -203,12 +188,8 @@
 <span>    <span class="fu"><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink</a></span><span class="op">(</span><span class="va">large_file</span><span class="op">)</span></span>
 <span>  <span class="op">}</span>, add <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
 <span></span>
-<span>  <span class="co"># 1 billion integers = about 4 GB of payload, backed by fmalloc.</span></span>
-<span>  <span class="co"># Keep creation and initialization in one local expression so README rendering</span></span>
-<span>  <span class="co"># does not keep an extra transient reference that would force a second 4 GB COW</span></span>
-<span>  <span class="co"># duplicate during `[&lt;-`.</span></span>
 <span>  <span class="va">big_int</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
-<span>    <span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/create_fmalloc_vector.html">create_fmalloc_vector</a></span><span class="op">(</span><span class="st">"integer"</span>, <span class="fl">1e9</span><span class="op">)</span></span>
+<span>    <span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/create_fmalloc_vector.html">create_fmalloc_vector</a></span><span class="op">(</span><span class="st">"integer"</span>, <span class="fl">1e9</span><span class="op">)</span> <span class="co"># about 4 GB of payload</span></span>
 <span>    <span class="va">x</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">5</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fl">1</span><span class="op">:</span><span class="fl">5</span></span>
 <span>    <span class="va">x</span></span>
 <span>  <span class="op">}</span><span class="op">)</span></span>
@@ -216,7 +197,7 @@
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Requested file size: 5.00 GB (5368709120 bytes)</span></span>
 <span><span class="co">#&gt; Creating file with size: 5368709120 bytes (5.00 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpmRjboY/file751405fd9e31f.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a22392348.bin (init: true, mode: persistent)</span></span>
 <span><span class="co">#&gt; Creating fmalloc ALTREP vector: type=integer, length=1000000000</span></span>
 <span><span class="co">#&gt; Large allocation: 3814.70 MB requested</span></span>
 <span><span class="co">#&gt; SUCCESS: fmalloc allocated 4000000000 bytes</span></span>
@@ -250,9 +231,9 @@
 <span>  <span class="va">roundtrip</span><span class="op">[</span><span class="op">]</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpmRjboY/file7514029c30c80.bin (init: true, mode: persistent)</span></span>
-<span><span class="co">#&gt; Using existing file: /tmp/RtmpmRjboY/file7514029c30c80.bin (size: 33562624 bytes)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpmRjboY/file7514029c30c80.bin (init: false, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a1f6dbdc1.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; Using existing file: /tmp/RtmpuijWbZ/file7b34a1f6dbdc1.bin (size: 33562624 bytes)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a1f6dbdc1.bin (init: false, mode: persistent)</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
 <span><span class="co">#&gt; fmalloc cleaned up</span></span>
 <span><span class="co">#&gt; [1] 1 2 3 4 5</span></span></code></pre></div>
@@ -277,8 +258,8 @@
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/Internal.html" class="external-link">.Internal</a></span><span class="op">(</span><span class="fu">inspect</span><span class="op">(</span><span class="va">inspect_vec</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpmRjboY/file7514030d07d1b.bin (init: true, mode: persistent)</span></span>
-<span><span class="co">#&gt; @5a94b8d784e8 13 INTSXP g0c0 [REF(1)] fmalloc_altrep type=integer length=4 bytes=16 data=0x7329e28023e8 mode=persistent runtime=open offset=9192 uuid=ba8179b0a7a0daa2b2cb29f2c498d827 file=/tmp/RtmpmRjboY/file7514030d07d1b.bin</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a569dbf7b.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; @5862924f05b8 13 INTSXP g0c0 [REF(1)] fmalloc_altrep type=integer length=4 bytes=16 data=0x7b3bac2023e8 mode=persistent runtime=open offset=9192 uuid=b3a34f02d203379df41c6918d9c79b80 file=/tmp/RtmpuijWbZ/file7b34a569dbf7b.bin</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
 <span><span class="co">#&gt; fmalloc cleaned up</span></span></code></pre></div>
 <p><code>inspect()</code> output is an internal R diagnostic, so exact formatting can vary between R versions. The <code>fmalloc_altrep ...</code> line comes from Rfmalloc’s ALTREP <code>Inspect</code> method.</p>
@@ -286,7 +267,7 @@
 <div class="section level2">
 <h2 id="character-vectors">Character Vectors<a class="anchor" aria-label="anchor" href="#character-vectors"></a>
 </h2>
-<p>Rfmalloc character vectors are ALTSTRING vectors. They do not allocate R <code>CHARSXP</code> objects inside fmalloc. R’s current sources keep <code>CHARSXP</code> allocation on internal string-cache paths, and <code>allocVector3()</code> is explicitly not a public API. Instead, Rfmalloc stores string bytes, lengths, encodings, and NA flags in fmalloc allocations. <code>STRING_ELT()</code> materializes an ordinary R <code>CHARSXP</code> with <code>mkCharLenCE()</code> when R asks for an element.</p>
+<p>Rfmalloc character vectors are ALTSTRING vectors. String bytes, lengths, encodings, and NA flags live in fmalloc storage. R <code>CHARSXP</code> values are materialized on <code>STRING_ELT()</code> access; Rfmalloc does not allocate <code>CHARSXP</code> objects inside fmalloc.</p>
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/sounkou-bioinfo/Rfmalloc" class="external-link">Rfmalloc</a></span><span class="op">)</span></span>
 <span></span>
@@ -310,7 +291,7 @@
 <span>  <span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpmRjboY/file751403b2250b2.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a4c6f234e.bin (init: true, mode: persistent)</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
 <span><span class="co">#&gt; fmalloc cleaned up</span></span>
 <span><span class="co">#&gt; $chars</span></span>
@@ -322,7 +303,7 @@
 <div class="section level2">
 <h2 id="multiple-runtimes-and-lifetime">Multiple Runtimes and Lifetime<a class="anchor" aria-label="anchor" href="#multiple-runtimes-and-lifetime"></a>
 </h2>
-<p>Runtime handles make it possible to use more than one backing file in the same R process. Allocator entry is serialized with native mutexes because the current fmalloc/ptmalloc layer still has process-global target state internally.</p>
+<p>Runtime handles make it possible to use more than one backing file in one R process.</p>
 <div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/sounkou-bioinfo/Rfmalloc" class="external-link">Rfmalloc</a></span><span class="op">)</span></span>
 <span></span>
@@ -354,10 +335,10 @@
 <span>  <span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpmRjboY/file75140529962d1.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a39a21c1a.bin (init: true, mode: persistent)</span></span>
 <span><span class="co">#&gt; Requested file size: 0.10 GB (107374182 bytes)</span></span>
 <span><span class="co">#&gt; Creating file with size: 107374182 bytes (0.10 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpmRjboY/file75140564c4f82.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a7c48226f.bin (init: true, mode: persistent)</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
 <span><span class="co">#&gt; fmalloc cleaned up</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
@@ -416,13 +397,13 @@
 <span>  <span class="va">output</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpmRjboY/file75140662f5a3d.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a6b32ad90.bin (init: true, mode: persistent)</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
 <span><span class="co">#&gt; fmalloc cleaned up</span></span>
-<span><span class="co">#&gt; Using existing file: /tmp/RtmpmRjboY/file75140662f5a3d.bin (size: 33562624 bytes)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpmRjboY/file75140662f5a3d.bin (init: false, mode: persistent)</span></span>
-<span><span class="co">#&gt; Using existing file: /tmp/RtmpmRjboY/file75140662f5a3d.bin (size: 33562624 bytes)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpmRjboY/file75140662f5a3d.bin (init: false, mode: persistent)</span></span>
+<span><span class="co">#&gt; Using existing file: /tmp/RtmpuijWbZ/file7b34a6b32ad90.bin (size: 33562624 bytes)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a6b32ad90.bin (init: false, mode: persistent)</span></span>
+<span><span class="co">#&gt; Using existing file: /tmp/RtmpuijWbZ/file7b34a6b32ad90.bin (size: 33562624 bytes)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a6b32ad90.bin (init: false, mode: persistent)</span></span>
 <span><span class="co">#&gt; $catalog</span></span>
 <span><span class="co">#&gt;   record_offset generation      type length</span></span>
 <span><span class="co">#&gt; 1          9440          2 character      3</span></span>
@@ -448,7 +429,7 @@
 <span>  <span class="va">scratch_copy</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpmRjboY/file7514066846321.bin (init: true, mode: scratch)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpuijWbZ/file7b34a78731d72.bin (init: true, mode: scratch)</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
 <span><span class="co">#&gt; fmalloc cleaned up</span></span>
 <span><span class="co">#&gt; [1] 1 2 3 4</span></span></code></pre></div>
@@ -456,107 +437,16 @@
 <p>This is reference-based recovery, not name-based object discovery. The catalog stores physical allocation records, not user variable names. Serialized references use the catalog record offset and generation for validation; the catalog can be listed, but it is not yet a high-level object store for recovering vectors by name.</p>
 </div>
 <div class="section level2">
-<h2 id="watching-altrep-controlled-duplication-with-lobstr">Watching ALTREP-Controlled Duplication with <code>lobstr</code>
-<a class="anchor" aria-label="anchor" href="#watching-altrep-controlled-duplication-with-lobstr"></a>
-</h2>
-<p><code><a href="https://lobstr.r-lib.org/reference/obj_addr.html" class="external-link">lobstr::obj_addr()</a></code> is useful for seeing why the vectors are ALTREP from the beginning. R’s copy-on-write path dispatches to the ALTREP <code>Duplicate</code> method, and the duplicate allocates its payload from fmalloc.</p>
-<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/sounkou-bioinfo/Rfmalloc" class="external-link">Rfmalloc</a></span><span class="op">)</span></span>
-<span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://lobstr.r-lib.org/" class="external-link">lobstr</a></span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
-<span>  <span class="va">addr_file</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
-<span>  <span class="fu"><a href="reference/init_fmalloc.html">init_fmalloc</a></span><span class="op">(</span><span class="va">addr_file</span><span class="op">)</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/on.exit.html" class="external-link">on.exit</a></span><span class="op">(</span><span class="op">{</span></span>
-<span>    <span class="fu"><a href="reference/cleanup_fmalloc.html">cleanup_fmalloc</a></span><span class="op">(</span><span class="op">)</span></span>
-<span>    <span class="fu"><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink</a></span><span class="op">(</span><span class="va">addr_file</span><span class="op">)</span></span>
-<span>  <span class="op">}</span>, add <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span></span>
-<span>  <span class="va">cow_a</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/create_fmalloc_vector.html">create_fmalloc_vector</a></span><span class="op">(</span><span class="st">"integer"</span>, <span class="fl">10</span><span class="op">)</span></span>
-<span>  <span class="va">cow_a</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">3</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fl">1</span><span class="op">:</span><span class="fl">3</span></span>
-<span>  <span class="va">cow_b</span> <span class="op">&lt;-</span> <span class="va">cow_a</span></span>
-<span></span>
-<span>  <span class="va">before</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
-<span>    object <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"cow_a"</span>, <span class="st">"cow_b"</span><span class="op">)</span>,</span>
-<span>    address <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fu"><a href="https://lobstr.r-lib.org/reference/obj_addr.html" class="external-link">obj_addr</a></span><span class="op">(</span><span class="va">cow_a</span><span class="op">)</span>, <span class="fu"><a href="https://lobstr.r-lib.org/reference/obj_addr.html" class="external-link">obj_addr</a></span><span class="op">(</span><span class="va">cow_b</span><span class="op">)</span><span class="op">)</span></span>
-<span>  <span class="op">)</span></span>
-<span></span>
-<span>  <span class="va">cow_a</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fl">99L</span></span>
-<span></span>
-<span>  <span class="va">after</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
-<span>    object <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"cow_a"</span>, <span class="st">"cow_b"</span><span class="op">)</span>,</span>
-<span>    address <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fu"><a href="https://lobstr.r-lib.org/reference/obj_addr.html" class="external-link">obj_addr</a></span><span class="op">(</span><span class="va">cow_a</span><span class="op">)</span>, <span class="fu"><a href="https://lobstr.r-lib.org/reference/obj_addr.html" class="external-link">obj_addr</a></span><span class="op">(</span><span class="va">cow_b</span><span class="op">)</span><span class="op">)</span></span>
-<span>  <span class="op">)</span></span>
-<span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>before <span class="op">=</span> <span class="va">before</span>, after <span class="op">=</span> <span class="va">after</span><span class="op">)</span></span>
-<span><span class="op">}</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpmRjboY/file75140394780ae.bin (init: true, mode: persistent)</span></span>
-<span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
-<span><span class="co">#&gt; fmalloc cleaned up</span></span>
-<span><span class="co">#&gt; $before</span></span>
-<span><span class="co">#&gt;   object        address</span></span>
-<span><span class="co">#&gt; 1  cow_a 0x5a94b679eb00</span></span>
-<span><span class="co">#&gt; 2  cow_b 0x5a94b679eb00</span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; $after</span></span>
-<span><span class="co">#&gt;   object        address</span></span>
-<span><span class="co">#&gt; 1  cow_a 0x5a94b673cbc8</span></span>
-<span><span class="co">#&gt; 2  cow_b 0x5a94b679eb00</span></span></code></pre></div>
-<p>The two names start as references to the same <code>SEXP</code>. After the write to <code>cow_a</code>, <code><a href="https://lobstr.r-lib.org/reference/obj_addr.html" class="external-link">lobstr::obj_addr()</a></code> shows that <code>cow_a</code> moved to a new ALTREP object while <code>cow_b</code> still points at the original ALTREP object. That automatic duplicate is handled by Rfmalloc’s ALTREP <code>Duplicate</code> method, not by R’s ordinary <code>allocVector()</code> path.</p>
-<p><code><a href="https://lobstr.r-lib.org/reference/obj_addr.html" class="external-link">lobstr::obj_addr()</a></code> shows the R object header address, not necessarily the data payload pointer. The payload pointer returned by <code>DATAPTR()</code> is a real writable pointer into the fmalloc mapping for fixed-width atomic types. Character vectors store string bytes in fmalloc and materialize ordinary R <code>CHARSXP</code> values on <code>STRING_ELT()</code> access. List vectors use ALTREP list element methods plus an R-visible sidecar so the GC can see referenced R objects.</p>
-</div>
-<div class="section level2">
-<h2 id="why-altrep-is-required-for-copy-on-write-control">Why ALTREP Is Required for Copy-on-Write Control<a class="anchor" aria-label="anchor" href="#why-altrep-is-required-for-copy-on-write-control"></a>
-</h2>
-<p>Plain vectors allocated through custom allocator hooks do not control R’s ordinary duplication path. R saves enough allocator state to free those objects, but ordinary vector duplication does not consult a per-object allocator copy callback, and the <code>R_allocator_t::res</code> field is reserved.</p>
-<p>Rfmalloc therefore constructs ALTREP vectors from the beginning. The ALTREP C header declares a <code>Duplicate</code> method slot, so copy-on-write can create another fmalloc-backed vector instead of falling back to R’s ordinary heap allocator. For all current vector constructors, this also means Rfmalloc no longer needs the non-API <code>Rf_allocVector3()</code> path.</p>
-<p>The public ALTREP header used by the installed R on this system exposes <code>Get_region</code> hooks for atomic vector reads and <code>Set_elt</code> hooks for strings and lists, but not an atomic <code>Set_region</code> hook. Atomic writes therefore go through R’s normal writable <code>DATAPTR()</code> path; internal bulk copies use the direct fmalloc payload pointer.</p>
-</div>
-<div class="section level2">
 <h2 id="native-c-api-for-other-packages">Native C API for Other Packages<a class="anchor" aria-label="anchor" href="#native-c-api-for-other-packages"></a>
 </h2>
-<p>Rfmalloc installs <code>inst/include/Rfmalloc.h</code> and registers a small C-callable API with <code>R_RegisterCCallable()</code>. A downstream package can add Rfmalloc to <code>LinkingTo</code> and <code>Imports</code>, include the header, and resolve the entry points at runtime through the inline wrappers in that header.</p>
-<p>Current C-callable functions are:</p>
-<ul>
-<li>
-<code>Rfmalloc_api_version()</code>;</li>
-<li>
-<code>Rfmalloc_open_runtime(const char *filepath, double size_gb, const char *mode)</code>;</li>
-<li>
-<code>Rfmalloc_default_runtime()</code>;</li>
-<li>
-<code>Rfmalloc_create_vector(SEXP runtime, int sexptype, R_xlen_t length)</code>;</li>
-<li>
-<code>Rfmalloc_list_allocations(SEXP runtime)</code>;</li>
-<li>
-<code>Rfmalloc_cleanup_runtime(SEXP runtime)</code>.</li>
-</ul>
-<p>Returned <code>SEXP</code> objects follow normal R API ownership rules: protect them before further allocation and preserve them if they must outlive the current native call. The runtime object is explicit; downstream code should keep it reachable for as long as vectors allocated from it are needed.</p>
-<p>The native source is also split into smaller implementation chunks:</p>
-<ul>
-<li>
-<code>src/fmalloc_runtime.inc</code> for runtime and backing-file handling;</li>
-<li>
-<code>src/fmalloc_vector.inc</code> for vector storage, strings, catalog records, and materialization;</li>
-<li>
-<code>src/fmalloc_altrep.inc</code> for ALTREP methods and class registration;</li>
-<li>
-<code>src/fmalloc_api.inc</code> for <code>.Call</code>, C-callable API, and package registration.</li>
-</ul>
-<p><code>src/fmalloc.cpp</code> is now the small unity translation unit that includes those pieces. Keeping one translation unit avoids changing symbol visibility while the internal boundaries settle; the installed <code>Rfmalloc.h</code> is the supported native surface for other packages.</p>
+<p>Rfmalloc installs <code>inst/include/Rfmalloc.h</code> and registers C-callable entry points with <code>R_RegisterCCallable()</code>. Downstream packages can add Rfmalloc to <code>LinkingTo</code> and <code>Imports</code>, include the header, and use the inline wrappers.</p>
+<p>The current native surface exposes runtime open/cleanup, vector creation, default-runtime lookup, catalog listing, and an API-version query. Returned <code>SEXP</code> objects follow normal R API ownership rules.</p>
 </div>
 <div class="section level2">
 <h2 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a>
 </h2>
 <ul>
 <li>fmalloc: <a href="https://github.com/yasukata/fmalloc" class="external-link uri">https://github.com/yasukata/fmalloc</a>
-</li>
-<li>Simon Urbanek’s mmap allocator example: <a href="https://gist.github.com/s-u/6712c97ca74181f5a1a5" class="external-link uri">https://gist.github.com/s-u/6712c97ca74181f5a1a5</a>
-</li>
-<li>UFOs: <a href="https://github.com/PRL-PRG/UFOs" class="external-link uri">https://github.com/PRL-PRG/UFOs</a>
-</li>
-<li>Travel: <a href="https://github.com/Jiefei-Wang/Travel" class="external-link uri">https://github.com/Jiefei-Wang/Travel</a>
 </li>
 </ul>
 </div>
