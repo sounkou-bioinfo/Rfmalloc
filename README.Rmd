@@ -9,6 +9,7 @@ knitr::opts_chunk$set(
   fig.path = "man/figures/README-",
   out.width = "100%"
 )
+has_bench <- requireNamespace("bench", quietly = TRUE)
 ```
 
 # Rfmalloc
@@ -53,8 +54,10 @@ devtools::install_github("sounkou-bioinfo/Rfmalloc")
 
 ## Basic Usage
 
-The examples use `local()` and `on.exit()` only to keep temporary backing files
-scoped while the README is rendered.
+The examples use temporary backing files. Several chunks wrap code in `local()`
+only so `on.exit()` can clean those files up while the README is rendered; this
+is not required in normal interactive use. In your own code, keep the runtime
+handle you need and call `cleanup_fmalloc()` when finished.
 
 The shortest form uses `init_fmalloc()`, which opens a backing file and stores
 it as the package default runtime. Calls to `create_fmalloc_vector()` can then
@@ -347,6 +350,75 @@ stores physical allocation records, not user variable names. Serialized
 references use the catalog record offset and generation for validation; the
 catalog can be listed, but it is not yet a high-level object store for recovering
 vectors by name.
+
+## Performance
+
+Rfmalloc vectors are regular R vectors from R's point of view, but different
+operations exercise different paths through R and ALTREP:
+
+- vectorized sequential operations such as `sum(x)` can use contiguous payload
+  access;
+- scalar loops use ALTREP element access and are more call-heavy;
+- `x[i]` creates a fmalloc-backed subset copy for supported vector types;
+- `bench::mark()` reports R heap allocation in `mem_alloc`; it does not count
+  bytes stored in the fmalloc mapped file.
+
+The small benchmark below uses `bench` and a scratch runtime, so benchmark-only
+fmalloc allocations are not preserved as persistent records. Timings are
+machine- and R-version-specific; use this as a template for local measurements.
+
+```{r performance-bench, message=FALSE, eval=has_bench}
+library(Rfmalloc)
+
+perf_file <- tempfile(fileext = ".bin")
+rt <- open_fmalloc(perf_file, mode = "scratch", size_gb = 0.1)
+
+n <- 100000L
+set.seed(1)
+idx <- sample.int(n, 2000L)
+
+base_int <- integer(n)
+base_int[] <- seq_len(n)
+
+fm_int <- create_fmalloc_vector("integer", n, runtime = rt)
+fm_int[] <- base_int
+
+write_env <- new.env(parent = emptyenv())
+write_env$base <- base_int
+write_env$fm <- create_fmalloc_vector("integer", n, runtime = rt)
+write_env$fm[] <- base_int
+
+scalar_sum <- function(x, i) {
+  total <- 0L
+  for (j in i) total <- total + x[[j]]
+  total
+}
+
+perf_result <- bench::mark(
+  base_sequential_sum = sum(base_int),
+  fmalloc_sequential_sum = sum(fm_int),
+  base_scalar_read = scalar_sum(base_int, idx),
+  fmalloc_scalar_read = scalar_sum(fm_int, idx),
+  base_subset_copy = base_int[idx],
+  fmalloc_subset_copy = fm_int[idx],
+  base_indexed_write = {
+    write_env$base[idx] <- 0L
+    invisible(write_env$base[1L])
+  },
+  fmalloc_indexed_write = {
+    write_env$fm[idx] <- 0L
+    invisible(write_env$fm[1L])
+  },
+  iterations = 20,
+  check = FALSE
+)[, c("expression", "median", "itr/sec", "mem_alloc", "gc/sec")]
+
+rm(fm_int, write_env)
+invisible(gc())
+cleanup_fmalloc(rt)
+unlink(perf_file)
+perf_result
+```
 
 ## Native C API for Other Packages
 
