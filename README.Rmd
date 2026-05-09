@@ -45,7 +45,9 @@ Implemented now:
 
 Still experimental / future work:
 
-- fmalloc-backed subset/coercion results where appropriate;
+- ALTREP `Extract_subset` and `Coerce` methods for operations such as `x[i]`
+  and `as.numeric(x)` when their results should remain fmalloc-backed; today
+  those operations may return ordinary R heap vectors;
 - richer persistence semantics and metadata;
 - richer persistence semantics for pointer-containing R types; character and
   list vectors are session-local because their elements are R object pointers;
