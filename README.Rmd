@@ -62,7 +62,9 @@ devtools::install_github("sounkou-bioinfo/Rfmalloc")
 
 ## Basic Usage
 
-The compatibility API keeps a package-default runtime:
+The shortest form uses `init_fmalloc()`, which opens a backing file and stores
+it as the package default runtime. Calls to `create_fmalloc_vector()` can then
+omit the `runtime` argument:
 
 ```{r}
 library(Rfmalloc)
@@ -97,7 +99,8 @@ cleanup_fmalloc()
 unlink(alloc_file)
 ```
 
-For new code, prefer explicit runtime handles:
+For multiple backing files or explicit lifetime management, prefer runtime
+handles returned by `open_fmalloc()`:
 
 ```{r}
 library(Rfmalloc)
