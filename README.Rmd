@@ -51,7 +51,9 @@ Still experimental / future work:
 - richer persistence semantics and metadata;
 - richer persistence semantics for pointer-containing R types; character and
   list vectors are session-local because their elements are R object pointers;
-- production-grade lifecycle management for mapped files.
+- stronger mapped-file lifecycle behavior: clearer close semantics, recovery from
+  interrupted sessions, stale backing-file diagnostics, and platform-specific
+  mapping edge cases.
 
 ## Installation
 
@@ -120,18 +122,17 @@ unlink(handle_file)
 
 ## Larger Allocation Example
 
-This is the kind of stress case the package is meant for. It is not evaluated
-when rendering the README, because it creates a 5 GB backing file and allocates
-about 4 GB of integer payload.
+This is the kind of stress case the package is meant for: it creates a 5 GB
+backing file and allocates about 2 GB of integer payload.
 
-```{r eval=FALSE}
+```{r}
 library(Rfmalloc)
 
 large_file <- tempfile(fileext = ".bin")
 init_fmalloc(large_file, size_gb = 5)
 
-# 1 billion integers = about 4 GB of payload, backed by fmalloc.
-big_int <- create_fmalloc_vector("integer", 1e9)
+# 500 million integers = about 2 GB of payload, backed by fmalloc.
+big_int <- create_fmalloc_vector("integer", 5e8)
 big_int[1:5] <- 1:5
 big_int[1:5]
 
@@ -221,9 +222,9 @@ constructor that can recreate an R vector from `(file, offset, type, length)`.
 
 ## Watching ALTREP-Controlled Duplication with `lobstr`
 
-`lobstr::obj_addr()` and R's internal inspector are useful for seeing why the
-vectors are ALTREP from the beginning. R's copy-on-write path dispatches to the
-ALTREP `Duplicate` method, and the duplicate allocates its payload from fmalloc.
+`lobstr::obj_addr()` is useful for seeing why the vectors are ALTREP from the
+beginning. R's copy-on-write path dispatches to the ALTREP `Duplicate` method,
+and the duplicate allocates its payload from fmalloc.
 
 ```{r}
 library(Rfmalloc)
@@ -236,21 +237,20 @@ cow_a <- create_fmalloc_vector("integer", 10)
 cow_a[1:3] <- 1:3
 cow_b <- cow_a
 
-data.frame(
+before <- data.frame(
   object = c("cow_a", "cow_b"),
   address = c(obj_addr(cow_a), obj_addr(cow_b))
 )
-capture.output(.Internal(inspect(cow_a)))[1]
 
-tracemem(cow_a)
 cow_a[1] <- 99L
 
-data.frame(
+after <- data.frame(
   object = c("cow_a", "cow_b"),
   address = c(obj_addr(cow_a), obj_addr(cow_b))
 )
-capture.output(.Internal(inspect(cow_a)))[1]
-capture.output(.Internal(inspect(cow_b)))[1]
+
+before
+after
 
 rm(cow_a, cow_b)
 gc()
@@ -259,10 +259,10 @@ unlink(addr_file)
 ```
 
 The two names start as references to the same `SEXP`. After the write to
-`cow_a`, `tracemem()` reports a duplicate and `lobstr::obj_addr()` shows that
-`cow_a` moved to a new ALTREP object while `cow_b` still points at the original
-ALTREP object. That automatic duplicate is handled by Rfmalloc's ALTREP
-`Duplicate` method, not by R's ordinary `allocVector()` path.
+`cow_a`, `lobstr::obj_addr()` shows that `cow_a` moved to a new ALTREP object
+while `cow_b` still points at the original ALTREP object. That automatic
+duplicate is handled by Rfmalloc's ALTREP `Duplicate` method, not by R's ordinary
+`allocVector()` path.
 
 `lobstr::obj_addr()` shows the R object header address, not necessarily the data
 payload pointer. The payload pointer returned by `DATAPTR()` is a real writable

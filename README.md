@@ -43,7 +43,9 @@ Still experimental / future work:
 - richer persistence semantics for pointer-containing R types; character
   and list vectors are session-local because their elements are R object
   pointers;
-- production-grade lifecycle management for mapped files.
+- stronger mapped-file lifecycle behavior: clearer close semantics,
+  recovery from interrupted sessions, stale backing-file diagnostics,
+  and platform-specific mapping edge cases.
 
 ## Installation
 
@@ -64,7 +66,7 @@ library(Rfmalloc)
 alloc_file <- tempfile(fileext = ".bin")
 init_fmalloc(alloc_file)
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/Rtmp3h3cRX/file38ee1659fb313.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpjpHJAe/file3966b6a69bd31.bin (init: true)
 #> [1] TRUE
 
 v_int <- create_fmalloc_vector("integer", 10)
@@ -103,8 +105,8 @@ v_lst
 rm(v_int, v_num, v_raw, v_cplx, v_chr, v_lst)
 gc()
 #>          used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells 528943 28.3    1152128 61.6   718274 38.4
-#> Vcells 997408  7.7    8388608 64.0  2007149 15.4
+#> Ncells 528942 28.3    1152125 61.6   718274 38.4
+#> Vcells 997399  7.7    8388608 64.0  2007149 15.4
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
@@ -120,7 +122,7 @@ library(Rfmalloc)
 handle_file <- tempfile(fileext = ".bin")
 rt <- open_fmalloc(handle_file)
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/Rtmp3h3cRX/file38ee14b1b5857.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpjpHJAe/file3966b3d14b5ef.bin (init: true)
 
 v <- create_fmalloc_vector("integer", 10, runtime = rt)
 v[1:3] <- 10:12
@@ -130,8 +132,8 @@ v[1:3]
 rm(v)
 gc()
 #>          used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells 529011 28.3    1152128 61.6   718274 38.4
-#> Vcells 998108  7.7    8388608 64.0  2007149 15.4
+#> Ncells 529010 28.3    1152125 61.6   718274 38.4
+#> Vcells 998099  7.7    8388608 64.0  2007149 15.4
 cleanup_fmalloc(rt)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
@@ -140,24 +142,39 @@ unlink(handle_file)
 
 ## Larger Allocation Example
 
-This is the kind of stress case the package is meant for. It is not
-evaluated when rendering the README, because it creates a 5 GB backing
-file and allocates about 4 GB of integer payload.
+This is the kind of stress case the package is meant for: it creates a 5
+GB backing file and allocates about 2 GB of integer payload.
 
 ``` r
 library(Rfmalloc)
 
 large_file <- tempfile(fileext = ".bin")
 init_fmalloc(large_file, size_gb = 5)
+#> Requested file size: 5.00 GB (5368709120 bytes)
+#> Creating file with size: 5368709120 bytes (5.00 GB)
+#> fmalloc initialized with file: /tmp/RtmpjpHJAe/file3966b64d9f56b.bin (init: true)
+#> [1] TRUE
 
-# 1 billion integers = about 4 GB of payload, backed by fmalloc.
-big_int <- create_fmalloc_vector("integer", 1e9)
+# 500 million integers = about 2 GB of payload, backed by fmalloc.
+big_int <- create_fmalloc_vector("integer", 5e8)
+#> Creating fmalloc ALTREP vector: type=integer, length=500000000
+#> Large allocation: 1907.35 MB requested
+#> SUCCESS: fmalloc allocated 2000000000 bytes
+#> Successfully created fmalloc ALTREP vector
 big_int[1:5] <- 1:5
+#> Large allocation: 1907.35 MB requested
+#> SUCCESS: fmalloc allocated 2000000000 bytes
 big_int[1:5]
+#> [1] 1 2 3 4 5
 
 rm(big_int)
 gc()
+#>          used (Mb) gc trigger (Mb) max used (Mb)
+#> Ncells 529035 28.3    1152125 61.6   718274 38.4
+#> Vcells 998267  7.7    8388608 64.0  2007149 15.4
 cleanup_fmalloc()
+#> Cleaning up fmalloc...
+#> fmalloc cleaned up
 unlink(large_file)
 ```
 
@@ -176,11 +193,11 @@ file_b <- tempfile(fileext = ".bin")
 
 rt_a <- open_fmalloc(file_a)
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/Rtmp3h3cRX/file38ee176d8eaf8.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpjpHJAe/file3966b78cfe8dc.bin (init: true)
 rt_b <- open_fmalloc(file_b, size_gb = 0.1)
 #> Requested file size: 0.10 GB (107374182 bytes)
 #> Creating file with size: 107374182 bytes (0.10 GB)
-#> fmalloc initialized with file: /tmp/Rtmp3h3cRX/file38ee15632caa9.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpjpHJAe/file3966b6cc16c4c.bin (init: true)
 
 vec_a <- create_fmalloc_vector("integer", 10, runtime = rt_a)
 vec_b <- create_fmalloc_vector("numeric", 10, runtime = rt_b)
@@ -204,16 +221,16 @@ vec_a[1]
 rm(vec_a)
 gc()
 #>           used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells  530199 28.4    1152128 61.6   718274 38.4
-#> Vcells 1000821  7.7    8388608 64.0  2007149 15.4
+#> Ncells  530215 28.4    1152125 61.6   718274 38.4
+#> Vcells 1000920  7.7    8388608 64.0  2007149 15.4
 cleanup_fmalloc(rt_b)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 rm(vec_b)
 gc()
 #>           used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells  530200 28.4    1152128 61.6   718274 38.4
-#> Vcells 1000834  7.7    8388608 64.0  2007149 15.4
+#> Ncells  530210 28.4    1152125 61.6   718274 38.4
+#> Vcells 1000927  7.7    8388608 64.0  2007149 15.4
 unlink(c(file_a, file_b))
 ```
 
@@ -238,7 +255,7 @@ reopen_file <- tempfile(fileext = ".bin")
 
 first_init <- init_fmalloc(reopen_file)
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/Rtmp3h3cRX/file38ee12665568.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpjpHJAe/file3966b7844020f.bin (init: true)
 first_vec <- create_fmalloc_vector("integer", 100)
 first_vec[1:3] <- 1:3
 first_init
@@ -249,15 +266,15 @@ first_vec[1:3]
 rm(first_vec)
 gc()
 #>           used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells  530115 28.4    1152128 61.6   718274 38.4
-#> Vcells 1000859  7.7    8388608 64.0  2007149 15.4
+#> Ncells  530125 28.4    1152125 61.6   718274 38.4
+#> Vcells 1000952  7.7    8388608 64.0  2007149 15.4
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 
 second_init <- init_fmalloc(reopen_file)
-#> Using existing file: /tmp/Rtmp3h3cRX/file38ee12665568.bin (size: 33562624 bytes)
-#> fmalloc initialized with file: /tmp/Rtmp3h3cRX/file38ee12665568.bin (init: false)
+#> Using existing file: /tmp/RtmpjpHJAe/file3966b7844020f.bin (size: 33562624 bytes)
+#> fmalloc initialized with file: /tmp/RtmpjpHJAe/file3966b7844020f.bin (init: false)
 second_init
 #> [1] FALSE
 exists("first_vec")
@@ -277,10 +294,10 @@ likely an ALTREP vector constructor that can recreate an R vector from
 
 ## Watching ALTREP-Controlled Duplication with `lobstr`
 
-`lobstr::obj_addr()` and R’s internal inspector are useful for seeing
-why the vectors are ALTREP from the beginning. R’s copy-on-write path
-dispatches to the ALTREP `Duplicate` method, and the duplicate allocates
-its payload from fmalloc.
+`lobstr::obj_addr()` is useful for seeing why the vectors are ALTREP
+from the beginning. R’s copy-on-write path dispatches to the ALTREP
+`Duplicate` method, and the duplicate allocates its payload from
+fmalloc.
 
 ``` r
 library(Rfmalloc)
@@ -289,45 +306,39 @@ library(lobstr)
 addr_file <- tempfile(fileext = ".bin")
 init_fmalloc(addr_file)
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/Rtmp3h3cRX/file38ee16cc655ff.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpjpHJAe/file3966b6fbb7c42.bin (init: true)
 #> [1] TRUE
 
 cow_a <- create_fmalloc_vector("integer", 10)
 cow_a[1:3] <- 1:3
 cow_b <- cow_a
 
-data.frame(
+before <- data.frame(
   object = c("cow_a", "cow_b"),
   address = c(obj_addr(cow_a), obj_addr(cow_b))
 )
-#>   object        address
-#> 1  cow_a 0x6255ff3d55a0
-#> 2  cow_b 0x6255ff3d55a0
-capture.output(.Internal(inspect(cow_a)))[1]
-#> [1] "@6255ff3d55a0 13 INTSXP g0c0 [REF(3)] fmalloc_altrep integer length=10 data=0x71d171802418 bytes=40"
 
-tracemem(cow_a)
-#> [1] "<0x6255ff3d55a0>"
 cow_a[1] <- 99L
-#> tracemem[0x6255ff3d55a0 -> 0x6255ff06bfe8]: eval eval withVisible withCallingHandlers eval eval with_handlers doWithOneRestart withOneRestart withRestartList doWithOneRestart withOneRestart withRestartList withRestarts <Anonymous> evaluate in_dir in_input_dir eng_r block_exec call_block process_group withCallingHandlers with_options <Anonymous> process_file <Anonymous> <Anonymous>
 
-data.frame(
+after <- data.frame(
   object = c("cow_a", "cow_b"),
   address = c(obj_addr(cow_a), obj_addr(cow_b))
 )
+
+before
 #>   object        address
-#> 1  cow_a 0x6255ff06bfe8
-#> 2  cow_b 0x6255ff3d55a0
-capture.output(.Internal(inspect(cow_a)))[1]
-#> [1] "@6255ff06bfe8 13 INTSXP g0c0 [REF(1),TR] fmalloc_altrep integer length=10 data=0x71d171802448 bytes=40"
-capture.output(.Internal(inspect(cow_b)))[1]
-#> [1] "@6255ff3d55a0 13 INTSXP g0c0 [REF(3),TR] fmalloc_altrep integer length=10 data=0x71d171802418 bytes=40"
+#> 1  cow_a 0x59f03aa92858
+#> 2  cow_b 0x59f03aa92858
+after
+#>   object        address
+#> 1  cow_a 0x59f03a715968
+#> 2  cow_b 0x59f03aa92858
 
 rm(cow_a, cow_b)
 gc()
 #>           used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells  533196 28.5    1152128 61.6   751773 40.2
-#> Vcells 1006125  7.7    8388608 64.0  2007149 15.4
+#> Ncells  532776 28.5    1152125 61.6   734740 39.3
+#> Vcells 1005079  7.7    8388608 64.0  2007149 15.4
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
@@ -335,11 +346,10 @@ unlink(addr_file)
 ```
 
 The two names start as references to the same `SEXP`. After the write to
-`cow_a`, `tracemem()` reports a duplicate and `lobstr::obj_addr()` shows
-that `cow_a` moved to a new ALTREP object while `cow_b` still points at
-the original ALTREP object. That automatic duplicate is handled by
-Rfmalloc’s ALTREP `Duplicate` method, not by R’s ordinary
-`allocVector()` path.
+`cow_a`, `lobstr::obj_addr()` shows that `cow_a` moved to a new ALTREP
+object while `cow_b` still points at the original ALTREP object. That
+automatic duplicate is handled by Rfmalloc’s ALTREP `Duplicate` method,
+not by R’s ordinary `allocVector()` path.
 
 `lobstr::obj_addr()` shows the R object header address, not necessarily
 the data payload pointer. The payload pointer returned by `DATAPTR()` is
