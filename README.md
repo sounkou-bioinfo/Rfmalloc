@@ -66,7 +66,7 @@ library(Rfmalloc)
 alloc_file <- tempfile(fileext = ".bin")
 init_fmalloc(alloc_file)
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpjpHJAe/file3966b6a69bd31.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpJPzVDa/file39ba743935210.bin (init: true)
 #> [1] TRUE
 
 v_int <- create_fmalloc_vector("integer", 10)
@@ -105,8 +105,8 @@ v_lst
 rm(v_int, v_num, v_raw, v_cplx, v_chr, v_lst)
 gc()
 #>          used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells 528942 28.3    1152125 61.6   718274 38.4
-#> Vcells 997399  7.7    8388608 64.0  2007149 15.4
+#> Ncells 528948 28.3    1152142 61.6   718274 38.4
+#> Vcells 997455  7.7    8388608 64.0  2007149 15.4
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
@@ -122,7 +122,7 @@ library(Rfmalloc)
 handle_file <- tempfile(fileext = ".bin")
 rt <- open_fmalloc(handle_file)
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpjpHJAe/file3966b3d14b5ef.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpJPzVDa/file39ba73efb6fd3.bin (init: true)
 
 v <- create_fmalloc_vector("integer", 10, runtime = rt)
 v[1:3] <- 10:12
@@ -132,8 +132,8 @@ v[1:3]
 rm(v)
 gc()
 #>          used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells 529010 28.3    1152125 61.6   718274 38.4
-#> Vcells 998099  7.7    8388608 64.0  2007149 15.4
+#> Ncells 529016 28.3    1152142 61.6   718274 38.4
+#> Vcells 998155  7.7    8388608 64.0  2007149 15.4
 cleanup_fmalloc(rt)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
@@ -143,7 +143,7 @@ unlink(handle_file)
 ## Larger Allocation Example
 
 This is the kind of stress case the package is meant for: it creates a 5
-GB backing file and allocates about 2 GB of integer payload.
+GB backing file and allocates about 4 GB of integer payload.
 
 ``` r
 library(Rfmalloc)
@@ -152,26 +152,30 @@ large_file <- tempfile(fileext = ".bin")
 init_fmalloc(large_file, size_gb = 5)
 #> Requested file size: 5.00 GB (5368709120 bytes)
 #> Creating file with size: 5368709120 bytes (5.00 GB)
-#> fmalloc initialized with file: /tmp/RtmpjpHJAe/file3966b64d9f56b.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpJPzVDa/file39ba73d925436.bin (init: true)
 #> [1] TRUE
 
-# 500 million integers = about 2 GB of payload, backed by fmalloc.
-big_int <- create_fmalloc_vector("integer", 5e8)
-#> Creating fmalloc ALTREP vector: type=integer, length=500000000
-#> Large allocation: 1907.35 MB requested
-#> SUCCESS: fmalloc allocated 2000000000 bytes
+# 1 billion integers = about 4 GB of payload, backed by fmalloc.
+# Keep creation and initialization in one local expression so README rendering
+# does not keep an extra transient reference that would force a second 4 GB COW
+# duplicate during `[<-`.
+big_int <- local({
+  x <- create_fmalloc_vector("integer", 1e9)
+  x[1:5] <- 1:5
+  x
+})
+#> Creating fmalloc ALTREP vector: type=integer, length=1000000000
+#> Large allocation: 3814.70 MB requested
+#> SUCCESS: fmalloc allocated 4000000000 bytes
 #> Successfully created fmalloc ALTREP vector
-big_int[1:5] <- 1:5
-#> Large allocation: 1907.35 MB requested
-#> SUCCESS: fmalloc allocated 2000000000 bytes
 big_int[1:5]
 #> [1] 1 2 3 4 5
 
 rm(big_int)
 gc()
 #>          used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells 529035 28.3    1152125 61.6   718274 38.4
-#> Vcells 998267  7.7    8388608 64.0  2007149 15.4
+#> Ncells 529065 28.3    1152142 61.6   718274 38.4
+#> Vcells 998359  7.7    8388608 64.0  2007149 15.4
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
@@ -193,11 +197,11 @@ file_b <- tempfile(fileext = ".bin")
 
 rt_a <- open_fmalloc(file_a)
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpjpHJAe/file3966b78cfe8dc.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpJPzVDa/file39ba74286b19a.bin (init: true)
 rt_b <- open_fmalloc(file_b, size_gb = 0.1)
 #> Requested file size: 0.10 GB (107374182 bytes)
 #> Creating file with size: 107374182 bytes (0.10 GB)
-#> fmalloc initialized with file: /tmp/RtmpjpHJAe/file3966b6cc16c4c.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpJPzVDa/file39ba7461b831c.bin (init: true)
 
 vec_a <- create_fmalloc_vector("integer", 10, runtime = rt_a)
 vec_b <- create_fmalloc_vector("numeric", 10, runtime = rt_b)
@@ -221,16 +225,16 @@ vec_a[1]
 rm(vec_a)
 gc()
 #>           used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells  530215 28.4    1152125 61.6   718274 38.4
-#> Vcells 1000920  7.7    8388608 64.0  2007149 15.4
+#> Ncells  530221 28.4    1152142 61.6   718274 38.4
+#> Vcells 1000990  7.7    8388608 64.0  2007149 15.4
 cleanup_fmalloc(rt_b)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 rm(vec_b)
 gc()
 #>           used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells  530210 28.4    1152125 61.6   718274 38.4
-#> Vcells 1000927  7.7    8388608 64.0  2007149 15.4
+#> Ncells  530216 28.4    1152142 61.6   718274 38.4
+#> Vcells 1000997  7.7    8388608 64.0  2007149 15.4
 unlink(c(file_a, file_b))
 ```
 
@@ -255,7 +259,7 @@ reopen_file <- tempfile(fileext = ".bin")
 
 first_init <- init_fmalloc(reopen_file)
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpjpHJAe/file3966b7844020f.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpJPzVDa/file39ba767684989.bin (init: true)
 first_vec <- create_fmalloc_vector("integer", 100)
 first_vec[1:3] <- 1:3
 first_init
@@ -266,15 +270,15 @@ first_vec[1:3]
 rm(first_vec)
 gc()
 #>           used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells  530125 28.4    1152125 61.6   718274 38.4
-#> Vcells 1000952  7.7    8388608 64.0  2007149 15.4
+#> Ncells  530131 28.4    1152142 61.6   718274 38.4
+#> Vcells 1001022  7.7    8388608 64.0  2007149 15.4
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 
 second_init <- init_fmalloc(reopen_file)
-#> Using existing file: /tmp/RtmpjpHJAe/file3966b7844020f.bin (size: 33562624 bytes)
-#> fmalloc initialized with file: /tmp/RtmpjpHJAe/file3966b7844020f.bin (init: false)
+#> Using existing file: /tmp/RtmpJPzVDa/file39ba767684989.bin (size: 33562624 bytes)
+#> fmalloc initialized with file: /tmp/RtmpJPzVDa/file39ba767684989.bin (init: false)
 second_init
 #> [1] FALSE
 exists("first_vec")
@@ -306,7 +310,7 @@ library(lobstr)
 addr_file <- tempfile(fileext = ".bin")
 init_fmalloc(addr_file)
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpjpHJAe/file3966b6fbb7c42.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpJPzVDa/file39ba714326c55.bin (init: true)
 #> [1] TRUE
 
 cow_a <- create_fmalloc_vector("integer", 10)
@@ -327,18 +331,18 @@ after <- data.frame(
 
 before
 #>   object        address
-#> 1  cow_a 0x59f03aa92858
-#> 2  cow_b 0x59f03aa92858
+#> 1  cow_a 0x55e7059ec858
+#> 2  cow_b 0x55e7059ec858
 after
 #>   object        address
-#> 1  cow_a 0x59f03a715968
-#> 2  cow_b 0x59f03aa92858
+#> 1  cow_a 0x55e70566f9a0
+#> 2  cow_b 0x55e7059ec858
 
 rm(cow_a, cow_b)
 gc()
 #>           used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells  532776 28.5    1152125 61.6   734740 39.3
-#> Vcells 1005079  7.7    8388608 64.0  2007149 15.4
+#> Ncells  532782 28.5    1152142 61.6   734746 39.3
+#> Vcells 1005149  7.7    8388608 64.0  2007149 15.4
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
