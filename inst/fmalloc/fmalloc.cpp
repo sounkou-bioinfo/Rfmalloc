@@ -18,6 +18,9 @@
 
 #include "fmalloc.hpp"
 
+#include <assert.h>
+#include <mutex>
+
 #ifdef _WIN32
 #include <windows.h>
 #include <io.h>
@@ -29,7 +32,10 @@
 
 __thread uint64_t __fm_addr_base = 0;
 
+static std::mutex fm_bitmap_mutex;
+
 extern void do_ptmalloc_init(unsigned long chunk_size);
+extern void fmalloc_ptmalloc_set_current_arena(unsigned long chunk_size);
 
 /* init routine */
 struct fm_info *fmalloc_init(const char *filepath, bool *init)
@@ -108,6 +114,19 @@ struct fm_info *fmalloc_init(const char *filepath, bool *init)
 	s = (struct fm_super *) mem;
 
 	magicp = (uint64_t *) mem;
+	if (*magicp == FMALLOC_LEGACY_MAGIC) {
+		fprintf(stderr,
+			"unsupported legacy fmalloc backing file format in %s; "
+			"create a new backing file for this allocator version\n",
+			filepath);
+#ifdef _WIN32
+		UnmapViewOfFile(mem);
+#else
+		munmap(mem, len);
+		close(fd);
+#endif
+		return NULL;
+	}
 	if (*magicp != FMALLOC_MAGIC) {
 		int *initialized;
 
@@ -123,6 +142,7 @@ struct fm_info *fmalloc_init(const char *filepath, bool *init)
 	__fm_addr_base = (uint64_t) mem;
 
 	do_ptmalloc_init(s->chunk_size);
+	fmalloc_ptmalloc_set_current_arena(s->chunk_size);
 
 	return new fm_info(fd, mem, s);
 }
@@ -130,6 +150,7 @@ struct fm_info *fmalloc_init(const char *filepath, bool *init)
 void fmalloc_set_target(struct fm_info *fi)
 {
 	__fm_addr_base = (uint64_t) fi->mem;
+	fmalloc_ptmalloc_set_current_arena(fi->s->chunk_size);
 }
 
 void *fmalloc(size_t size)
@@ -140,4 +161,45 @@ void *fmalloc(size_t size)
 void ffree(void *addr)
 {
 	dlfree(addr);
+}
+
+size_t fmalloc_mmap_round(size_t length)
+{
+	if (__fm_addr_base == 0 || length == 0)
+		return length;
+
+	struct fm_super *s = (struct fm_super *) __fm_addr_base;
+	if (s->magic != FMALLOC_MAGIC || s->chunk_size == 0)
+		return length;
+
+	size_t chunk_size = (size_t) s->chunk_size;
+	if (length > (~(size_t) 0) - (chunk_size - 1))
+		return length;
+	return ((length + chunk_size - 1) / chunk_size) * chunk_size;
+}
+
+void *fmalloc_mmap(size_t length)
+{
+	if (__fm_addr_base == 0 || length == 0)
+		return MAP_FAILED;
+
+	struct fm_super *s = (struct fm_super *) __fm_addr_base;
+	if (s->magic != FMALLOC_MAGIC)
+		return MAP_FAILED;
+
+	std::lock_guard<std::mutex> lock(fm_bitmap_mutex);
+	return s->mmap_locked(length);
+}
+
+int fmalloc_munmap(void *addr, size_t length)
+{
+	if (__fm_addr_base == 0 || addr == NULL || length == 0)
+		return 0;
+
+	struct fm_super *s = (struct fm_super *) __fm_addr_base;
+	if (s->magic != FMALLOC_MAGIC)
+		return -1;
+
+	std::lock_guard<std::mutex> lock(fm_bitmap_mutex);
+	return s->munmap_locked(addr, length);
 }

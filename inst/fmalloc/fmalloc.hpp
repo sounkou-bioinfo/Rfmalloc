@@ -27,7 +27,6 @@
 #include <stdint.h>
 #include <fcntl.h>
 #include <string.h>
-#include <assert.h>
 #ifdef _WIN32
 #include <sys/stat.h>
 #else
@@ -52,8 +51,11 @@
 #define PAGE_SIZE (4096)
 #endif
 
+#ifndef FMALLOC_LEGACY_MAGIC
+#define FMALLOC_LEGACY_MAGIC (123456)
+#endif
 #ifndef FMALLOC_MAGIC
-#define FMALLOC_MAGIC (123456)
+#define FMALLOC_MAGIC (123457)
 #endif
 
 #define FMALLOC_OFF (PAGE_SIZE * 2)
@@ -83,33 +85,71 @@ struct fm_super {
 	void set_total_size(uint64_t size)
 	{
 		this->total_size = (size / PAGE_SIZE) * PAGE_SIZE;
-		if (total_size < FMALLOC_MIN_CHUNK) {
+
+		uint64_t usable_size = 0;
+		if (this->total_size > FMALLOC_OFF)
+			usable_size = this->total_size - FMALLOC_OFF;
+
+		if (usable_size == 0) {
+			num_chunk = 0;
+			chunk_size = 0;
+		} else if (usable_size <= 2 * FMALLOC_MIN_CHUNK) {
 			num_chunk = 1;
-			chunk_size = total_size;
+			chunk_size = (usable_size / PAGE_SIZE) * PAGE_SIZE;
 		} else {
-			num_chunk = (PAGE_SIZE - sizeof(struct fm_super)) * 8;
-			chunk_size = (((size - FMALLOC_OFF) / PAGE_SIZE) * PAGE_SIZE) / num_chunk;
+			uint64_t max_bitmap_chunks = (PAGE_SIZE - sizeof(struct fm_super)) * 8;
+			num_chunk = max_bitmap_chunks;
+			chunk_size = ((usable_size / PAGE_SIZE) * PAGE_SIZE) / num_chunk;
+			chunk_size = (chunk_size / PAGE_SIZE) * PAGE_SIZE;
 			if (chunk_size < FMALLOC_MIN_CHUNK) {
 				chunk_size = FMALLOC_MIN_CHUNK;
-				num_chunk = total_size / chunk_size;
+				num_chunk = usable_size / chunk_size;
 			}
+			if (num_chunk > max_bitmap_chunks)
+				num_chunk = max_bitmap_chunks;
 		}
 	}
 
 	void munmap_locked(void *mem)
 	{
-		int idx = m2i((void *)((uint64_t) this + FMALLOC_OFF), mem);
-		bitmap_release(bm, idx);
+		(void) munmap_locked(mem, chunk_size);
+	}
+
+	int munmap_locked(void *mem, size_t length)
+	{
+		if (!mem || length == 0 || chunk_size == 0)
+			return 0;
+		int idx = m2i(data_base(), mem);
+		if (idx < 0 || (uint64_t) idx >= num_chunk) {
+			fprintf(stderr, "fmalloc munmap invalid pointer %p\n", mem);
+			return -1;
+		}
+		uint64_t nchunks = (length + chunk_size - 1) / chunk_size;
+		if ((uint64_t) idx + nchunks > num_chunk) {
+			fprintf(stderr, "fmalloc munmap range outside backing file\n");
+			return -1;
+		}
+		bitmap_release_run(idx, nchunks);
+		return 0;
 	}
 
 	void *mmap_locked(void)
 	{
-		int idx = bitmap_grab(bm);
+		return mmap_locked(chunk_size);
+	}
+
+	void *mmap_locked(size_t length)
+	{
+		if (length == 0 || chunk_size == 0)
+			return MAP_FAILED;
+		uint64_t nchunks = (length + chunk_size - 1) / chunk_size;
+		int idx = bitmap_grab_run(nchunks);
 		if (idx < 0) {
-			fprintf(stderr, "bitmap_grab failed\n");
+			fprintf(stderr, "bitmap_grab failed for %llu chunks (%zu bytes)\n",
+				    (unsigned long long) nchunks, length);
 			return MAP_FAILED;
 		}
-		return i2m(this, idx);
+		return i2m(data_base(), idx);
 	}
 
 	void bitmap_set(int idx)
@@ -124,23 +164,58 @@ struct fm_super {
 
 	int bitmap_grab(uint8_t *bm)
 	{
-		unsigned long i, j;
-		for (i = 0; i < (total_size / chunk_size); i++) {
-			for (j = 0; j < 8; j++) {
-				if (num_chunk <= i * 8 + j)
-					return -1;
-				if (!(bm[i] & (1UL << j))) {
-					bm[i] |= (1UL << j);
-					return i * 8 + j;
+		(void) bm;
+		return bitmap_grab_run(1);
+	}
+
+	int bitmap_grab_run(uint64_t nchunks)
+	{
+		if (nchunks == 0 || nchunks > num_chunk)
+			return -1;
+
+		uint64_t run_start = 0;
+		uint64_t run_length = 0;
+		for (uint64_t idx = 0; idx < num_chunk; idx++) {
+			if (!bitmap_test(idx)) {
+				if (run_length == 0)
+					run_start = idx;
+				run_length++;
+				if (run_length == nchunks) {
+					for (uint64_t set_idx = run_start; set_idx < run_start + nchunks; set_idx++)
+						bitmap_set((int) set_idx);
+					return (int) run_start;
 				}
+			} else {
+				run_length = 0;
 			}
 		}
 		return -1;
 	}
 
+	void bitmap_release_run(uint64_t idx, uint64_t nchunks)
+	{
+		for (uint64_t release_idx = idx; release_idx < idx + nchunks; release_idx++)
+			bitmap_release(bm, (int) release_idx);
+	}
+
+	bool bitmap_test(uint64_t idx)
+	{
+		return (bm[idx / 8] & (1UL << (idx % 8))) != 0;
+	}
+
+	void *data_base()
+	{
+		return (void *) ((uint64_t) this + FMALLOC_OFF);
+	}
+
 	int m2i(void *mem, void *ptr)
 	{
-		return (int) (((uint64_t) ptr - (uint64_t) (mem)) / chunk_size);
+		if (!ptr || chunk_size == 0 || (uint64_t) ptr < (uint64_t) mem)
+			return -1;
+		uint64_t offset = (uint64_t) ptr - (uint64_t) mem;
+		if (offset % chunk_size != 0)
+			return -1;
+		return (int) (offset / chunk_size);
 	}
 
 	void *i2m(void *mem, int idx)
@@ -165,5 +240,10 @@ void fmalloc_set_target(struct fm_info *fi);
 
 void *fmalloc(size_t size);
 void ffree(void *addr);
+
+/* File-backed replacements for dlmalloc's internal mmap/munmap hooks. */
+size_t fmalloc_mmap_round(size_t length);
+void *fmalloc_mmap(size_t length);
+int fmalloc_munmap(void *addr, size_t length);
 
 #endif

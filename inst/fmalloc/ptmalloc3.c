@@ -210,7 +210,7 @@ struct malloc_arena {
      create_mspace_with_base can be successfully called.  */
   char buf_[pad_request(sizeof(struct malloc_state)) + TOP_FOOT_SIZE +
 	    CHUNK_ALIGN_MASK + 1];
-} __attribute__((packed));
+};
 #define MSPACE_OFFSET (((offsetof(struct malloc_arena, buf_) \
 			 + CHUNK_ALIGN_MASK) & ~CHUNK_ALIGN_MASK))
 #define arena_to_mspace(a) ((void *)chunk2mem((char*)(a) + MSPACE_OFFSET))
@@ -333,38 +333,20 @@ arena_get2(struct malloc_arena* a_tsd, size_t size)
 
 static inline void FMALLOC_CALL_MUNMAP(void *mem)
 {
-	struct fm_super *s;
 	if (__malloc_initialized < 0) {
 		fprintf(stderr, "malloc is not initialized, this should not happen\n");
 		return;
 	}
-	s = (struct fm_super *) (__fm_addr_base);
-	if (s->magic != FMALLOC_MAGIC) {
-		fprintf(stderr, "super block is not initialized, this should not happen\n");
-		return;
-	}
-	(void)mutex_lock(&main_arena.mutex);
-	s->munmap_locked(mem);
-	(void)mutex_unlock(&main_arena.mutex);
+	(void) fmalloc_munmap(mem, fmalloc_chunk_size);
 }
 
 static inline void *FMALLOC_CALL_MMAP(void)
 {
-	struct fm_super *s;
-	void *ret;
 	if (__malloc_initialized < 0) {
 		fprintf(stderr, "malloc is not initialized, this should not happen\n");
 		return MAP_FAILED;
 	}
-	s = (struct fm_super *) (__fm_addr_base);
-	if (s->magic != FMALLOC_MAGIC) {
-		fprintf(stderr, "super block is not initialized, this should not happen\n");
-		return MAP_FAILED;
-	}
-	(void)mutex_lock(&main_arena.mutex);
-	ret = s->mmap_locked();
-	(void)mutex_unlock(&main_arena.mutex);
-	return ret;
+	return fmalloc_mmap(fmalloc_chunk_size);
 }
 
 static struct malloc_arena*
@@ -1172,11 +1154,42 @@ public_mSTATs(void)
 #endif
 }
 
+static void init_main_arena_for_current_mapping(void)
+{
+  void *mspace;
+
+  if (main_arena.__malloc_initialized <= 0) {
+    mutex_init(&main_arena.mutex);
+    main_arena.next = &main_arena;
+    mspace = create_mspace_with_base((char*)&main_arena + MSPACE_OFFSET,
+                                     fmalloc_chunk_size - MSPACE_OFFSET,
+                                     0);
+    assert(mspace == arena_to_mspace(&main_arena));
+    if (mspace != arena_to_mspace(&main_arena)) {
+      fprintf(stderr, "invalid mspace creation\n");
+      exit(1);
+    }
+    main_arena.__malloc_initialized = 1;
+  } else {
+    init_mparams();
+  }
+}
+
 void do_ptmalloc_init(unsigned long chunk_size)
 {
   fmalloc_chunk_size = chunk_size;
 
-  ptmalloc_init ();
+  if (__malloc_initialized < 0)
+    ptmalloc_init ();
+  else
+    init_main_arena_for_current_mapping();
+}
+
+void fmalloc_ptmalloc_set_current_arena(unsigned long chunk_size)
+{
+  fmalloc_chunk_size = chunk_size;
+  if (__malloc_initialized >= 1)
+    tsd_setspecific(arena_key, (void *)&main_arena);
 }
 
 /*

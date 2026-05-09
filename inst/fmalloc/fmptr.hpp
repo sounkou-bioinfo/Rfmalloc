@@ -49,9 +49,6 @@ public:
 		}
 	}
 
-	fm_ptr() : off(0) {
-	}
-
 	fm_ptr<T>* operator & ()  {
 		return (fm_ptr<T>*) this;
 	}
@@ -68,11 +65,6 @@ public:
 			return (T*) (__fm_addr_base + this->off);
 		else
 			return NULL;
-	}
-
-	fm_ptr<T>& operator = (fm_ptr<T>& other) {
-		this->off = other.off;
-		return *this;
 	}
 
 	explicit operator bool () {
@@ -132,6 +124,6 @@ public:
 	cast_overload(unsigned long)
 	cast_overload(unsigned long long)
 #undef cast_overload
-} __attribute__((packed));
+};
 
 #endif

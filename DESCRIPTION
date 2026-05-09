@@ -10,9 +10,9 @@ Description: Provides memory-mapped file allocation capabilities for R using
 License: GPL (>= 2)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.2
+RoxygenNote: 7.3.3
 Suggests: 
     tinytest
-SystemRequirements: C++11, pthreads
+SystemRequirements: pthreads
 URL: https://github.com/sounkou-bioinfo/Rfmalloc
 BugReports: https://github.com/sounkou-bioinfo/Rfmalloc/issues

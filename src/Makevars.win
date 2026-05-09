@@ -5,6 +5,3 @@ PKG_CPPFLAGS = -I../inst/fmalloc -DHAVE_CONFIG_H
 
 # Linker flags - Rtools includes pthread support
 PKG_LIBS = -L../inst/fmalloc ../inst/fmalloc/libfmalloc.a -lpthread
-
-# C++ standard
-CXX_STD = CXX11

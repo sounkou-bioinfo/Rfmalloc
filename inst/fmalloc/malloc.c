@@ -481,7 +481,7 @@ MAX_RELEASE_CHECK_RATE   default: 255 unless not HAVE_MMAP
   improvement at the expense of carrying around more memory.
 */
 
-#include <fmptr.hpp>
+#include <fmalloc.hpp>
 #ifndef USE_DL_PREFIX
 #define USE_DL_PREFIX
 #endif
@@ -571,11 +571,7 @@ MAX_RELEASE_CHECK_RATE   default: 255 unless not HAVE_MMAP
 #define MMAP_CLEARS 1
 #endif  /* MMAP_CLEARS */
 #ifndef HAVE_MREMAP
-#ifdef linux
-#define HAVE_MREMAP 1
-#else   /* linux */
 #define HAVE_MREMAP 0
-#endif  /* linux */
 #endif  /* HAVE_MREMAP */
 #ifndef MALLOC_FAILURE_ACTION
 #define MALLOC_FAILURE_ACTION  errno = ENOMEM;
@@ -605,15 +601,11 @@ MAX_RELEASE_CHECK_RATE   default: 255 unless not HAVE_MMAP
 #endif  /* MORECORE_CONTIGUOUS */
 #endif  /* DEFAULT_GRANULARITY */
 #ifndef DEFAULT_TRIM_THRESHOLD
-#ifndef MORECORE_CANNOT_TRIM
-#define DEFAULT_TRIM_THRESHOLD ((size_t)2U * (size_t)1024U * (size_t)1024U)
-#else   /* MORECORE_CANNOT_TRIM */
 #define DEFAULT_TRIM_THRESHOLD MAX_SIZE_T
-#endif  /* MORECORE_CANNOT_TRIM */
 #endif  /* DEFAULT_TRIM_THRESHOLD */
 #ifndef DEFAULT_MMAP_THRESHOLD
 #if HAVE_MMAP
-#define DEFAULT_MMAP_THRESHOLD ((size_t)256U * (size_t)1024U)
+#define DEFAULT_MMAP_THRESHOLD ((size_t)FMALLOC_MIN_CHUNK)
 #else   /* HAVE_MMAP */
 #define DEFAULT_MMAP_THRESHOLD MAX_SIZE_T
 #endif  /* HAVE_MMAP */
@@ -1419,14 +1411,19 @@ unsigned char _BitScanReverse(unsigned long *index, unsigned long mask);
 
 static void *__call_mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset, long line)
 {
-	fprintf(stderr, "[%ld]: call mmap, this should not happen\n", line);
-	exit(1);
+	(void) addr;
+	(void) prot;
+	(void) flags;
+	(void) fd;
+	(void) offset;
+	(void) line;
+	return fmalloc_mmap(length);
 }
 
 static int __call_munmap(void *addr, size_t length, long line)
 {
-	fprintf(stderr, "[%ld]: call munmap, this should not happen\n", line);
-	exit(1);
+	(void) line;
+	return fmalloc_munmap(addr, length);
 }
 
 /* MORECORE and MMAP must return MFAIL on failure */
@@ -1958,7 +1955,7 @@ struct malloc_chunk {
   size_t               head;       /* Size and inuse bits. */
   fm_ptr<struct malloc_chunk> fd;         /* double links -- used only if free. */
   fm_ptr<struct malloc_chunk> bk;
-} __attribute__((packed));
+};
 
 typedef struct malloc_chunk  mchunk;
 typedef struct malloc_chunk* mchunkptr;
@@ -2172,7 +2169,7 @@ struct malloc_tree_chunk {
   fm_ptr<struct malloc_tree_chunk> child[2];
   fm_ptr<struct malloc_tree_chunk> parent;
   bindex_t                  index;
-} __attribute__((packed));
+};
 
 typedef struct malloc_tree_chunk  tchunk;
 typedef struct malloc_tree_chunk* tchunkptr;
@@ -2243,7 +2240,7 @@ struct malloc_segment {
   size_t       size;             /* allocated size */
   fm_ptr<struct malloc_segment> next;   /* ptr to next segment */
   flag_t       sflags;           /* mmap and extern flag */
-} __attribute__((packed));
+};
 
 #define is_mmapped_segment(S)  ((S)->sflags & IS_MMAPPED_BIT)
 #define is_extern_segment(S)   ((S)->sflags & EXTERN_BIT)
@@ -2367,7 +2364,7 @@ struct malloc_state {
   msegment   seg;
   //void*      extp;      /* Unused but available for extensions */
   size_t     exts;
-} __attribute__((packed));
+};
 
 typedef struct malloc_state*    mstate;
 
@@ -3529,6 +3526,7 @@ static void internal_malloc_stats(mstate m) {
 /* Malloc using mmap */
 static void* mmap_alloc(mstate m, size_t nb) {
   size_t mmsize = mmap_align(nb + SIX_SIZE_T_SIZES + CHUNK_ALIGN_MASK);
+  mmsize = fmalloc_mmap_round(mmsize);
   if (mmsize > nb) {     /* Check for wrap around 0 */
     char* mm = (char*)(DIRECT_MMAP(mmsize));
     if (mm != CMFAIL) {
@@ -3824,6 +3822,7 @@ static void* sys_alloc(mstate m, size_t nb) {
   if (HAVE_MMAP && tbase == CMFAIL) {  /* Try MMAP */
     size_t req = nb + TOP_FOOT_SIZE + SIZE_T_ONE;
     size_t rsize = granularity_align(req);
+    rsize = fmalloc_mmap_round(rsize);
     if (rsize > nb) { /* Fail if wraps around zero */
       char* mp = (char*)(CALL_MMAP(rsize));
       if (mp != CMFAIL) {

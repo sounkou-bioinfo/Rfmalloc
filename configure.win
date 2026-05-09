@@ -68,7 +68,7 @@ BUILD_TARGET="posix"
 
 # Clean and build the library using the appropriate target
 make clean 2>/dev/null || true
-if make "$BUILD_TARGET" WARN_FLAGS='-Wall -Wno-address-of-packed-member -Wno-class-memaccess'; then
+if make "$BUILD_TARGET" WARN_FLAGS='-Wall'; then
     echo "fmalloc library built successfully"
 else
     echo "Error: Failed to build fmalloc library"
@@ -98,9 +98,6 @@ PKG_CPPFLAGS = -I../inst/fmalloc -DHAVE_CONFIG_H
 
 # Linker flags - Rtools includes pthread support
 PKG_LIBS = -L../inst/fmalloc ../inst/fmalloc/libfmalloc.a -lpthread
-
-# C++ standard
-CXX_STD = CXX11
 EOF
 
 echo "Configure completed successfully!"

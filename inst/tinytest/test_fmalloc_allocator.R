@@ -11,6 +11,13 @@ cat("Testing fmalloc allocator functionality...\n")
 # Test error conditions first (these should work without fmalloc initialization)
 expect_error(create_fmalloc_vector("integer", 50), "fmalloc not initialized")
 expect_error(create_fmalloc_vector("integer", -1), "positive integer")
+expect_error(create_fmalloc_vector("integer", 2.5), "positive integer or zero")
+expect_error(create_fmalloc_vector("integer", NA_real_), "positive integer or zero")
+expect_error(create_fmalloc_vector("integer", Inf), "positive integer or zero")
+expect_error(
+    create_fmalloc_vector("integer", .Machine$integer.max + 1),
+    "too large"
+)
 expect_error(create_fmalloc_vector(123, 50), "character string")
 expect_error(
     create_fmalloc_vector("invalid_type", 50),
@@ -33,6 +40,10 @@ tryCatch(
         cat("fmalloc initialization successful!\n")
 
         # Test vector creation with different types
+        v_zero <- create_fmalloc_vector("integer", 0)
+        expect_true(is.integer(v_zero))
+        expect_equal(length(v_zero), 0)
+
         v_int <- create_fmalloc_vector("integer", 50)
         expect_true(is.integer(v_int))
         expect_equal(length(v_int), 50)
@@ -56,7 +67,7 @@ tryCatch(
         expect_equal(v_log[1:3], c(TRUE, FALSE, TRUE))
 
         # Clean up vectors
-        rm(v_int, v_num, v_log)
+        rm(v_zero, v_int, v_num, v_log)
         gc()
 
         # Test cleanup

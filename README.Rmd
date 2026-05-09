@@ -13,14 +13,38 @@ knitr::opts_chunk$set(
 
 # Rfmalloc
 
-Rfmalloc provides persistent memory allocation capabilities for R using the fmalloc library. It offers file-backed memory allocation with full malloc, free, and realloc support for efficient persistent storage.
+Rfmalloc is an experimental R package for allocating vector storage from a
+memory-mapped backing file using a patched copy of
+[fmalloc](https://github.com/yasukata/fmalloc). The goal is to explore large,
+file-backed R vector storage without routing large allocations back through the
+process heap.
 
-## Key Features
+The current package exposes an `Rf_allocVector3()`-based custom allocator for
+integer, numeric, and logical vectors. This is useful for experiments and stress
+testing, but `Rf_allocVector3()` is not part of R's public API, so this package
+should still be treated as research software.
 
-- **File-backed allocation** - Memory allocated from memory-mapped files
-- **Full realloc support** - Supports malloc, free, and realloc patterns  
-- **Persistent storage** - Data persists across R sessions
-- **Efficient memory management** - Based on ptmalloc3 algorithm
+## Current Status
+
+Recent allocator work fixed the stress-path that previously fell back into
+ptmalloc/dlmalloc's system `mmap()` path for large requests. Large allocations
+are now carved from contiguous runs in the fmalloc backing file instead.
+
+Implemented now:
+
+- file-backed allocation for integer, numeric, and logical vectors;
+- large allocations spanning multiple fmalloc chunks;
+- `malloc`, `free`, and `realloc` support through the patched fmalloc layer;
+- reopening backing files created by the current allocator format;
+- explicit rejection of older incompatible fmalloc backing files.
+
+Still experimental / future work:
+
+- ALTREP wrappers so R-level duplication, subsetting, and copy-on-write can stay
+  file-backed;
+- richer persistence semantics and metadata;
+- support for more vector types;
+- production-grade lifecycle management for mapped files.
 
 ## Installation
 
@@ -31,61 +55,66 @@ devtools::install_github("sounkou-bioinfo/Rfmalloc")
 
 ## Basic Usage
 
-```{r eval=TRUE}
+```{r}
 library(Rfmalloc)
 
-# Initialize fmalloc with a backing file
 alloc_file <- tempfile(fileext = ".bin")
 init_fmalloc(alloc_file)
 
-# Create vectors using file-backed allocation
 v_int <- create_fmalloc_vector("integer", 10)
 v_num <- create_fmalloc_vector("numeric", 10)
 
-# Use the vectors normally
 v_int[1:3] <- c(1L, 2L, 3L)
 v_num[1:3] <- c(1.1, 2.2, 3.3)
 
-print(v_int[1:3])
-print(v_num[1:3])
+v_int[1:3]
+v_num[1:3]
 
-# Clean up - force garbage collection before cleanup to avoid warnings  
 rm(v_int, v_num)
 gc()
 cleanup_fmalloc()
-file.remove(alloc_file)
+unlink(alloc_file)
 ```
 
-## Larger Examples
+## Larger Allocation Example
 
-```{r eval=TRUE}
+```{r}
 library(Rfmalloc)
 
-# Create a 100MB backing file
 large_file <- tempfile(fileext = ".bin")
 init_fmalloc(large_file, size_gb = 0.1)
 
-# Create larger vectors
-vec1 <- create_fmalloc_vector("integer", 1000)
-vec2 <- create_fmalloc_vector("numeric", 500)
+# About 20 MB of integer payload, larger than the historical 16 MB chunk limit.
+big_int <- create_fmalloc_vector("integer", 5e6)
+big_int[1:5] <- 1:5
+big_int[1:5]
 
-# Fill with data
-vec1[1:10] <- 1:10
-vec2[1:10] <- (1:10) * 1.5
-
-cat("Sample data:", vec1[1:5], "\n")
-cat("Random access:", vec1[sample(10, 3)], "\n")
-
-# Clean up - force garbage collection before cleanup to avoid warnings
-rm(vec1, vec2)
+rm(big_int)
 gc()
 cleanup_fmalloc()
-file.remove(large_file)
+unlink(large_file)
 ```
+
+## Why ALTREP Is Still the Likely Next Step
+
+Allocating the initial vector storage in the backing file is not enough to make
+all R operations file-backed. R's normal duplication paths often call
+`allocVector()`, not `Rf_allocVector3()`, so copy-on-write or subsetting may
+produce ordinary heap-backed vectors.
+
+A UFO/Travel-like direction is still interesting, but for this package the next
+practical layer is likely ALTREP: implement `Dataptr`, `Elt`, `Get_region`, and
+especially `Duplicate` so R can preserve file-backed storage during ordinary
+vector operations. Pointer-access instrumentation is only needed if we want more
+transparent interception than ALTREP provides.
+
 ## References
 
-Please note that this project uses the fmalloc library from [https://github.com/yasukata/fmalloc](https://github.com/yasukata/fmalloc) and custom allocator concepts from [https://gist.github.com/s-u/6712c97ca74181f5a1a5](https://gist.github.com/s-u/6712c97ca74181f5a1a5).
+- fmalloc: <https://github.com/yasukata/fmalloc>
+- Simon Urbanek's mmap allocator example: <https://gist.github.com/s-u/6712c97ca74181f5a1a5>
+- UFOs: <https://github.com/PRL-PRG/UFOs>
+- Travel: <https://github.com/Jiefei-Wang/Travel>
 
 ## License
 
-This project is licensed under GPL (>= 2).
+GPL (>= 2)

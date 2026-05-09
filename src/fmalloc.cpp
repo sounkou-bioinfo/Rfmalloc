@@ -9,6 +9,10 @@
 #include <Rinternals.h>
 #include <R_ext/Rallocators.h>
 
+// Rf_allocVector3 is intentionally not part of R's public API and may be
+// omitted from installed headers even when the symbol is exported by libR.
+extern "C" SEXP Rf_allocVector3(SEXPTYPE type, R_xlen_t length, R_allocator_t *allocator);
+
 // Global fmalloc info structure
 static struct fm_info *global_fm_info = nullptr;
 
@@ -32,9 +36,6 @@ static void *fmalloc_r_alloc(R_allocator_t *allocator, size_t length) {
     // Minimal logging - only show what R requests
     if (length >= 1024 * 1024) {
         Rprintf("Large allocation: %.2f MB requested\n", (double)length / (1024.0 * 1024.0));
-        if (length > 4 * 1024 * 1024) {
-            Rprintf("*** WARNING: >4MB may trigger mmap error ***\n");
-        }
     }
     
     try {
@@ -108,7 +109,7 @@ SEXP init_fmalloc_impl(SEXP filepath_sexp, SEXP size_gb_sexp) {
     }
     
     // Parse optional size parameter
-    size_t requested_size = 32 * 1024 * 1024; // Default 32MB
+    size_t requested_size = 32 * 1024 * 1024 + FMALLOC_OFF; // Default 32MB usable plus fmalloc header
     if (!Rf_isNull(size_gb_sexp)) {
         if (TYPEOF(size_gb_sexp) != REALSXP || LENGTH(size_gb_sexp) != 1) {
             Rf_error("size_gb must be a single numeric value");

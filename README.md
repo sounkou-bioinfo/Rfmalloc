@@ -1,10 +1,41 @@
 
 # Rfmalloc
 
-Rfmalloc provides persistent custom R memory allocation using
-the fmalloc library. It was supposed to offer large file-backed memory allocation with full
-malloc, free, and realloc support for efficient persistent storage. But there appear to be an issue with the chunk allocation and system mmap fallback for very large R vectors.
-So i would not recommend using this if you are not just allocating a bunch of small vectors. Plus `Rf_allocVector3` is non [api](https://github.com/r-devel/r-svn/blob/b8ffe27b6b430f67b20518071f018f07bff00f4d/src/include/R_ext/Rallocators.h#L27) . Just use mmap like Simon Urbanek does in the gist in the references, or just forget about this given non api status. [bettermc](https://github.com/akersting/bettermc) used to be the only mainline R package that uses Rf_allocVector3 though other packages like [cargo, luajr, profmem and MonetDBLite](https://github.com/search?q=org%3Acran%20allocvector3&type=code) did use it and are still on CRAN.
+Rfmalloc is an experimental R package for allocating vector storage from
+a memory-mapped backing file using a patched copy of
+[fmalloc](https://github.com/yasukata/fmalloc). The goal is to explore
+large, file-backed R vector storage without routing large allocations
+back through the process heap.
+
+The current package exposes an `Rf_allocVector3()`-based custom
+allocator for integer, numeric, and logical vectors. This is useful for
+experiments and stress testing, but `Rf_allocVector3()` is not part of
+R’s public API, so this package should still be treated as research
+software.
+
+## Current Status
+
+Recent allocator work fixed the stress-path that previously fell back
+into ptmalloc/dlmalloc’s system `mmap()` path for large requests. Large
+allocations are now carved from contiguous runs in the fmalloc backing
+file instead.
+
+Implemented now:
+
+- file-backed allocation for integer, numeric, and logical vectors;
+- large allocations spanning multiple fmalloc chunks;
+- `malloc`, `free`, and `realloc` support through the patched fmalloc
+  layer;
+- reopening backing files created by the current allocator format;
+- explicit rejection of older incompatible fmalloc backing files.
+
+Still experimental / future work:
+
+- ALTREP wrappers so R-level duplication, subsetting, and copy-on-write
+  can stay file-backed;
+- richer persistence semantics and metadata;
+- support for more vector types;
+- production-grade lifecycle management for mapped files.
 
 ## Installation
 
@@ -18,81 +49,89 @@ devtools::install_github("sounkou-bioinfo/Rfmalloc")
 ``` r
 library(Rfmalloc)
 
-# Initialize fmalloc with a backing file
 alloc_file <- tempfile(fileext = ".bin")
 init_fmalloc(alloc_file)
-#> Creating file with size: 33554432 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpK0ytnS/filee1e019c970c8.bin (init: true)
+#> Creating file with size: 33562624 bytes (0.03 GB)
+#> fmalloc initialized with file: /tmp/RtmpyiFs61/file148762fbedc99.bin (init: true)
 #> [1] TRUE
 
-# Create vectors using file-backed allocation
 v_int <- create_fmalloc_vector("integer", 10)
 v_num <- create_fmalloc_vector("numeric", 10)
 
-# Use the vectors normally
 v_int[1:3] <- c(1L, 2L, 3L)
 v_num[1:3] <- c(1.1, 2.2, 3.3)
 
-print(v_int[1:3])
+v_int[1:3]
 #> [1] 1 2 3
-print(v_num[1:3])
+v_num[1:3]
 #> [1] 1.1 2.2 3.3
 
-# Clean up - force garbage collection before cleanup to avoid warnings  
 rm(v_int, v_num)
 gc()
 #>          used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells 522110 27.9    1133034 60.6   717417 38.4
-#> Vcells 986132  7.6    8388608 64.0  2021519 15.5
+#> Ncells 523482 28.0    1136525 60.7   718274 38.4
+#> Vcells 983636  7.6    8388608 64.0  2007149 15.4
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
-file.remove(alloc_file)
-#> [1] TRUE
+unlink(alloc_file)
 ```
 
-## Largish Examples
+## Larger Allocation Example
 
 ``` r
 library(Rfmalloc)
 
-# Create a 100MB backing file
 large_file <- tempfile(fileext = ".bin")
 init_fmalloc(large_file, size_gb = 0.1)
 #> Requested file size: 0.10 GB (107374182 bytes)
 #> Creating file with size: 107374182 bytes (0.10 GB)
-#> fmalloc initialized with file: /tmp/RtmpK0ytnS/filee1e032303134.bin (init: true)
+#> fmalloc initialized with file: /tmp/RtmpyiFs61/file148763caeb430.bin (init: true)
 #> [1] TRUE
 
-# Create larger vectors
-vec1 <- create_fmalloc_vector("integer", 1000)
-#> Creating fmalloc vector: type=13, length=1000
+# About 20 MB of integer payload, larger than the historical 16 MB chunk limit.
+big_int <- create_fmalloc_vector("integer", 5e6)
+#> Creating fmalloc vector: type=13, length=5000000
+#> Large allocation: 19.07 MB requested
+#> SUCCESS: fmalloc allocated 20000080 bytes
 #> Successfully created fmalloc vector
-vec2 <- create_fmalloc_vector("numeric", 500)
+big_int[1:5] <- 1:5
+big_int[1:5]
+#> [1] 1 2 3 4 5
 
-# Fill with data
-vec1[1:10] <- 1:10
-vec2[1:10] <- (1:10) * 1.5
-
-cat("Sample data:", vec1[1:5], "\n")
-#> Sample data: 1 2 3 4 5
-cat("Random access:", vec1[sample(10, 3)], "\n")
-#> Random access: 3 9 5
-
-# Clean up - force garbage collection before cleanup to avoid warnings
-rm(vec1, vec2)
+rm(big_int)
 gc()
 #>          used (Mb) gc trigger (Mb) max used (Mb)
-#> Ncells 522715 28.0    1133034 60.6   717417 38.4
-#> Vcells 987936  7.6    8388608 64.0  2021519 15.5
+#> Ncells 523740 28.0    1136525 60.7   718274 38.4
+#> Vcells 984514  7.6    8388608 64.0  3733703 28.5
 cleanup_fmalloc()
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
-file.remove(large_file)
-#> [1] TRUE
+unlink(large_file)
 ```
+
+## Why ALTREP Is Still the Likely Next Step
+
+Allocating the initial vector storage in the backing file is not enough
+to make all R operations file-backed. R’s normal duplication paths often
+call `allocVector()`, not `Rf_allocVector3()`, so copy-on-write or
+subsetting may produce ordinary heap-backed vectors.
+
+A UFO/Travel-like direction is still interesting, but for this package
+the next practical layer is likely ALTREP: implement `Dataptr`, `Elt`,
+`Get_region`, and especially `Duplicate` so R can preserve file-backed
+storage during ordinary vector operations. Pointer-access
+instrumentation is only needed if we want more transparent interception
+than ALTREP provides.
 
 ## References
 
-This exploratory project used the fmalloc library from <https://github.com/yasukata/fmalloc> and a mmap custom allocator example from Simon Urbanek at this gist <https://gist.github.com/s-u/6712c97ca74181f5a1a5>.
+- fmalloc: <https://github.com/yasukata/fmalloc>
+- Simon Urbanek’s mmap allocator example:
+  <https://gist.github.com/s-u/6712c97ca74181f5a1a5>
+- UFOs: <https://github.com/PRL-PRG/UFOs>
+- Travel: <https://github.com/Jiefei-Wang/Travel>
 
+## License
+
+GPL (\>= 2)

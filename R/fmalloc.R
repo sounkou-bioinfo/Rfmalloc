@@ -49,7 +49,7 @@ init_fmalloc <- function(filepath, size_gb = NULL) {
 #' for efficient memory management backed by memory-mapped files.
 #'
 #' @param type Character string specifying the vector type ("integer", "numeric", "logical")
-#' @param length Integer specifying the length of the vector to create
+#' @param length Integer specifying the non-negative length of the vector to create
 #'
 #' @return A vector of the specified type and length, allocated using fmalloc
 #'
@@ -75,8 +75,15 @@ create_fmalloc_vector <- function(type = "integer", length) {
     if (!is.character(type) || length(type) != 1) {
         stop("type must be a single character string")
     }
-    if (!is.numeric(length) || length(length) != 1 || length < 1) {
-        stop("length must be a positive integer")
+    if (
+        !is.numeric(length) || length(length) != 1 ||
+            !is.finite(length) || is.na(length) ||
+            length < 0 || length != floor(length)
+    ) {
+        stop("length must be a positive integer or zero")
+    }
+    if (length > .Machine$integer.max) {
+        stop("length is too large for the current fmalloc vector interface")
     }
 
     template <- switch(

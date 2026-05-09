@@ -9,7 +9,7 @@ create_fmalloc_vector(type = "integer", length)
 \arguments{
 \item{type}{Character string specifying the vector type ("integer", "numeric", "logical")}
 
-\item{length}{Integer specifying the length of the vector to create}
+\item{length}{Integer specifying the non-negative length of the vector to create}
 }
 \value{
 A vector of the specified type and length, allocated using fmalloc
