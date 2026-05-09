@@ -10,6 +10,7 @@
 #include <random>
 #include <stdexcept>
 #include <string>
+#include <vector>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -47,10 +48,13 @@ struct fm_vector {
     R_xlen_t len;
     void *data;
     size_t bytes;
+    uint64_t catalog_offset;
+    uint64_t generation;
     SEXP refs;
 
     fm_vector(fm_runtime *_runtime, SEXPTYPE _type, R_xlen_t _length, void *_data, size_t _bytes)
-        : runtime(_runtime), type(_type), len(_length), data(_data), bytes(_bytes), refs(R_NilValue) {}
+        : runtime(_runtime), type(_type), len(_length), data(_data), bytes(_bytes),
+          catalog_offset(0), generation(0), refs(R_NilValue) {}
 };
 
 static constexpr uint32_t FM_STRING_FLAG_NA = 1u;
@@ -68,7 +72,15 @@ static std::mutex fmalloc_allocator_mutex;
 static unsigned char fmalloc_zero_length_data = 0;
 
 static constexpr uint64_t RFM_APP_MAGIC = 0x52464d414c545231ULL; // "RFMALTR1"
-static constexpr uint32_t RFM_APP_VERSION = 1;
+static constexpr uint32_t RFM_APP_VERSION = 2;
+static constexpr uint64_t RFM_CATALOG_MAGIC = 0x52464d4341543031ULL; // "RFMCAT01"
+static constexpr uint32_t RFM_CATALOG_VERSION = 1;
+static constexpr uint32_t RFM_CATALOG_STATE_IN_PROGRESS = 1;
+static constexpr uint32_t RFM_CATALOG_STATE_COMMITTED = 2;
+static constexpr uint32_t RFM_CATALOG_STATE_TOMBSTONE = 3;
+static constexpr uint32_t RFM_CATALOG_FLAG_RECOVERABLE = 1u;
+static constexpr uint32_t RFM_CATALOG_FLAG_STRING_PAYLOADS = 2u;
+static constexpr uint32_t RFM_CATALOG_FLAG_POINTER_CONTAINER = 4u;
 
 struct rfm_app_root {
     uint64_t magic;
@@ -77,7 +89,24 @@ struct rfm_app_root {
     uint64_t file_uuid_hi;
     uint64_t file_uuid_lo;
     uint64_t flags;
-    uint64_t reserved_words[502];
+    uint64_t catalog_head_offset;
+    uint64_t catalog_epoch;
+    uint64_t catalog_count;
+    uint64_t reserved_words[499];
+};
+
+struct rfm_catalog_record {
+    uint64_t magic;
+    uint32_t version;
+    uint32_t state;
+    uint64_t next_offset;
+    uint64_t generation;
+    int32_t sexptype;
+    uint32_t flags;
+    uint64_t length;
+    uint64_t payload_offset;
+    uint64_t payload_nbytes;
+    uint64_t reserved_words[8];
 };
 
 static R_altrep_class_t fmalloc_altlogical_class;
@@ -304,6 +333,9 @@ static void ensure_app_root(struct fm_info *info)
     if (root->file_uuid_hi == 0 && root->file_uuid_lo == 0) {
         root->file_uuid_lo = 1;
     }
+    root->catalog_head_offset = 0;
+    root->catalog_epoch = 0;
+    root->catalog_count = 0;
 }
 
 static std::string uuid_string(uint64_t hi, uint64_t lo)
@@ -469,6 +501,11 @@ static size_t payload_size_bytes(SEXPTYPE type, R_xlen_t length)
     return (size_t)length * elt_size;
 }
 
+static uint64_t pointer_offset(fm_runtime *runtime, void *ptr);
+static rfm_catalog_record *create_catalog_record_locked(fm_runtime *runtime, SEXPTYPE type,
+                                                        R_xlen_t length, void *payload,
+                                                        size_t bytes);
+
 static fm_vector *allocate_fm_vector(fm_runtime *runtime, SEXPTYPE type, R_xlen_t length, bool require_open)
 {
     if (!runtime) {
@@ -489,6 +526,7 @@ static fm_vector *allocate_fm_vector(fm_runtime *runtime, SEXPTYPE type, R_xlen_
 
     void *mem = nullptr;
     bool runtime_closed = false;
+    bool catalog_failed = false;
     int saved_errno = 0;
 
     {
@@ -496,12 +534,12 @@ static fm_vector *allocate_fm_vector(fm_runtime *runtime, SEXPTYPE type, R_xlen_
         if (!runtime->info || (require_open && runtime->close_requested)) {
             runtime_closed = true;
         } else {
+            if (bytes >= 1024 * 1024) {
+                Rprintf("Large allocation: %.2f MB requested\n", (double)bytes / (1024.0 * 1024.0));
+            }
+            std::lock_guard<std::mutex> allocator_lock(fmalloc_allocator_mutex);
+            fmalloc_set_target(runtime->info);
             if (bytes > 0) {
-                if (bytes >= 1024 * 1024) {
-                    Rprintf("Large allocation: %.2f MB requested\n", (double)bytes / (1024.0 * 1024.0));
-                }
-                std::lock_guard<std::mutex> allocator_lock(fmalloc_allocator_mutex);
-                fmalloc_set_target(runtime->info);
                 fmalloc_clear_last_error();
                 mem = fmalloc(bytes);
                 saved_errno = errno;
@@ -510,7 +548,23 @@ static fm_vector *allocate_fm_vector(fm_runtime *runtime, SEXPTYPE type, R_xlen_
                 }
             }
             if (bytes == 0 || mem) {
-                runtime->live_vectors++;
+                if (runtime->mode == FM_MODE_PERSISTENT) {
+                    rfm_catalog_record *record = create_catalog_record_locked(runtime, type, length, mem, bytes);
+                    saved_errno = errno;
+                    if (!record) {
+                        catalog_failed = true;
+                        if (mem) {
+                            dlfree(mem);
+                            mem = nullptr;
+                        }
+                    } else {
+                        vec->catalog_offset = pointer_offset(runtime, record);
+                        vec->generation = record->generation;
+                    }
+                }
+                if (!catalog_failed) {
+                    runtime->live_vectors++;
+                }
             }
         }
     }
@@ -520,13 +574,16 @@ static fm_vector *allocate_fm_vector(fm_runtime *runtime, SEXPTYPE type, R_xlen_
         Rf_error("fmalloc runtime is closed");
         return nullptr;
     }
-    if (bytes > 0 && !mem) {
+    if ((bytes > 0 && !mem) || catalog_failed) {
         const char *last_error = fmalloc_get_last_error();
         delete vec;
+        const char *what = catalog_failed ? "catalog record" : "payload";
         if (last_error) {
-            Rf_error("fmalloc failed to allocate %zu bytes: %s (errno: %d)", bytes, last_error, saved_errno);
+            Rf_error("fmalloc failed to allocate %s for %zu-byte vector: %s (errno: %d)",
+                     what, bytes, last_error, saved_errno);
         } else {
-            Rf_error("fmalloc failed to allocate %zu bytes (errno: %d)", bytes, saved_errno);
+            Rf_error("fmalloc failed to allocate %s for %zu-byte vector (errno: %d)",
+                     what, bytes, saved_errno);
         }
         return nullptr;
     }
@@ -637,9 +694,148 @@ static uint64_t pointer_offset(fm_runtime *runtime, void *ptr)
     return static_cast<uint64_t>(static_cast<char *>(ptr) - static_cast<char *>(runtime->info->mem));
 }
 
+static bool offset_range_in_file(fm_runtime *runtime, uint64_t offset, uint64_t nbytes)
+{
+    return runtime && runtime->info && offset < runtime->info->len &&
+           nbytes <= runtime->info->len - offset;
+}
+
+static uint32_t catalog_flags_for_type(SEXPTYPE type)
+{
+    uint32_t flags = 0;
+    if (!is_pointer_vector_type(type)) {
+        flags |= RFM_CATALOG_FLAG_RECOVERABLE;
+    }
+    if (type == STRSXP) {
+        flags |= RFM_CATALOG_FLAG_STRING_PAYLOADS;
+    }
+    if (is_pointer_vector_type(type)) {
+        flags |= RFM_CATALOG_FLAG_POINTER_CONTAINER;
+    }
+    return flags;
+}
+
+static const char *catalog_state_label(uint32_t state)
+{
+    switch (state) {
+    case RFM_CATALOG_STATE_IN_PROGRESS:
+        return "in_progress";
+    case RFM_CATALOG_STATE_COMMITTED:
+        return "committed";
+    case RFM_CATALOG_STATE_TOMBSTONE:
+        return "tombstone";
+    default:
+        return "unknown";
+    }
+}
+
+static rfm_catalog_record *catalog_record_from_offset(fm_runtime *runtime, uint64_t offset)
+{
+    if (!offset_range_in_file(runtime, offset, sizeof(rfm_catalog_record))) {
+        return nullptr;
+    }
+    return reinterpret_cast<rfm_catalog_record *>(static_cast<char *>(runtime->info->mem) + offset);
+}
+
+static rfm_catalog_record *create_catalog_record_locked(fm_runtime *runtime, SEXPTYPE type,
+                                                        R_xlen_t length, void *payload,
+                                                        size_t bytes)
+{
+    fmalloc_clear_last_error();
+    void *record_mem = fmalloc(sizeof(rfm_catalog_record));
+    if (!record_mem) {
+        return nullptr;
+    }
+
+    rfm_app_root *root = app_root(runtime->info);
+    rfm_catalog_record *record = static_cast<rfm_catalog_record *>(record_mem);
+    memset(record, 0, sizeof(*record));
+
+    uint64_t generation = root->catalog_epoch + 1;
+    if (generation == 0) {
+        generation = 1;
+    }
+
+    record->magic = RFM_CATALOG_MAGIC;
+    record->version = RFM_CATALOG_VERSION;
+    record->state = RFM_CATALOG_STATE_IN_PROGRESS;
+    record->next_offset = root->catalog_head_offset;
+    record->generation = generation;
+    record->sexptype = (int32_t)type;
+    record->flags = catalog_flags_for_type(type);
+    record->length = (uint64_t)length;
+    record->payload_offset = pointer_offset(runtime, payload);
+    record->payload_nbytes = (uint64_t)bytes;
+
+    root->catalog_epoch = generation;
+    root->catalog_head_offset = pointer_offset(runtime, record_mem);
+    root->catalog_count++;
+    record->state = RFM_CATALOG_STATE_COMMITTED;
+    return record;
+}
+
+static const char *validate_character_entries(fm_runtime *runtime, uint64_t payload_offset,
+                                               R_xlen_t length)
+{
+    if (length == 0) {
+        return nullptr;
+    }
+    if (!offset_range_in_file(runtime, payload_offset,
+                              (uint64_t)length * sizeof(fm_string_entry))) {
+        return "cataloged character entry table points outside the backing file";
+    }
+
+    fm_string_entry *entries = reinterpret_cast<fm_string_entry *>(
+        static_cast<char *>(runtime->info->mem) + payload_offset);
+    for (R_xlen_t i = 0; i < length; i++) {
+        if ((entries[i].flags & FM_STRING_FLAG_NA) != 0 || entries[i].nbytes == 0) {
+            continue;
+        }
+        if (!offset_range_in_file(runtime, entries[i].offset, entries[i].nbytes + 1)) {
+            return "cataloged character string bytes point outside the backing file";
+        }
+    }
+    return nullptr;
+}
+
+static const char *validate_catalog_record_for_ref(fm_runtime *runtime, uint64_t catalog_offset,
+                                                   uint64_t generation, SEXPTYPE type,
+                                                   R_xlen_t length, uint64_t payload_offset,
+                                                   size_t bytes)
+{
+    rfm_catalog_record *record = catalog_record_from_offset(runtime, catalog_offset);
+    if (!record) {
+        return "serialized fmalloc catalog record points outside the backing file";
+    }
+    if (record->magic != RFM_CATALOG_MAGIC || record->version != RFM_CATALOG_VERSION) {
+        return "serialized fmalloc catalog record has invalid header";
+    }
+    if (record->state != RFM_CATALOG_STATE_COMMITTED) {
+        return "serialized fmalloc catalog record is not committed";
+    }
+    if (record->generation != generation) {
+        return "serialized fmalloc catalog generation does not match";
+    }
+    if ((SEXPTYPE)record->sexptype != type || record->length != (uint64_t)length ||
+        record->payload_offset != payload_offset || record->payload_nbytes != (uint64_t)bytes) {
+        return "serialized fmalloc reference does not match its catalog record";
+    }
+    if ((record->flags & RFM_CATALOG_FLAG_RECOVERABLE) == 0 || is_pointer_vector_type(type)) {
+        return "serialized fmalloc catalog record is not recoverable";
+    }
+    if (bytes > 0 && !offset_range_in_file(runtime, payload_offset, bytes)) {
+        return "serialized fmalloc vector points outside the backing file";
+    }
+    if (type == STRSXP) {
+        return validate_character_entries(runtime, payload_offset, length);
+    }
+    return nullptr;
+}
+
 static fm_vector *persistent_vector_from_offset(fm_runtime *runtime, SEXPTYPE type,
                                                 R_xlen_t length, uint64_t offset,
-                                                size_t bytes)
+                                                size_t bytes, uint64_t catalog_offset,
+                                                uint64_t generation)
 {
     if (!runtime || !runtime->info) {
         Rf_error("fmalloc runtime is closed");
@@ -666,6 +862,8 @@ static fm_vector *persistent_vector_from_offset(fm_runtime *runtime, SEXPTYPE ty
         Rf_error("failed to allocate fmalloc vector descriptor");
         return nullptr;
     }
+    vec->catalog_offset = catalog_offset;
+    vec->generation = generation;
     {
         std::lock_guard<std::mutex> runtime_lock(runtime->mutex);
         runtime->live_vectors++;
@@ -996,10 +1194,22 @@ static SEXP fmalloc_altrep_duplicate(SEXP x, Rboolean deep)
 
 static SEXP make_persistent_ref_state(fm_vector *vec)
 {
-    SEXP state = PROTECT(Rf_allocVector(VECSXP, 8));
-    SEXP names = PROTECT(Rf_allocVector(STRSXP, 8));
-    const char *name_values[] = {"format", "path", "uuid", "type", "length", "offset", "nbytes", "version"};
-    for (int i = 0; i < 8; i++) {
+    uint64_t payload_offset = pointer_offset(vec->runtime, vec->data);
+    const char *catalog_error = validate_catalog_record_for_ref(
+        vec->runtime, vec->catalog_offset, vec->generation, vec->type,
+        vec->len, payload_offset, vec->bytes);
+    if (catalog_error) {
+        Rf_error("cannot serialize fmalloc vector by reference: %s", catalog_error);
+        return R_NilValue;
+    }
+
+    SEXP state = PROTECT(Rf_allocVector(VECSXP, 10));
+    SEXP names = PROTECT(Rf_allocVector(STRSXP, 10));
+    const char *name_values[] = {
+        "format", "path", "uuid", "type", "length", "offset", "nbytes", "version",
+        "catalog_offset", "generation"
+    };
+    for (int i = 0; i < 10; i++) {
         SET_STRING_ELT(names, i, Rf_mkChar(name_values[i]));
     }
     Rf_setAttrib(state, R_NamesSymbol, names);
@@ -1010,9 +1220,11 @@ static SEXP make_persistent_ref_state(fm_vector *vec)
     SET_VECTOR_ELT(state, 2, Rf_mkString(uuid.c_str()));
     SET_VECTOR_ELT(state, 3, Rf_ScalarInteger((int)vec->type));
     SET_VECTOR_ELT(state, 4, Rf_ScalarReal((double)vec->len));
-    SET_VECTOR_ELT(state, 5, Rf_ScalarReal((double)pointer_offset(vec->runtime, vec->data)));
+    SET_VECTOR_ELT(state, 5, Rf_ScalarReal((double)payload_offset));
     SET_VECTOR_ELT(state, 6, Rf_ScalarReal((double)vec->bytes));
-    SET_VECTOR_ELT(state, 7, Rf_ScalarInteger(1));
+    SET_VECTOR_ELT(state, 7, Rf_ScalarInteger(2));
+    SET_VECTOR_ELT(state, 8, Rf_ScalarReal((double)vec->catalog_offset));
+    SET_VECTOR_ELT(state, 9, Rf_ScalarReal((double)vec->generation));
 
     UNPROTECT(2);
     return state;
@@ -1065,13 +1277,17 @@ static SEXP fmalloc_altrep_unserialize(SEXP cls, SEXP state)
     SEXP length_sexp = list_get(state, "length");
     SEXP offset_sexp = list_get(state, "offset");
     SEXP nbytes_sexp = list_get(state, "nbytes");
+    SEXP catalog_offset_sexp = list_get(state, "catalog_offset");
+    SEXP generation_sexp = list_get(state, "generation");
 
     if (TYPEOF(path_sexp) != STRSXP || LENGTH(path_sexp) != 1 ||
         TYPEOF(uuid_sexp) != STRSXP || LENGTH(uuid_sexp) != 1 ||
         TYPEOF(type_sexp) != INTSXP || LENGTH(type_sexp) != 1 ||
         TYPEOF(length_sexp) != REALSXP || LENGTH(length_sexp) != 1 ||
         TYPEOF(offset_sexp) != REALSXP || LENGTH(offset_sexp) != 1 ||
-        TYPEOF(nbytes_sexp) != REALSXP || LENGTH(nbytes_sexp) != 1) {
+        TYPEOF(nbytes_sexp) != REALSXP || LENGTH(nbytes_sexp) != 1 ||
+        TYPEOF(catalog_offset_sexp) != REALSXP || LENGTH(catalog_offset_sexp) != 1 ||
+        TYPEOF(generation_sexp) != REALSXP || LENGTH(generation_sexp) != 1) {
         Rf_error("invalid Rfmalloc serialized reference");
         return R_NilValue;
     }
@@ -1087,20 +1303,29 @@ static SEXP fmalloc_altrep_unserialize(SEXP cls, SEXP state)
     double length_value = REAL(length_sexp)[0];
     double offset_value = REAL(offset_sexp)[0];
     double nbytes_value = REAL(nbytes_sexp)[0];
+    double catalog_offset_value = REAL(catalog_offset_sexp)[0];
+    double generation_value = REAL(generation_sexp)[0];
     if (!std::isfinite(length_value) || length_value < 0 ||
         length_value > (double)std::numeric_limits<R_xlen_t>::max() ||
         !std::isfinite(offset_value) || offset_value < 0 ||
         offset_value > (double)std::numeric_limits<uint64_t>::max() ||
         !std::isfinite(nbytes_value) || nbytes_value < 0 ||
-        nbytes_value > (double)std::numeric_limits<size_t>::max()) {
+        nbytes_value > (double)std::numeric_limits<size_t>::max() ||
+        !std::isfinite(catalog_offset_value) || catalog_offset_value <= 0 ||
+        catalog_offset_value > (double)std::numeric_limits<uint64_t>::max() ||
+        !std::isfinite(generation_value) || generation_value <= 0 ||
+        generation_value > (double)std::numeric_limits<uint64_t>::max()) {
         Rf_error("invalid Rfmalloc serialized reference dimensions");
         return R_NilValue;
     }
     R_xlen_t length = (R_xlen_t)length_value;
     uint64_t offset = (uint64_t)offset_value;
     size_t nbytes = (size_t)nbytes_value;
+    uint64_t catalog_offset = (uint64_t)catalog_offset_value;
+    uint64_t generation = (uint64_t)generation_value;
     if ((double)length != length_value || (double)offset != offset_value ||
-        (double)nbytes != nbytes_value || !is_supported_vector_type(type) ||
+        (double)nbytes != nbytes_value || (double)catalog_offset != catalog_offset_value ||
+        (double)generation != generation_value || !is_supported_vector_type(type) ||
         is_pointer_vector_type(type) || nbytes != payload_size_bytes(type, length)) {
         Rf_error("invalid Rfmalloc serialized reference metadata");
         return R_NilValue;
@@ -1114,13 +1339,16 @@ static SEXP fmalloc_altrep_unserialize(SEXP cls, SEXP state)
         Rf_error("Rfmalloc serialized reference points to a different backing file UUID");
         return R_NilValue;
     }
-    if (nbytes > 0 && (offset >= runtime->info->len || nbytes > runtime->info->len - offset)) {
+    const char *catalog_error = validate_catalog_record_for_ref(
+        runtime, catalog_offset, generation, type, length, offset, nbytes);
+    if (catalog_error) {
         close_unreferenced_runtime(runtime);
-        Rf_error("serialized fmalloc vector points outside the backing file");
+        Rf_error("invalid Rfmalloc serialized reference: %s", catalog_error);
         return R_NilValue;
     }
 
-    fm_vector *vec = persistent_vector_from_offset(runtime, type, length, offset, nbytes);
+    fm_vector *vec = persistent_vector_from_offset(runtime, type, length, offset, nbytes,
+                                                   catalog_offset, generation);
     return fmalloc_new_altrep(vec);
 }
 
@@ -1396,6 +1624,134 @@ static void fmalloc_altlist_set_elt(SEXP x, R_xlen_t i, SEXP value)
         R_set_altvec_Dataptr_or_null_method((cls), fmalloc_altrep_dataptr_or_null); \
     } while (0)
 
+struct catalog_snapshot {
+    uint64_t record_offset;
+    uint64_t generation;
+    uint32_t state;
+    SEXPTYPE type;
+    uint32_t flags;
+    uint64_t length;
+    uint64_t payload_offset;
+    uint64_t payload_nbytes;
+};
+
+static std::vector<catalog_snapshot> snapshot_catalog(fm_runtime *runtime)
+{
+    std::vector<catalog_snapshot> records;
+    const char *error_msg = nullptr;
+    if (!runtime || !runtime->info) {
+        Rf_error("fmalloc runtime is closed");
+        return records;
+    }
+
+    {
+        std::lock_guard<std::mutex> runtime_lock(runtime->mutex);
+        if (!runtime->info) {
+            error_msg = "fmalloc runtime is closed";
+        } else {
+            rfm_app_root *root = app_root(runtime->info);
+            uint64_t offset = root->catalog_head_offset;
+            uint64_t max_records = runtime->info->len / sizeof(rfm_catalog_record) + 1;
+            if (root->catalog_count > 0 && root->catalog_count + 1024 < max_records) {
+                max_records = root->catalog_count + 1024;
+            }
+
+            for (uint64_t seen = 0; offset != 0; seen++) {
+                if (seen >= max_records) {
+                    error_msg = "fmalloc allocation catalog appears to contain a cycle";
+                    break;
+                }
+                rfm_catalog_record *record = catalog_record_from_offset(runtime, offset);
+                if (!record || record->magic != RFM_CATALOG_MAGIC ||
+                    record->version != RFM_CATALOG_VERSION) {
+                    error_msg = "fmalloc allocation catalog is corrupt";
+                    break;
+                }
+
+                catalog_snapshot snapshot;
+                snapshot.record_offset = offset;
+                snapshot.generation = record->generation;
+                snapshot.state = record->state;
+                snapshot.type = (SEXPTYPE)record->sexptype;
+                snapshot.flags = record->flags;
+                snapshot.length = record->length;
+                snapshot.payload_offset = record->payload_offset;
+                snapshot.payload_nbytes = record->payload_nbytes;
+                records.push_back(snapshot);
+                offset = record->next_offset;
+            }
+        }
+    }
+
+    if (error_msg) {
+        Rf_error("%s", error_msg);
+    }
+    return records;
+}
+
+static SEXP make_catalog_data_frame(const std::vector<catalog_snapshot> &records)
+{
+    if (records.size() > (size_t)std::numeric_limits<int>::max()) {
+        Rf_error("too many fmalloc catalog records to return as a data frame");
+        return R_NilValue;
+    }
+
+    R_xlen_t n = (R_xlen_t)records.size();
+    const int ncols = 9;
+    SEXP ans = PROTECT(Rf_allocVector(VECSXP, ncols));
+    SEXP names = PROTECT(Rf_allocVector(STRSXP, ncols));
+    const char *name_values[] = {
+        "record_offset", "generation", "state", "type", "length",
+        "payload_offset", "payload_nbytes", "flags", "recoverable"
+    };
+    for (int i = 0; i < ncols; i++) {
+        SET_STRING_ELT(names, i, Rf_mkChar(name_values[i]));
+    }
+    Rf_setAttrib(ans, R_NamesSymbol, names);
+
+    SEXP record_offset = PROTECT(Rf_allocVector(REALSXP, n));
+    SEXP generation = PROTECT(Rf_allocVector(REALSXP, n));
+    SEXP state = PROTECT(Rf_allocVector(STRSXP, n));
+    SEXP type = PROTECT(Rf_allocVector(STRSXP, n));
+    SEXP length = PROTECT(Rf_allocVector(REALSXP, n));
+    SEXP payload_offset = PROTECT(Rf_allocVector(REALSXP, n));
+    SEXP payload_nbytes = PROTECT(Rf_allocVector(REALSXP, n));
+    SEXP flags = PROTECT(Rf_allocVector(INTSXP, n));
+    SEXP recoverable = PROTECT(Rf_allocVector(LGLSXP, n));
+
+    for (R_xlen_t i = 0; i < n; i++) {
+        const catalog_snapshot &record = records[(size_t)i];
+        REAL(record_offset)[i] = (double)record.record_offset;
+        REAL(generation)[i] = (double)record.generation;
+        SET_STRING_ELT(state, i, Rf_mkChar(catalog_state_label(record.state)));
+        SET_STRING_ELT(type, i, Rf_mkChar(type_label(record.type)));
+        REAL(length)[i] = (double)record.length;
+        REAL(payload_offset)[i] = (double)record.payload_offset;
+        REAL(payload_nbytes)[i] = (double)record.payload_nbytes;
+        INTEGER(flags)[i] = (int)record.flags;
+        LOGICAL(recoverable)[i] = (record.flags & RFM_CATALOG_FLAG_RECOVERABLE) != 0;
+    }
+
+    SET_VECTOR_ELT(ans, 0, record_offset);
+    SET_VECTOR_ELT(ans, 1, generation);
+    SET_VECTOR_ELT(ans, 2, state);
+    SET_VECTOR_ELT(ans, 3, type);
+    SET_VECTOR_ELT(ans, 4, length);
+    SET_VECTOR_ELT(ans, 5, payload_offset);
+    SET_VECTOR_ELT(ans, 6, payload_nbytes);
+    SET_VECTOR_ELT(ans, 7, flags);
+    SET_VECTOR_ELT(ans, 8, recoverable);
+
+    SEXP row_names = PROTECT(Rf_allocVector(INTSXP, 2));
+    INTEGER(row_names)[0] = NA_INTEGER;
+    INTEGER(row_names)[1] = -(int)n;
+    Rf_setAttrib(ans, R_RowNamesSymbol, row_names);
+    Rf_setAttrib(ans, R_ClassSymbol, Rf_mkString("data.frame"));
+
+    UNPROTECT(12);
+    return ans;
+}
+
 static void register_fmalloc_altrep_classes(DllInfo *dll)
 {
     fmalloc_altlogical_class = R_make_altlogical_class("fmalloc_logical", "Rfmalloc", dll);
@@ -1530,6 +1886,13 @@ SEXP create_fmalloc_vector_impl(SEXP runtime_xptr, SEXP template_vec, SEXP lengt
     return result;
 }
 
+SEXP list_fmalloc_allocations_impl(SEXP runtime_xptr)
+{
+    fm_runtime *runtime = runtime_from_xptr(runtime_xptr);
+    std::vector<catalog_snapshot> records = snapshot_catalog(runtime);
+    return make_catalog_data_frame(records);
+}
+
 SEXP cleanup_fmalloc_impl(SEXP runtime_xptr)
 {
     if (Rf_isNull(runtime_xptr)) {
@@ -1557,6 +1920,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"open_fmalloc_impl", (DL_FUNC)&open_fmalloc_impl, 3},
     {"init_fmalloc_impl", (DL_FUNC)&init_fmalloc_impl, 3},
     {"create_fmalloc_vector_impl", (DL_FUNC)&create_fmalloc_vector_impl, 3},
+    {"list_fmalloc_allocations_impl", (DL_FUNC)&list_fmalloc_allocations_impl, 1},
     {"cleanup_fmalloc_impl", (DL_FUNC)&cleanup_fmalloc_impl, 1},
     {nullptr, nullptr, 0}
 };

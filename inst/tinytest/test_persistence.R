@@ -176,4 +176,46 @@ if (.Platform$OS.type == "unix") {
     message("  Large file operations test passed")
 })()
 
+(function() {
+    message("Test 9: Persistent allocation catalog")
+    test_file <- tempfile(fileext = ".bin")
+    on.exit({
+        cleanup_fmalloc()
+        unlink(test_file)
+    }, add = TRUE)
+
+    rt <- open_fmalloc(test_file, mode = "persistent")
+    expect_equal(nrow(list_fmalloc_allocations(rt)), 0L)
+
+    int_vec <- create_fmalloc_vector("integer", 4, runtime = rt)
+    int_vec[] <- 1:4
+    chr_vec <- create_fmalloc_vector("character", 3, runtime = rt)
+    chr_vec[] <- c("one", NA_character_, "three")
+    list_vec <- create_fmalloc_vector("list", 2, runtime = rt)
+    list_vec[[1]] <- 1:2
+
+    catalog <- list_fmalloc_allocations(rt)
+    expect_true(nrow(catalog) >= 3L)
+    expect_true(all(c(
+        "record_offset", "generation", "state", "type", "length",
+        "payload_offset", "payload_nbytes", "flags", "recoverable"
+    ) %in% names(catalog)))
+    expect_true(all(c("integer", "character", "list") %in% catalog$type))
+    expect_true(all(catalog$state == "committed"))
+    expect_true(any(catalog$type == "list" & !catalog$recoverable))
+    expect_true(all(catalog$record_offset > 0))
+    expect_equal(length(unique(catalog$generation)), nrow(catalog))
+
+    int_blob <- serialize(int_vec, NULL)
+    chr_blob <- serialize(chr_vec, NULL)
+    cleanup_fmalloc(rt)
+
+    int_recovered <- unserialize(int_blob)
+    chr_recovered <- unserialize(chr_blob)
+    expect_equal(int_recovered[], 1:4)
+    expect_equal(chr_recovered[], c("one", NA_character_, "three"))
+
+    message("  Persistent allocation catalog test passed")
+})()
+
 message("Persistence and file-backed memory tests completed!")

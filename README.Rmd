@@ -50,6 +50,8 @@ Implemented now:
   fmalloc runtime;
 - ALTREP `Extract_subset` for vector indexing operations such as `x[i]`,
   returning fmalloc-backed copy results;
+- an in-file persistent allocation catalog with record offsets, generations,
+  types, lengths, payload offsets, byte sizes, states, and flags;
 - native lifetime tracking from ALTREP vector handles to runtime mappings, so a
   runtime mapping is not destroyed while vectors allocated from it are still
   reachable.
@@ -57,7 +59,7 @@ Implemented now:
 Still experimental / future work:
 
 - view-based ALTREP subsets for simple contiguous or strided indexing patterns;
-- a real allocation catalog for listing and validating persistent allocations;
+- richer catalog tooling, including compaction/reset and stale-record diagnostics;
 - richer persistence semantics for pointer-containing R types; list vectors are
   session-local containers, although their fmalloc-vector elements can serialize
   through their own persistent references;
@@ -317,8 +319,8 @@ stream. The record contains:
 - payload byte size.
 
 During `unserialize()`, Rfmalloc reopens the backing file, verifies the UUID,
-checks the recorded dimensions and file bounds, and reconstructs an ALTREP vector
-around the same fmalloc allocation.
+checks the recorded dimensions and file bounds, validates the catalog record and
+generation, and reconstructs an ALTREP vector around the same fmalloc allocation.
 
 ```{r}
 library(Rfmalloc)
@@ -332,6 +334,7 @@ local({
   chars <- create_fmalloc_vector("character", 3, runtime = rt)
   chars[] <- c("alpha", NA_character_, "gamma")
 
+  catalog <- list_fmalloc_allocations(rt)
   ints_blob <- serialize(ints, NULL)
   chars_blob <- serialize(chars, NULL)
 
@@ -340,6 +343,7 @@ local({
   ints_recovered <- unserialize(ints_blob)
   chars_recovered <- unserialize(chars_blob)
   output <- list(
+    catalog = catalog[, c("record_offset", "generation", "type", "length")],
     integers = ints_recovered[],
     characters = chars_recovered[]
   )
@@ -371,10 +375,11 @@ List vectors are serialized as ordinary R list values for now. Persistent list
 recovery needs a separate element-level policy because list elements are R
 objects, not raw fixed-width payload bytes.
 
-This is reference-based recovery, not name-based object discovery. Rfmalloc does
-not yet keep a complete in-file object catalog that can list all allocations or
-recover dropped vectors by user names. The serialized reference itself is the
-locator for now.
+This is reference-based recovery, not name-based object discovery. The catalog
+stores physical allocation records, not user variable names. Serialized
+references use the catalog record offset and generation for validation; the
+catalog can be listed, but it is not yet a high-level object store for recovering
+vectors by name.
 
 ## Watching ALTREP-Controlled Duplication with `lobstr`
 

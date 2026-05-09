@@ -41,6 +41,9 @@ Implemented now:
   result in the same fmalloc runtime;
 - ALTREP `Extract_subset` for vector indexing operations such as `x[i]`,
   returning fmalloc-backed copy results;
+- an in-file persistent allocation catalog with record offsets,
+  generations, types, lengths, payload offsets, byte sizes, states, and
+  flags;
 - native lifetime tracking from ALTREP vector handles to runtime
   mappings, so a runtime mapping is not destroyed while vectors
   allocated from it are still reachable.
@@ -49,8 +52,8 @@ Still experimental / future work:
 
 - view-based ALTREP subsets for simple contiguous or strided indexing
   patterns;
-- a real allocation catalog for listing and validating persistent
-  allocations;
+- richer catalog tooling, including compaction/reset and stale-record
+  diagnostics;
 - richer persistence semantics for pointer-containing R types; list
   vectors are session-local containers, although their fmalloc-vector
   elements can serialize through their own persistent references;
@@ -109,7 +112,7 @@ local({
   )
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpsVcCEa/file676cc4ac3af3b.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b5fd5a24e.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> $integer
@@ -152,7 +155,7 @@ local({
   v[1:3]
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpsVcCEa/file676cc2769e507.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b74aa9ad2.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> [1] 10 11 12
@@ -187,7 +190,7 @@ local({
 })
 #> Requested file size: 5.00 GB (5368709120 bytes)
 #> Creating file with size: 5368709120 bytes (5.00 GB)
-#> fmalloc initialized with file: /tmp/RtmpsVcCEa/file676cc56fdb3c7.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b1a0fee99.bin (init: true, mode: persistent)
 #> Creating fmalloc ALTREP vector: type=integer, length=1000000000
 #> Large allocation: 3814.70 MB requested
 #> SUCCESS: fmalloc allocated 4000000000 bytes
@@ -226,9 +229,9 @@ local({
   roundtrip[]
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpsVcCEa/file676cc65be455c.bin (init: true, mode: persistent)
-#> Using existing file: /tmp/RtmpsVcCEa/file676cc65be455c.bin (size: 33562624 bytes)
-#> fmalloc initialized with file: /tmp/RtmpsVcCEa/file676cc65be455c.bin (init: false, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b3803f31.bin (init: true, mode: persistent)
+#> Using existing file: /tmp/RtmpQlStDo/file72e7b3803f31.bin (size: 33562624 bytes)
+#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b3803f31.bin (init: false, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> [1] 1 2 3 4 5
@@ -257,8 +260,8 @@ local({
   .Internal(inspect(inspect_vec))
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpsVcCEa/file676ccc9b976b.bin (init: true, mode: persistent)
-#> @639aad1c9838 13 INTSXP g0c0 [REF(1)] fmalloc_altrep type=integer length=4 bytes=16 data=0x7f10e38023e8 mode=persistent runtime=open offset=9192 uuid=8561d18020fdd5dac84a653a3e3ef5c3 file=/tmp/RtmpsVcCEa/file676ccc9b976b.bin
+#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b66c8e821.bin (init: true, mode: persistent)
+#> @576b3345e598 13 INTSXP g0c0 [REF(1)] fmalloc_altrep type=integer length=4 bytes=16 data=0x763d886023e8 mode=persistent runtime=open offset=9192 uuid=7f6dc67e0e0b9955e452230a99fe5fb4 file=/tmp/RtmpQlStDo/file72e7b66c8e821.bin
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 ```
@@ -300,7 +303,7 @@ local({
   )
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpsVcCEa/file676cc799a474c.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b5c5a0941.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> $chars
@@ -348,10 +351,10 @@ local({
   )
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpsVcCEa/file676cc264bd785.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b3379f3f.bin (init: true, mode: persistent)
 #> Requested file size: 0.10 GB (107374182 bytes)
 #> Creating file with size: 107374182 bytes (0.10 GB)
-#> fmalloc initialized with file: /tmp/RtmpsVcCEa/file676cc394500a2.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b75f438b0.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> Cleaning up fmalloc...
@@ -388,8 +391,9 @@ into the serialization stream. The record contains:
 - payload byte size.
 
 During `unserialize()`, Rfmalloc reopens the backing file, verifies the
-UUID, checks the recorded dimensions and file bounds, and reconstructs
-an ALTREP vector around the same fmalloc allocation.
+UUID, checks the recorded dimensions and file bounds, validates the
+catalog record and generation, and reconstructs an ALTREP vector around
+the same fmalloc allocation.
 
 ``` r
 library(Rfmalloc)
@@ -403,6 +407,7 @@ local({
   chars <- create_fmalloc_vector("character", 3, runtime = rt)
   chars[] <- c("alpha", NA_character_, "gamma")
 
+  catalog <- list_fmalloc_allocations(rt)
   ints_blob <- serialize(ints, NULL)
   chars_blob <- serialize(chars, NULL)
 
@@ -411,6 +416,7 @@ local({
   ints_recovered <- unserialize(ints_blob)
   chars_recovered <- unserialize(chars_blob)
   output <- list(
+    catalog = catalog[, c("record_offset", "generation", "type", "length")],
     integers = ints_recovered[],
     characters = chars_recovered[]
   )
@@ -419,13 +425,18 @@ local({
   output
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpsVcCEa/file676cc5fcf0e0d.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b2e0e1b90.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
-#> Using existing file: /tmp/RtmpsVcCEa/file676cc5fcf0e0d.bin (size: 33562624 bytes)
-#> fmalloc initialized with file: /tmp/RtmpsVcCEa/file676cc5fcf0e0d.bin (init: false, mode: persistent)
-#> Using existing file: /tmp/RtmpsVcCEa/file676cc5fcf0e0d.bin (size: 33562624 bytes)
-#> fmalloc initialized with file: /tmp/RtmpsVcCEa/file676cc5fcf0e0d.bin (init: false, mode: persistent)
+#> Using existing file: /tmp/RtmpQlStDo/file72e7b2e0e1b90.bin (size: 33562624 bytes)
+#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b2e0e1b90.bin (init: false, mode: persistent)
+#> Using existing file: /tmp/RtmpQlStDo/file72e7b2e0e1b90.bin (size: 33562624 bytes)
+#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b2e0e1b90.bin (init: false, mode: persistent)
+#> $catalog
+#>   record_offset generation      type length
+#> 1          9440          2 character      3
+#> 2          9224          1   integer      4
+#> 
 #> $integers
 #> [1] 101 102 103 104
 #> 
@@ -450,7 +461,7 @@ local({
   scratch_copy
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpsVcCEa/file676cc9c67f91.bin (init: true, mode: scratch)
+#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b36e8d1bc.bin (init: true, mode: scratch)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> [1] 1 2 3 4
@@ -460,10 +471,11 @@ List vectors are serialized as ordinary R list values for now.
 Persistent list recovery needs a separate element-level policy because
 list elements are R objects, not raw fixed-width payload bytes.
 
-This is reference-based recovery, not name-based object discovery.
-Rfmalloc does not yet keep a complete in-file object catalog that can
-list all allocations or recover dropped vectors by user names. The
-serialized reference itself is the locator for now.
+This is reference-based recovery, not name-based object discovery. The
+catalog stores physical allocation records, not user variable names.
+Serialized references use the catalog record offset and generation for
+validation; the catalog can be listed, but it is not yet a high-level
+object store for recovering vectors by name.
 
 ## Watching ALTREP-Controlled Duplication with `lobstr`
 
@@ -503,18 +515,18 @@ local({
   list(before = before, after = after)
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpsVcCEa/file676cc6702bf0d.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpQlStDo/file72e7b76833136.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> $before
 #>   object        address
-#> 1  cow_a 0x639aab21f718
-#> 2  cow_b 0x639aab21f718
+#> 1  cow_a 0x576b30f21fa8
+#> 2  cow_b 0x576b30f21fa8
 #> 
 #> $after
 #>   object        address
-#> 1  cow_a 0x639aab1ed418
-#> 2  cow_b 0x639aab21f718
+#> 1  cow_a 0x576b30efe3b0
+#> 2  cow_b 0x576b30f21fa8
 ```
 
 The two names start as references to the same `SEXP`. After the write to

@@ -142,6 +142,40 @@ create_fmalloc_vector <- function(type = "integer", length, runtime = NULL) {
     .Call("create_fmalloc_vector_impl", runtime, template, as.integer(length))
 }
 
+#' List Persistent fmalloc Allocations
+#'
+#' Returns the in-file allocation catalog for a persistent fmalloc runtime. The
+#' catalog is stored in the backing file and records physical allocation metadata
+#' used to validate serialized persistent references.
+#'
+#' @param runtime Optional runtime handle returned by [open_fmalloc()]. If not
+#'   supplied, the default runtime established by [init_fmalloc()] is used.
+#'
+#' @return A data frame with one row per catalog record and columns describing
+#'   the catalog record offset, generation, state, vector type, length, payload
+#'   offset, payload byte size, flags, and whether the record is recoverable by
+#'   reference serialization.
+#'
+#' @examples
+#' \dontrun{
+#' rt <- open_fmalloc(tempfile(fileext = ".bin"))
+#' v <- create_fmalloc_vector("integer", 10, runtime = rt)
+#' list_fmalloc_allocations(rt)
+#' cleanup_fmalloc(rt)
+#' }
+#'
+#' @export
+list_fmalloc_allocations <- function(runtime = NULL) {
+    if (is.null(runtime)) {
+        runtime <- .fmalloc_state$default_runtime
+    }
+    if (is.null(runtime)) {
+        stop("fmalloc not initialized. Call init_fmalloc() first or pass a runtime from open_fmalloc().")
+    }
+
+    .Call("list_fmalloc_allocations_impl", runtime)
+}
+
 #' Clean Up fmalloc
 #'
 #' Requests cleanup of an fmalloc runtime. If vectors allocated from the runtime
