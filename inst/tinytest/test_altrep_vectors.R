@@ -38,6 +38,16 @@ message("Testing fmalloc ALTREP vector types and duplication...")
         y[1] <- replacements[[type]]
         expect_equal(x[1], values[[type]][1])
         expect_equal(y[1], replacements[[type]])
+
+        z <- x[c(4, 2, NA_integer_, 99)]
+        expected <- values[[type]][c(4, 2, NA_integer_, NA_integer_)]
+        if (type == "raw") {
+            expected <- as.raw(c(4, 2, 0, 0))
+        }
+        expect_equal(as.vector(z), expected)
+        z[1] <- replacements[[type]]
+        expect_equal(x[4], values[[type]][4])
+        expect_equal(z[1], replacements[[type]])
     }
 
     lst <- create_fmalloc_vector("list", 3, runtime = rt)
@@ -54,6 +64,14 @@ message("Testing fmalloc ALTREP vector types and duplication...")
     expect_equal(lst[[1]], 1:2)
     expect_equal(lst_copy[[1]], 99L)
 
+    lst_subset <- lst[c(3, 1, NA_integer_, 99)]
+    expect_equal(lst_subset[[1]]$z, "z")
+    expect_equal(lst_subset[[2]], 1:2)
+    expect_equal(lst_subset[[3]], NULL)
+    expect_equal(lst_subset[[4]], NULL)
+    lst_subset[[2]] <- "changed"
+    expect_equal(lst[[1]], 1:2)
+
     coerce_src <- create_fmalloc_vector("integer", 4, runtime = rt)
     coerce_src[] <- 1:4
     coerce_num <- as.numeric(coerce_src)
@@ -66,7 +84,10 @@ message("Testing fmalloc ALTREP vector types and duplication...")
     persistent <- create_fmalloc_vector("integer", 4, runtime = rt)
     persistent[] <- 11:14
     persistent_blob <- serialize(persistent, NULL)
-    rm(persistent)
+    persistent_subset <- persistent[c(4, 1, NA_integer_, 99)]
+    expect_equal(persistent_subset[], c(14L, 11L, NA_integer_, NA_integer_))
+    persistent_subset_blob <- serialize(persistent_subset, NULL)
+    rm(persistent, persistent_subset)
     gc()
 
     later <- create_fmalloc_vector("integer", 4, runtime = rt)
@@ -76,6 +97,9 @@ message("Testing fmalloc ALTREP vector types and duplication...")
     expect_true(is.integer(serialized))
     expect_equal(serialized[], 11:14)
     expect_equal(later[], 101:104)
+
+    serialized_subset <- unserialize(persistent_subset_blob)
+    expect_equal(serialized_subset[], c(14L, 11L, NA_integer_, NA_integer_))
 
     persistent_chr <- create_fmalloc_vector("character", 3, runtime = rt)
     persistent_chr[] <- c("one", NA_character_, "three")

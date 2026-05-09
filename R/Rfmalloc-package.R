@@ -22,13 +22,14 @@
 #'   \item Persistent and scratch runtime modes.
 #'   \item Reference serialization for persistent fixed-width atomic and
 #'         character ALTREP vectors.
+#'   \item Fmalloc-backed ALTREP subset copies for vector indexing operations.
 #'   \item Native lifetime tracking so runtime mappings outlive reachable
 #'         vectors allocated from them.
 #' }
 #'
 #' @section Future Work:
 #' Future work includes a complete persistent allocation catalog,
-#' fmalloc-backed subset results, and richer persistence semantics for
+#' view-based subset representations, and richer persistence semantics for
 #' pointer-containing vector types.
 #'
 #' @docType package

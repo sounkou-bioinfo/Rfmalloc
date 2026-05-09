@@ -78,8 +78,9 @@ init_fmalloc <- function(filepath, size_gb = NULL, mode = c("persistent", "scrat
 #'
 #' Creates an ALTREP vector using a file-backed fmalloc runtime. The returned
 #' object is ALTREP from creation time. Fixed-width atomic payload bytes are
-#' allocated directly with fmalloc, and ALTREP duplication keeps copy-on-write
-#' copies fmalloc-backed without using R's non-API `Rf_allocVector3()` path.
+#' allocated directly with fmalloc, and ALTREP duplication and vector subsetting
+#' keep copy-on-write copies fmalloc-backed without using R's non-API
+#' `Rf_allocVector3()` path.
 #'
 #' @param type Character string specifying the vector type. Supported values are
 #'   `"logical"`, `"integer"`, `"numeric"`/`"double"`, `"raw"`,

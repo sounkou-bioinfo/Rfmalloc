@@ -1150,6 +1150,130 @@ static SEXP fmalloc_altrep_coerce(SEXP x, int type)
     return ans;
 }
 
+static bool subset_index_to_offset(SEXP indx, R_xlen_t i, R_xlen_t source_length,
+                                   R_xlen_t *source_i)
+{
+    if (TYPEOF(indx) == INTSXP) {
+        int value = INTEGER(indx)[i];
+        if (value != NA_INTEGER && value > 0 && (R_xlen_t)value <= source_length) {
+            *source_i = (R_xlen_t)value - 1;
+            return true;
+        }
+        return false;
+    }
+
+    if (TYPEOF(indx) == REALSXP) {
+        double value = REAL(indx)[i];
+        if (!R_FINITE(value) || value < 1 ||
+            value > (double)std::numeric_limits<R_xlen_t>::max()) {
+            return false;
+        }
+        R_xlen_t offset = (R_xlen_t)(value - 1);
+        if (offset >= 0 && offset < source_length) {
+            *source_i = offset;
+            return true;
+        }
+        return false;
+    }
+
+    return false;
+}
+
+static void set_subset_na_element(fm_vector *vec, R_xlen_t i)
+{
+    switch (vec->type) {
+    case LGLSXP:
+        static_cast<int *>(vector_data_or_dummy(vec))[i] = NA_INTEGER;
+        break;
+    case INTSXP:
+        static_cast<int *>(vector_data_or_dummy(vec))[i] = NA_INTEGER;
+        break;
+    case REALSXP:
+        static_cast<double *>(vector_data_or_dummy(vec))[i] = NA_REAL;
+        break;
+    case RAWSXP:
+        static_cast<Rbyte *>(vector_data_or_dummy(vec))[i] = (Rbyte)0;
+        break;
+    case CPLXSXP: {
+        Rcomplex value;
+        value.r = NA_REAL;
+        value.i = NA_REAL;
+        static_cast<Rcomplex *>(vector_data_or_dummy(vec))[i] = value;
+        break;
+    }
+    case STRSXP:
+        set_string_element(vec, i, NA_STRING);
+        break;
+    case VECSXP:
+        set_pointer_element(vec, i, R_NilValue);
+        break;
+    default:
+        Rf_error("Unsupported vector type: %d", vec->type);
+    }
+}
+
+static void copy_subset_element(fm_vector *dst, R_xlen_t dst_i, fm_vector *src, R_xlen_t src_i)
+{
+    switch (src->type) {
+    case LGLSXP:
+        static_cast<int *>(vector_data_or_dummy(dst))[dst_i] =
+            static_cast<int *>(vector_data_or_dummy(src))[src_i];
+        break;
+    case INTSXP:
+        static_cast<int *>(vector_data_or_dummy(dst))[dst_i] =
+            static_cast<int *>(vector_data_or_dummy(src))[src_i];
+        break;
+    case REALSXP:
+        static_cast<double *>(vector_data_or_dummy(dst))[dst_i] =
+            static_cast<double *>(vector_data_or_dummy(src))[src_i];
+        break;
+    case RAWSXP:
+        static_cast<Rbyte *>(vector_data_or_dummy(dst))[dst_i] =
+            static_cast<Rbyte *>(vector_data_or_dummy(src))[src_i];
+        break;
+    case CPLXSXP:
+        static_cast<Rcomplex *>(vector_data_or_dummy(dst))[dst_i] =
+            static_cast<Rcomplex *>(vector_data_or_dummy(src))[src_i];
+        break;
+    case STRSXP: {
+        SEXP value = PROTECT(string_elt_from_vec(src, src_i));
+        set_string_element(dst, dst_i, value);
+        UNPROTECT(1);
+        break;
+    }
+    case VECSXP:
+        set_pointer_element(dst, dst_i, VECTOR_ELT(src->refs, src_i));
+        break;
+    default:
+        Rf_error("Unsupported vector type: %d", src->type);
+    }
+}
+
+static SEXP fmalloc_altvec_extract_subset(SEXP x, SEXP indx, SEXP call)
+{
+    (void)call;
+    if (TYPEOF(indx) != INTSXP && TYPEOF(indx) != REALSXP) {
+        return nullptr;
+    }
+
+    fm_vector *src = vector_from_altrep(x);
+    R_xlen_t n = XLENGTH(indx);
+    fm_vector *dst = allocate_fm_vector(src->runtime, src->type, n, false);
+    SEXP ans = PROTECT(fmalloc_new_altrep(dst));
+
+    for (R_xlen_t i = 0; i < n; i++) {
+        R_xlen_t src_i = 0;
+        if (subset_index_to_offset(indx, i, src->len, &src_i)) {
+            copy_subset_element(dst, i, src, src_i);
+        } else {
+            set_subset_na_element(dst, i);
+        }
+    }
+
+    UNPROTECT(1);
+    return ans;
+}
+
 static int fmalloc_altinteger_elt(SEXP x, R_xlen_t i)
 {
     fm_vector *vec = vector_from_altrep(x);
@@ -1263,6 +1387,7 @@ static void fmalloc_altlist_set_elt(SEXP x, R_xlen_t i, SEXP value)
         R_set_altrep_Coerce_method((cls), fmalloc_altrep_coerce);                \
         R_set_altrep_Serialized_state_method((cls), fmalloc_altrep_serialized_state); \
         R_set_altrep_Unserialize_method((cls), fmalloc_altrep_unserialize);      \
+        R_set_altvec_Extract_subset_method((cls), fmalloc_altvec_extract_subset); \
     } while (0)
 
 #define REGISTER_ATOMIC_DATAPTR_METHODS(cls)                                     \

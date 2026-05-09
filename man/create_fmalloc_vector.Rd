@@ -26,8 +26,9 @@ A vector of the specified type and length, allocated using fmalloc.
 \description{
 Creates an ALTREP vector using a file-backed fmalloc runtime. The returned
 object is ALTREP from creation time. Fixed-width atomic payload bytes are
-allocated directly with fmalloc, and ALTREP duplication keeps copy-on-write
-copies fmalloc-backed without using R's non-API \code{Rf_allocVector3()} path.
+allocated directly with fmalloc, and ALTREP duplication and vector subsetting
+keep copy-on-write copies fmalloc-backed without using R's non-API
+\code{Rf_allocVector3()} path.
 }
 \examples{
 \dontrun{
