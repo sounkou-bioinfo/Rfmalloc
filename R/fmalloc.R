@@ -87,7 +87,9 @@ init_fmalloc <- function(filepath, size_gb = NULL, mode = c("persistent", "scrat
 #'   `"complex"`, `"character"`, and `"list"`. Fixed-width atomic types expose
 #'   a direct writable fmalloc `DATAPTR`; character vectors store string bytes in
 #'   fmalloc and materialize R `CHARSXP` values on demand; list vectors use
-#'   ALTREP element access with an R-visible reference sidecar for GC safety.
+#'   ALTREP element access with an R-visible reference sidecar for GC safety and
+#'   only accept `NULL` or Rfmalloc-backed vectors from the same runtime as
+#'   elements.
 #' @param length Integer specifying the non-negative length of the vector to
 #'   create.
 #' @param runtime Optional runtime handle returned by [open_fmalloc()]. If not

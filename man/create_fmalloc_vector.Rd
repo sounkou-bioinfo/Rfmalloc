@@ -12,7 +12,9 @@ create_fmalloc_vector(type = "integer", length, runtime = NULL)
 \code{"complex"}, \code{"character"}, and \code{"list"}. Fixed-width atomic types expose
 a direct writable fmalloc \code{DATAPTR}; character vectors store string bytes in
 fmalloc and materialize R \code{CHARSXP} values on demand; list vectors use
-ALTREP element access with an R-visible reference sidecar for GC safety.}
+ALTREP element access with an R-visible reference sidecar for GC safety and
+only accept \code{NULL} or Rfmalloc-backed vectors from the same runtime as
+elements.}
 
 \item{length}{Integer specifying the non-negative length of the vector to
 create.}

@@ -16,7 +16,8 @@
 #' @section Current Scope:
 #' \itemize{
 #'   \item ALTREP file-backed allocation for logical, integer, numeric, raw,
-#'         complex, character, and list vectors.
+#'         complex, character, and list vectors. List elements are restricted to
+#'         `NULL` or Rfmalloc-backed vectors from the same runtime.
 #'   \item Large allocations spanning multiple fmalloc chunks.
 #'   \item Multiple runtime handles in one R process.
 #'   \item Persistent and scratch runtime modes.
@@ -31,8 +32,8 @@
 #'
 #' @section Future Work:
 #' Future work includes view-based subset representations, catalog compaction
-#' and reset tooling, and richer persistence semantics for pointer-containing
-#' vector types.
+#' and reset tooling, list-container recovery by reference, and metadata storage
+#' for attributes on persisted elements.
 #'
 #' @docType package
 #' @name Rfmalloc-package

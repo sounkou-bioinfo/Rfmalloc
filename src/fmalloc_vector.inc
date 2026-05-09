@@ -237,17 +237,23 @@ static void fmalloc_vector_finalizer(SEXP vector_xptr)
     release_fm_vector(vec);
 }
 
-static fm_vector *vector_from_altrep(SEXP x)
+static fm_vector *maybe_vector_from_altrep(SEXP x)
 {
-    SEXP vector_xptr = R_altrep_data1(x);
-    if (TYPEOF(vector_xptr) != EXTPTRSXP || R_ExternalPtrTag(vector_xptr) != fmalloc_vector_tag) {
-        Rf_error("corrupt fmalloc ALTREP vector handle");
+    if (!ALTREP(x)) {
         return nullptr;
     }
+    SEXP vector_xptr = R_altrep_data1(x);
+    if (TYPEOF(vector_xptr) != EXTPTRSXP || R_ExternalPtrTag(vector_xptr) != fmalloc_vector_tag) {
+        return nullptr;
+    }
+    return static_cast<fm_vector *>(R_ExternalPtrAddr(vector_xptr));
+}
 
-    fm_vector *vec = static_cast<fm_vector *>(R_ExternalPtrAddr(vector_xptr));
+static fm_vector *vector_from_altrep(SEXP x)
+{
+    fm_vector *vec = maybe_vector_from_altrep(x);
     if (!vec) {
-        Rf_error("fmalloc ALTREP vector is closed");
+        Rf_error("corrupt or closed fmalloc ALTREP vector handle");
         return nullptr;
     }
     return vec;
@@ -507,8 +513,30 @@ static SEXP pointer_refs_from_altrep(SEXP x)
     return R_ExternalPtrProtected(vector_xptr);
 }
 
+static void validate_pointer_element(fm_vector *vec, SEXP value)
+{
+    if (value == R_NilValue) {
+        return;
+    }
+
+    fm_vector *child = maybe_vector_from_altrep(value);
+    if (!child) {
+        Rf_error("fmalloc list elements must be NULL or fmalloc-backed vectors; ordinary R objects cannot be stored");
+        return;
+    }
+    if (child == vec) {
+        Rf_error("fmalloc lists cannot contain themselves");
+        return;
+    }
+    if (child->runtime != vec->runtime) {
+        Rf_error("fmalloc list elements must be allocated from the same fmalloc runtime");
+        return;
+    }
+}
+
 static void set_pointer_element(fm_vector *vec, R_xlen_t i, SEXP value)
 {
+    validate_pointer_element(vec, value);
     SET_VECTOR_ELT(vec->refs, i, value);
     if (vec->data) {
         static_cast<SEXP *>(vec->data)[i] = value;

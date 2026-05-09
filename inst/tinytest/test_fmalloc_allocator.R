@@ -86,17 +86,24 @@ message("Input validation tests passed!")
     v_chr[] <- c("a", "b", NA_character_, "d")
     expect_equal(v_chr[], c("a", "b", NA_character_, "d"))
 
-    v_lst[[1]] <- 1:2
-    v_lst[[2]] <- data.frame(x = 1)
-    expect_equal(v_lst[[1]], 1:2)
-    expect_equal(v_lst[[2]]$x, 1)
+    list_child <- create_fmalloc_vector("integer", 2)
+    list_child[] <- 1:2
+    list_replacement <- create_fmalloc_vector("integer", 1)
+    list_replacement[] <- 99L
+
+    v_lst[[1]] <- list_child
+    v_lst[2] <- list(NULL)
+    expect_error(v_lst[[3]] <- 1:2, "ordinary R objects")
+    expect_error(v_lst[[3]] <- data.frame(x = 1), "ordinary R objects")
+    expect_equal(v_lst[[1]][], 1:2)
+    expect_equal(v_lst[[2]], NULL)
 
     v_dup <- v_lst
-    v_dup[[1]] <- 99L
-    expect_equal(v_lst[[1]], 1:2)
-    expect_equal(v_dup[[1]], 99L)
+    v_dup[[1]] <- list_replacement
+    expect_equal(v_lst[[1]][], 1:2)
+    expect_equal(v_dup[[1]][], 99L)
 
-    rm(v_zero, v_int, v_num, v_log, v_raw, v_cplx, v_chr, v_lst, v_dup)
+    rm(v_zero, v_int, v_num, v_log, v_raw, v_cplx, v_chr, v_lst, v_dup, list_child, list_replacement)
     gc()
 
     cleanup_fmalloc()

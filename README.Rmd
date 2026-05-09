@@ -33,7 +33,8 @@ consumers that use the C API or link against the bundled library.
 Implemented now:
 
 - fmalloc-backed ALTREP vectors for logical, integer, numeric, raw, complex,
-  character, and list values;
+  character, and list values; list elements are restricted to `NULL` or other
+  Rfmalloc vectors from the same runtime;
 - explicit runtime handles and `persistent` / `scratch` runtime modes;
 - persistent serialization and reopening for fixed-width atomic and character
   vectors;
@@ -43,7 +44,7 @@ Implemented now:
 - an installed C header and `R_RegisterCCallable()` API for other packages.
 
 Still experimental: view-based subsets, richer catalog maintenance tooling,
-persistent list recovery semantics, and mapped-file recovery diagnostics.
+list-container recovery by reference, and mapped-file recovery diagnostics.
 
 ## Installation
 
@@ -86,7 +87,10 @@ local({
   v_raw[] <- as.raw(1:4)
   v_cplx[] <- c(1+1i, 2+2i, 3+3i, 4+4i)
   v_chr[] <- c("alpha", "beta", NA_character_)
-  v_lst[[1]] <- data.frame(x = 1:2)
+
+  list_child <- create_fmalloc_vector("integer", 2)
+  list_child[] <- 1:2
+  v_lst[[1]] <- list_child
 
   list(
     integer = v_int[1:3],
@@ -94,7 +98,7 @@ local({
     raw = v_raw[],
     complex = v_cplx[],
     character = v_chr[],
-    list_first = v_lst[[1]]
+    list_first = v_lst[[1]][]
   )
 })
 ```
@@ -341,9 +345,18 @@ local({
 })
 ```
 
-List vectors are serialized as ordinary R list values for now. Persistent list
-recovery needs a separate element-level policy because list elements are R
-objects, not raw fixed-width payload bytes.
+Rfmalloc list vectors are intentionally not general R lists. Element assignment
+accepts only `NULL` or Rfmalloc-backed vectors from the same runtime; ordinary R
+objects such as base vectors, data frames, or arbitrary lists are rejected. This
+keeps lists inside the same file-backed object universe and leaves room for a
+Mori-style element directory: each list slot can be described by physical
+allocation metadata rather than by session-local `SEXP` pointers.
+
+The list container itself is still serialized as an ordinary R list state for
+now. Its Rfmalloc elements then serialize according to their own ALTREP hooks,
+so persistent atomic and character children can still round-trip by reference.
+Future list-container recovery should store a fmalloc element table with child
+catalog offsets, generations, payload offsets, and serialized attributes.
 
 This is reference-based recovery, not name-based object discovery. The catalog
 stores physical allocation records, not user variable names. Serialized

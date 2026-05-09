@@ -52,25 +52,51 @@ message("Testing fmalloc ALTREP vector types and duplication...")
 
     lst <- create_fmalloc_vector("list", 3, runtime = rt)
     expect_equal(attributes(lst), NULL)
-    lst[[1]] <- 1:2
-    lst[[2]] <- data.frame(x = 1)
-    lst[[3]] <- list(z = "z")
-    expect_equal(lst[[1]], 1:2)
-    expect_equal(lst[[2]]$x, 1)
-    expect_equal(lst[[3]]$z, "z")
+    child_int <- create_fmalloc_vector("integer", 2, runtime = rt)
+    child_int[] <- 1:2
+    child_chr <- create_fmalloc_vector("character", 1, runtime = rt)
+    child_chr[] <- "one"
+    nested <- create_fmalloc_vector("list", 1, runtime = rt)
+    nested_chr <- create_fmalloc_vector("character", 1, runtime = rt)
+    nested_chr[] <- "z"
+    nested[[1]] <- nested_chr
+
+    lst[[1]] <- child_int
+    lst[[2]] <- child_chr
+    lst[[3]] <- nested
+    expect_error(lst[[1]] <- 1:2, "ordinary R objects")
+    expect_error(lst[[1]] <- data.frame(x = 1), "ordinary R objects")
+    expect_equal(lst[[1]][], 1:2)
+    expect_equal(lst[[2]][], "one")
+    expect_equal(lst[[3]][[1]][], "z")
 
     lst_copy <- lst
-    lst_copy[[1]] <- 99L
-    expect_equal(lst[[1]], 1:2)
-    expect_equal(lst_copy[[1]], 99L)
+    replacement_int <- create_fmalloc_vector("integer", 1, runtime = rt)
+    replacement_int[] <- 99L
+    lst_copy[[1]] <- replacement_int
+    expect_equal(lst[[1]][], 1:2)
+    expect_equal(lst_copy[[1]][], 99L)
 
     lst_subset <- lst[c(3, 1, NA_integer_, 99)]
-    expect_equal(lst_subset[[1]]$z, "z")
-    expect_equal(lst_subset[[2]], 1:2)
+    expect_equal(lst_subset[[1]][[1]][], "z")
+    expect_equal(lst_subset[[2]][], 1:2)
     expect_equal(lst_subset[[3]], NULL)
     expect_equal(lst_subset[[4]], NULL)
-    lst_subset[[2]] <- "changed"
-    expect_equal(lst[[1]], 1:2)
+    expect_error(lst_subset[[2]] <- "changed", "ordinary R objects")
+    subset_replacement <- create_fmalloc_vector("character", 1, runtime = rt)
+    subset_replacement[] <- "changed"
+    lst_subset[[2]] <- subset_replacement
+    expect_equal(lst[[1]][], 1:2)
+
+    other_file <- tempfile(fileext = ".bin")
+    other_rt <- open_fmalloc(other_file)
+    on.exit({
+        cleanup_fmalloc(other_rt)
+        unlink(other_file)
+    }, add = TRUE)
+    other_child <- create_fmalloc_vector("integer", 1, runtime = other_rt)
+    other_child[] <- 7L
+    expect_error(lst[[1]] <- other_child, "same fmalloc runtime")
 
     coerce_src <- create_fmalloc_vector("integer", 4, runtime = rt)
     coerce_src[] <- 1:4

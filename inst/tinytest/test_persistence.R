@@ -191,8 +191,11 @@ if (.Platform$OS.type == "unix") {
     int_vec[] <- 1:4
     chr_vec <- create_fmalloc_vector("character", 3, runtime = rt)
     chr_vec[] <- c("one", NA_character_, "three")
+    list_child <- create_fmalloc_vector("integer", 2, runtime = rt)
+    list_child[] <- 1:2
     list_vec <- create_fmalloc_vector("list", 2, runtime = rt)
-    list_vec[[1]] <- 1:2
+    list_vec[[1]] <- list_child
+    expect_error(list_vec[[2]] <- 1:2, "ordinary R objects")
 
     catalog <- list_fmalloc_allocations(rt)
     expect_true(nrow(catalog) >= 3L)
@@ -208,12 +211,17 @@ if (.Platform$OS.type == "unix") {
 
     int_blob <- serialize(int_vec, NULL)
     chr_blob <- serialize(chr_vec, NULL)
+    list_blob <- serialize(list_vec, NULL)
     cleanup_fmalloc(rt)
 
     int_recovered <- unserialize(int_blob)
     chr_recovered <- unserialize(chr_blob)
+    list_recovered <- unserialize(list_blob)
     expect_equal(int_recovered[], 1:4)
     expect_equal(chr_recovered[], c("one", NA_character_, "three"))
+    expect_true(is.list(list_recovered))
+    expect_equal(list_recovered[[1]][], 1:2)
+    expect_equal(list_recovered[[2]], NULL)
 
     message("  Persistent allocation catalog test passed")
 })()

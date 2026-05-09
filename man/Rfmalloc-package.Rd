@@ -25,7 +25,8 @@ complex, character, and list vectors with fmalloc payload storage.
 
 \itemize{
 \item ALTREP file-backed allocation for logical, integer, numeric, raw,
-complex, character, and list vectors.
+complex, character, and list vectors. List elements are restricted to
+\code{NULL} or Rfmalloc-backed vectors from the same runtime.
 \item Large allocations spanning multiple fmalloc chunks.
 \item Multiple runtime handles in one R process.
 \item Persistent and scratch runtime modes.
@@ -42,8 +43,8 @@ vectors allocated from them.
 \section{Future Work}{
 
 Future work includes view-based subset representations, catalog compaction
-and reset tooling, and richer persistence semantics for pointer-containing
-vector types.
+and reset tooling, list-container recovery by reference, and metadata storage
+for attributes on persisted elements.
 }
 
 \seealso{
@@ -57,5 +58,12 @@ Useful links:
 }
 \author{
 \strong{Maintainer}: Sounkou Mahamane Toure \email{sounkoutoure@gmail.com}
+
+Other contributors:
+\itemize{
+  \item Kenichi Yasukata (fmalloc) [copyright holder]
+  \item Wolfram Gloger (ptmalloc3) [copyright holder]
+  \item Free Software Foundation, Inc. (selected GNU C Library support files) [copyright holder]
+}
 
 }
