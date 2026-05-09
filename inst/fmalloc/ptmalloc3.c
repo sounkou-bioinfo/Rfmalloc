@@ -35,7 +35,9 @@ PERFORMANCE OF THIS SOFTWARE.
  */
 
 #include <sys/types.h>   /* For size_t */
+#ifndef _WIN32
 #include <sys/mman.h>    /* for mmap */
+#endif
 #include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
