@@ -32,6 +32,8 @@ complex, character, and list vectors.
 \item Reference serialization for persistent fixed-width atomic and
 character ALTREP vectors.
 \item Fmalloc-backed ALTREP subset copies for vector indexing operations.
+\item An in-file allocation catalog for persistent vectors.
+\item A C-callable API and installed header for other packages.
 \item Native lifetime tracking so runtime mappings outlive reachable
 vectors allocated from them.
 }
@@ -39,15 +41,16 @@ vectors allocated from them.
 
 \section{Future Work}{
 
-Future work includes a complete persistent allocation catalog,
-view-based subset representations, and richer persistence semantics for
-pointer-containing vector types.
+Future work includes view-based subset representations, catalog compaction
+and reset tooling, and richer persistence semantics for pointer-containing
+vector types.
 }
 
 \seealso{
 Useful links:
 \itemize{
   \item \url{https://github.com/sounkou-bioinfo/Rfmalloc}
+  \item \url{https://sounkou-bioinfo.github.io/Rfmalloc/}
   \item Report bugs at \url{https://github.com/sounkou-bioinfo/Rfmalloc/issues}
 }
 

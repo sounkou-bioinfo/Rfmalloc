@@ -1,3 +1,4 @@
+
 # Rfmalloc
 
 <!-- badges: start -->
@@ -47,6 +48,9 @@ Implemented now:
 - an in-file persistent allocation catalog with record offsets,
   generations, types, lengths, payload offsets, byte sizes, states, and
   flags;
+- an installed C header plus `R_RegisterCCallable()` entry points for
+  other R packages that want to open runtimes and create fmalloc-backed
+  ALTREP vectors;
 - native lifetime tracking from ALTREP vector handles to runtime
   mappings, so a runtime mapping is not destroyed while vectors
   allocated from it are still reachable.
@@ -115,7 +119,7 @@ local({
   )
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e6cd2338e.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpmRjboY/file751407d8b3008.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> $integer
@@ -158,7 +162,7 @@ local({
   v[1:3]
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e755bb730.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpmRjboY/file75140504d3cf4.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> [1] 10 11 12
@@ -193,7 +197,7 @@ local({
 })
 #> Requested file size: 5.00 GB (5368709120 bytes)
 #> Creating file with size: 5368709120 bytes (5.00 GB)
-#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e6a06e594.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpmRjboY/file751405fd9e31f.bin (init: true, mode: persistent)
 #> Creating fmalloc ALTREP vector: type=integer, length=1000000000
 #> Large allocation: 3814.70 MB requested
 #> SUCCESS: fmalloc allocated 4000000000 bytes
@@ -232,9 +236,9 @@ local({
   roundtrip[]
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e50df2128.bin (init: true, mode: persistent)
-#> Using existing file: /tmp/RtmpZBn1VI/file74c2e50df2128.bin (size: 33562624 bytes)
-#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e50df2128.bin (init: false, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpmRjboY/file7514029c30c80.bin (init: true, mode: persistent)
+#> Using existing file: /tmp/RtmpmRjboY/file7514029c30c80.bin (size: 33562624 bytes)
+#> fmalloc initialized with file: /tmp/RtmpmRjboY/file7514029c30c80.bin (init: false, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> [1] 1 2 3 4 5
@@ -263,8 +267,8 @@ local({
   .Internal(inspect(inspect_vec))
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2ed2e398f.bin (init: true, mode: persistent)
-#> @63d6f317fcc0 13 INTSXP g0c0 [REF(1)] fmalloc_altrep type=integer length=4 bytes=16 data=0x7d69536023e8 mode=persistent runtime=open offset=9192 uuid=897da0188fbd670e43639d1ee31dc82f file=/tmp/RtmpZBn1VI/file74c2ed2e398f.bin
+#> fmalloc initialized with file: /tmp/RtmpmRjboY/file7514030d07d1b.bin (init: true, mode: persistent)
+#> @5a94b8d784e8 13 INTSXP g0c0 [REF(1)] fmalloc_altrep type=integer length=4 bytes=16 data=0x7329e28023e8 mode=persistent runtime=open offset=9192 uuid=ba8179b0a7a0daa2b2cb29f2c498d827 file=/tmp/RtmpmRjboY/file7514030d07d1b.bin
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 ```
@@ -306,7 +310,7 @@ local({
   )
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e101d0f44.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpmRjboY/file751403b2250b2.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> $chars
@@ -354,10 +358,10 @@ local({
   )
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e3c9d9e9e.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpmRjboY/file75140529962d1.bin (init: true, mode: persistent)
 #> Requested file size: 0.10 GB (107374182 bytes)
 #> Creating file with size: 107374182 bytes (0.10 GB)
-#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e211c160.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpmRjboY/file75140564c4f82.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> Cleaning up fmalloc...
@@ -428,13 +432,13 @@ local({
   output
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e75210802.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpmRjboY/file75140662f5a3d.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
-#> Using existing file: /tmp/RtmpZBn1VI/file74c2e75210802.bin (size: 33562624 bytes)
-#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e75210802.bin (init: false, mode: persistent)
-#> Using existing file: /tmp/RtmpZBn1VI/file74c2e75210802.bin (size: 33562624 bytes)
-#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e75210802.bin (init: false, mode: persistent)
+#> Using existing file: /tmp/RtmpmRjboY/file75140662f5a3d.bin (size: 33562624 bytes)
+#> fmalloc initialized with file: /tmp/RtmpmRjboY/file75140662f5a3d.bin (init: false, mode: persistent)
+#> Using existing file: /tmp/RtmpmRjboY/file75140662f5a3d.bin (size: 33562624 bytes)
+#> fmalloc initialized with file: /tmp/RtmpmRjboY/file75140662f5a3d.bin (init: false, mode: persistent)
 #> $catalog
 #>   record_offset generation      type length
 #> 1          9440          2 character      3
@@ -464,7 +468,7 @@ local({
   scratch_copy
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e5a97c762.bin (init: true, mode: scratch)
+#> fmalloc initialized with file: /tmp/RtmpmRjboY/file7514066846321.bin (init: true, mode: scratch)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> [1] 1 2 3 4
@@ -518,18 +522,18 @@ local({
   list(before = before, after = after)
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpZBn1VI/file74c2e7c4bd78e.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/RtmpmRjboY/file75140394780ae.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> $before
 #>   object        address
-#> 1  cow_a 0x63d6f0e11710
-#> 2  cow_b 0x63d6f0e11710
+#> 1  cow_a 0x5a94b679eb00
+#> 2  cow_b 0x5a94b679eb00
 #> 
 #> $after
 #>   object        address
-#> 1  cow_a 0x63d6f0c516a8
-#> 2  cow_b 0x63d6f0e11710
+#> 1  cow_a 0x5a94b673cbc8
+#> 2  cow_b 0x5a94b679eb00
 ```
 
 The two names start as references to the same `SEXP`. After the write to
@@ -565,6 +569,43 @@ The public ALTREP header used by the installed R on this system exposes
 strings and lists, but not an atomic `Set_region` hook. Atomic writes
 therefore go through R’s normal writable `DATAPTR()` path; internal bulk
 copies use the direct fmalloc payload pointer.
+
+## Native C API for Other Packages
+
+Rfmalloc installs `inst/include/Rfmalloc.h` and registers a small
+C-callable API with `R_RegisterCCallable()`. A downstream package can
+add Rfmalloc to `LinkingTo` and `Imports`, include the header, and
+resolve the entry points at runtime through the inline wrappers in that
+header.
+
+Current C-callable functions are:
+
+- `Rfmalloc_api_version()`;
+- `Rfmalloc_open_runtime(const char *filepath, double size_gb, const char *mode)`;
+- `Rfmalloc_default_runtime()`;
+- `Rfmalloc_create_vector(SEXP runtime, int sexptype, R_xlen_t length)`;
+- `Rfmalloc_list_allocations(SEXP runtime)`;
+- `Rfmalloc_cleanup_runtime(SEXP runtime)`.
+
+Returned `SEXP` objects follow normal R API ownership rules: protect
+them before further allocation and preserve them if they must outlive
+the current native call. The runtime object is explicit; downstream code
+should keep it reachable for as long as vectors allocated from it are
+needed.
+
+The native source is also split into smaller implementation chunks:
+
+- `src/fmalloc_runtime.inc` for runtime and backing-file handling;
+- `src/fmalloc_vector.inc` for vector storage, strings, catalog records,
+  and materialization;
+- `src/fmalloc_altrep.inc` for ALTREP methods and class registration;
+- `src/fmalloc_api.inc` for `.Call`, C-callable API, and package
+  registration.
+
+`src/fmalloc.cpp` is now the small unity translation unit that includes
+those pieces. Keeping one translation unit avoids changing symbol
+visibility while the internal boundaries settle; the installed
+`Rfmalloc.h` is the supported native surface for other packages.
 
 ## References
 

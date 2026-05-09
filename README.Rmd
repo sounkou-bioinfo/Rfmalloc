@@ -56,6 +56,8 @@ Implemented now:
   returning fmalloc-backed copy results;
 - an in-file persistent allocation catalog with record offsets, generations,
   types, lengths, payload offsets, byte sizes, states, and flags;
+- an installed C header plus `R_RegisterCCallable()` entry points for other R
+  packages that want to open runtimes and create fmalloc-backed ALTREP vectors;
 - native lifetime tracking from ALTREP vector handles to runtime mappings, so a
   runtime mapping is not destroyed while vectors allocated from it are still
   reachable.
@@ -454,6 +456,40 @@ The public ALTREP header used by the installed R on this system exposes
 lists, but not an atomic `Set_region` hook. Atomic writes therefore go through
 R's normal writable `DATAPTR()` path; internal bulk copies use the direct
 fmalloc payload pointer.
+
+## Native C API for Other Packages
+
+Rfmalloc installs `inst/include/Rfmalloc.h` and registers a small C-callable API
+with `R_RegisterCCallable()`. A downstream package can add Rfmalloc to
+`LinkingTo` and `Imports`, include the header, and resolve the entry points at
+runtime through the inline wrappers in that header.
+
+Current C-callable functions are:
+
+- `Rfmalloc_api_version()`;
+- `Rfmalloc_open_runtime(const char *filepath, double size_gb, const char *mode)`;
+- `Rfmalloc_default_runtime()`;
+- `Rfmalloc_create_vector(SEXP runtime, int sexptype, R_xlen_t length)`;
+- `Rfmalloc_list_allocations(SEXP runtime)`;
+- `Rfmalloc_cleanup_runtime(SEXP runtime)`.
+
+Returned `SEXP` objects follow normal R API ownership rules: protect them before
+further allocation and preserve them if they must outlive the current native
+call. The runtime object is explicit; downstream code should keep it reachable
+for as long as vectors allocated from it are needed.
+
+The native source is also split into smaller implementation chunks:
+
+- `src/fmalloc_runtime.inc` for runtime and backing-file handling;
+- `src/fmalloc_vector.inc` for vector storage, strings, catalog records, and
+  materialization;
+- `src/fmalloc_altrep.inc` for ALTREP methods and class registration;
+- `src/fmalloc_api.inc` for `.Call`, C-callable API, and package registration.
+
+`src/fmalloc.cpp` is now the small unity translation unit that includes those
+pieces. Keeping one translation unit avoids changing symbol visibility while the
+internal boundaries settle; the installed `Rfmalloc.h` is the supported native
+surface for other packages.
 
 ## References
 
