@@ -79,7 +79,8 @@ complex, character, and list vectors with fmalloc payload storage.</p>
 
 
 <ul><li><p>ALTREP file-backed allocation for logical, integer, numeric, raw,
-complex, character, and list vectors.</p></li>
+complex, character, and list vectors. List elements are restricted to
+<code>NULL</code> or Rfmalloc-backed vectors from the same runtime.</p></li>
 <li><p>Large allocations spanning multiple fmalloc chunks.</p></li>
 <li><p>Multiple runtime handles in one R process.</p></li>
 <li><p>Persistent and scratch runtime modes.</p></li>
@@ -96,8 +97,8 @@ vectors allocated from them.</p></li>
 
 
 <p>Future work includes view-based subset representations, catalog compaction
-and reset tooling, and richer persistence semantics for pointer-containing
-vector types.</p>
+and reset tooling, list-container recovery by reference, and metadata storage
+for attributes on persisted elements.</p>
     </div>
     <div id="see-also">
     <h2>See also</h2>
@@ -109,7 +110,10 @@ vector types.</p>
     <div id="author">
     <h2>Author</h2>
     <p><strong>Maintainer</strong>: Sounkou Mahamane Toure <a href="mailto:sounkoutoure@gmail.com">sounkoutoure@gmail.com</a></p>
-    </div>
+<p>Other contributors:</p><ul><li><p>Kenichi Yasukata (fmalloc) [copyright holder]</p></li>
+<li><p>Wolfram Gloger (ptmalloc3) [copyright holder]</p></li>
+<li><p>Free Software Foundation, Inc. (selected GNU C Library support files) [copyright holder]</p></li>
+</ul></div>
 
   </div>
   <div class="col-md-3 hidden-xs hidden-sm" id="pkgdown-sidebar">

@@ -71,7 +71,9 @@ keep copy-on-write copies fmalloc-backed without using R's non-API
 <code>"complex"</code>, <code>"character"</code>, and <code>"list"</code>. Fixed-width atomic types expose
 a direct writable fmalloc <code>DATAPTR</code>; character vectors store string bytes in
 fmalloc and materialize R <code>CHARSXP</code> values on demand; list vectors use
-ALTREP element access with an R-visible reference sidecar for GC safety.</p></dd>
+ALTREP element access with an R-visible reference sidecar for GC safety and
+only accept <code>NULL</code> or Rfmalloc-backed vectors from the same runtime as
+elements.</p></dd>
 
 
 <dt id="arg-length">length<a class="anchor" aria-label="anchor" href="#arg-length"></a></dt>
