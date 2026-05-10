@@ -1,5 +1,5 @@
 Package: Rfmalloc
-Title: Memory-Mapped File Allocation for R
+Title: File-Backed ALTREP Vectors for R
 Version: 0.1.0
 Authors@R: c(
     person(given = "Sounkou Mahamane", family = "Toure", email = "sounkoutoure@gmail.com", role = c("aut", "cre")),
@@ -12,11 +12,11 @@ Author: Sounkou Mahamane Toure [aut, cre],
   Wolfram Gloger [cph] (ptmalloc3),
   Free Software Foundation, Inc. [cph] (selected GNU C Library support files)
 Maintainer: Sounkou Mahamane Toure <sounkoutoure@gmail.com>
-Description: Provides experimental memory-mapped file allocation capabilities for R using
-    the 'fmalloc' library. The package exposes ALTREP, file-backed vector
-    allocation for logical, integer, numeric, raw, complex, character, and list
-    vectors, plus explicit runtime handles for working with multiple backing files in one R
-    process.
+Description: Provides experimental file-backed, ALTREP-style vector allocation
+    for R using the 'fmalloc' library. The package supports persistent and
+    scratch runtimes, durable reference-based serialization, explicit vector
+    lifecycle management, and multiple runtime handles for working with several
+    backing files in one R process.
 License: GPL (>= 2)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
