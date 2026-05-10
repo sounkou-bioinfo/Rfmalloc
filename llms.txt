@@ -396,96 +396,48 @@ local({
 #> [1] "1" "2" "3"
 ```
 
-## Matrix and data.frame copy-on-write examples
+## Matrix and data.frame constructors and converters
 
-Use [`tracemem()`](https://rdrr.io/r/base/tracemem.html) to confirm
-R-style copy-on-write for higher-level wrappers:
+Use constructor helpers for shape-aware allocation, and `as_fmalloc_*()`
+helpers to install shape metadata on existing fmalloc-backed vectors:
 
 ``` r
 
 
 local({
-  cow_file <- tempfile(fileext = ".bin")
-  rt <- open_fmalloc(cow_file, mode = "persistent")
+  ctor_file <- tempfile(fileext = ".bin")
+  rt <- open_fmalloc(ctor_file, mode = "persistent")
   on.exit({
     cleanup_fmalloc(rt)
-    unlink(cow_file)
+    unlink(ctor_file)
   }, add = TRUE)
 
-  fm_matrix <- create_fmalloc_vector("integer", 6, runtime = rt)
-  fm_matrix[] <- 1:6
-  dim(fm_matrix) <- c(2L, 3L)
-  dimnames(fm_matrix) <- list(c("r1", "r2"), c("c1", "c2", "c3"))
+  m <- create_fmalloc_matrix("integer", nrow = 2L, ncol = 3L, runtime = rt)
+  m[] <- 1:6
 
-  # Only writes should trigger a copy trace.
-  tracemem(fm_matrix)
-  matrix_copy_events_on_read <- capture.output({
-    fm_matrix_view <- fm_matrix
-    invisible(fm_matrix_view[1L, 1L])
-  })
+  base_vec <- create_fmalloc_vector("integer", 6L, runtime = rt)
+  base_vec[] <- 11:16
+  m_view <- as_fmalloc_matrix(base_vec, ncol = 3L, copy = FALSE)
 
-  fm_matrix_copy <- fm_matrix
-  matrix_copy_events_on_write <- capture.output({
-    fm_matrix_copy[1L, 2L] <- 99L
-  })
+  # Metadata-only reshape, then mutate through the reshaped object
+  m_view[1L, 2L] <- 88L
 
-  fm_col_a <- create_fmalloc_vector("integer", 3, runtime = rt)
-  fm_col_b <- create_fmalloc_vector("integer", 3, runtime = rt)
-  fm_col_a[] <- c(1L, 2L, 3L)
-  fm_col_b[] <- c(4L, 5L, 6L)
-  fm_df <- data.frame(a = fm_col_a, b = fm_col_b, stringsAsFactors = FALSE)
+  a <- create_fmalloc_array("numeric", dim = c(2L, 1L, 3L), runtime = rt)
+  a[] <- 1:6
 
-  tracemem(fm_df)
-  df_copy_events_on_read <- capture.output({
-    fm_df_view <- fm_df
-    invisible(fm_df_view$a[1L])
-  })
-
-  fm_df_copy <- fm_df
-  df_copy_events_on_write <- capture.output({
-    fm_df_copy$a[1L] <- 99L
-  })
-  untracemem(fm_matrix)
-  untracemem(fm_df)
+  col_a <- create_fmalloc_vector("integer", 3L, runtime = rt)
+  col_b <- create_fmalloc_vector("integer", 3L, runtime = rt)
+  col_a[] <- c(1L, 2L, 3L)
+  col_b[] <- c(4L, 5L, 6L)
+  df <- as_fmalloc_data_frame(a = col_a, b = col_b, stringsAsFactors = FALSE)
 
   list(
-    matrix_copy_on_read = length(matrix_copy_events_on_read),
-    matrix_copy_on_write = length(matrix_copy_events_on_write),
-    data_frame_copy_on_read = length(df_copy_events_on_read),
-    data_frame_copy_on_write = length(df_copy_events_on_write),
-    matrix_original = fm_matrix[1L, 2L],
-    matrix_copy = fm_matrix_copy[1L, 2L],
-    data_frame_original = fm_df$a[],
-    data_frame_copy = fm_df_copy$a[]
+    matrix_dims = dim(m),
+    metadata_shares_payload = c(base_vec[3L], m_view[1L, 2L]),
+    array_dims = dim(a),
+    df_columns = names(df)
   )
 })
-#> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/Rtmp3fxpHu/file13eb505529e6d5.bin (init: true, mode: persistent)
-#> Cleaning up fmalloc...
-#> fmalloc cleaned up
-#> $matrix_copy_on_read
-#> [1] 0
-#> 
-#> $matrix_copy_on_write
-#> [1] 1
-#> 
-#> $data_frame_copy_on_read
-#> [1] 0
-#> 
-#> $data_frame_copy_on_write
-#> [1] 2
-#> 
-#> $matrix_original
-#> [1] 3
-#> 
-#> $matrix_copy
-#> [1] 99
-#> 
-#> $data_frame_original
-#> [1] 1 2 3
-#> 
-#> $data_frame_copy
-#> [1] 99  2  3
 ```
 
 ## Multiple Runtimes and Lifetime

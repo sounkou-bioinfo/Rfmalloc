@@ -365,93 +365,45 @@
 <span><span class="co">#&gt; [1] "1" "2" "3"</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="matrix-and-dataframe-copy-on-write-examples">Matrix and data.frame copy-on-write examples<a class="anchor" aria-label="anchor" href="#matrix-and-dataframe-copy-on-write-examples"></a>
+<h2 id="matrix-and-dataframe-constructors-and-converters">Matrix and data.frame constructors and converters<a class="anchor" aria-label="anchor" href="#matrix-and-dataframe-constructors-and-converters"></a>
 </h2>
-<p>Use <code><a href="https://rdrr.io/r/base/tracemem.html" class="external-link">tracemem()</a></code> to confirm R-style copy-on-write for higher-level wrappers:</p>
+<p>Use constructor helpers for shape-aware allocation, and <code>as_fmalloc_*()</code> helpers to install shape metadata on existing fmalloc-backed vectors:</p>
 <div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
-<span>  <span class="va">cow_file</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
-<span>  <span class="va">rt</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/open_fmalloc.html">open_fmalloc</a></span><span class="op">(</span><span class="va">cow_file</span>, mode <span class="op">=</span> <span class="st">"persistent"</span><span class="op">)</span></span>
+<span>  <span class="va">ctor_file</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
+<span>  <span class="va">rt</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/open_fmalloc.html">open_fmalloc</a></span><span class="op">(</span><span class="va">ctor_file</span>, mode <span class="op">=</span> <span class="st">"persistent"</span><span class="op">)</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/on.exit.html" class="external-link">on.exit</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>    <span class="fu"><a href="reference/cleanup_fmalloc.html">cleanup_fmalloc</a></span><span class="op">(</span><span class="va">rt</span><span class="op">)</span></span>
-<span>    <span class="fu"><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink</a></span><span class="op">(</span><span class="va">cow_file</span><span class="op">)</span></span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink</a></span><span class="op">(</span><span class="va">ctor_file</span><span class="op">)</span></span>
 <span>  <span class="op">}</span>, add <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
 <span></span>
-<span>  <span class="va">fm_matrix</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/create_fmalloc_vector.html">create_fmalloc_vector</a></span><span class="op">(</span><span class="st">"integer"</span>, <span class="fl">6</span>, runtime <span class="op">=</span> <span class="va">rt</span><span class="op">)</span></span>
-<span>  <span class="va">fm_matrix</span><span class="op">[</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fl">1</span><span class="op">:</span><span class="fl">6</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/dim.html" class="external-link">dim</a></span><span class="op">(</span><span class="va">fm_matrix</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">2L</span>, <span class="fl">3L</span><span class="op">)</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/dimnames.html" class="external-link">dimnames</a></span><span class="op">(</span><span class="va">fm_matrix</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"r1"</span>, <span class="st">"r2"</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"c1"</span>, <span class="st">"c2"</span>, <span class="st">"c3"</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="va">m</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/create_fmalloc_matrix.html">create_fmalloc_matrix</a></span><span class="op">(</span><span class="st">"integer"</span>, nrow <span class="op">=</span> <span class="fl">2L</span>, ncol <span class="op">=</span> <span class="fl">3L</span>, runtime <span class="op">=</span> <span class="va">rt</span><span class="op">)</span></span>
+<span>  <span class="va">m</span><span class="op">[</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fl">1</span><span class="op">:</span><span class="fl">6</span></span>
 <span></span>
-<span>  <span class="co"># Only writes should trigger a copy trace.</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/tracemem.html" class="external-link">tracemem</a></span><span class="op">(</span><span class="va">fm_matrix</span><span class="op">)</span></span>
-<span>  <span class="va">matrix_copy_events_on_read</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/utils/capture.output.html" class="external-link">capture.output</a></span><span class="op">(</span><span class="op">{</span></span>
-<span>    <span class="va">fm_matrix_view</span> <span class="op">&lt;-</span> <span class="va">fm_matrix</span></span>
-<span>    <span class="fu"><a href="https://rdrr.io/r/base/invisible.html" class="external-link">invisible</a></span><span class="op">(</span><span class="va">fm_matrix_view</span><span class="op">[</span><span class="fl">1L</span>, <span class="fl">1L</span><span class="op">]</span><span class="op">)</span></span>
-<span>  <span class="op">}</span><span class="op">)</span></span>
+<span>  <span class="va">base_vec</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/create_fmalloc_vector.html">create_fmalloc_vector</a></span><span class="op">(</span><span class="st">"integer"</span>, <span class="fl">6L</span>, runtime <span class="op">=</span> <span class="va">rt</span><span class="op">)</span></span>
+<span>  <span class="va">base_vec</span><span class="op">[</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fl">11</span><span class="op">:</span><span class="fl">16</span></span>
+<span>  <span class="va">m_view</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/as_fmalloc_matrix.html">as_fmalloc_matrix</a></span><span class="op">(</span><span class="va">base_vec</span>, ncol <span class="op">=</span> <span class="fl">3L</span>, copy <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
 <span></span>
-<span>  <span class="va">fm_matrix_copy</span> <span class="op">&lt;-</span> <span class="va">fm_matrix</span></span>
-<span>  <span class="va">matrix_copy_events_on_write</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/utils/capture.output.html" class="external-link">capture.output</a></span><span class="op">(</span><span class="op">{</span></span>
-<span>    <span class="va">fm_matrix_copy</span><span class="op">[</span><span class="fl">1L</span>, <span class="fl">2L</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fl">99L</span></span>
-<span>  <span class="op">}</span><span class="op">)</span></span>
+<span>  <span class="co"># Metadata-only reshape, then mutate through the reshaped object</span></span>
+<span>  <span class="va">m_view</span><span class="op">[</span><span class="fl">1L</span>, <span class="fl">2L</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fl">88L</span></span>
 <span></span>
-<span>  <span class="va">fm_col_a</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/create_fmalloc_vector.html">create_fmalloc_vector</a></span><span class="op">(</span><span class="st">"integer"</span>, <span class="fl">3</span>, runtime <span class="op">=</span> <span class="va">rt</span><span class="op">)</span></span>
-<span>  <span class="va">fm_col_b</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/create_fmalloc_vector.html">create_fmalloc_vector</a></span><span class="op">(</span><span class="st">"integer"</span>, <span class="fl">3</span>, runtime <span class="op">=</span> <span class="va">rt</span><span class="op">)</span></span>
-<span>  <span class="va">fm_col_a</span><span class="op">[</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="fl">2L</span>, <span class="fl">3L</span><span class="op">)</span></span>
-<span>  <span class="va">fm_col_b</span><span class="op">[</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">4L</span>, <span class="fl">5L</span>, <span class="fl">6L</span><span class="op">)</span></span>
-<span>  <span class="va">fm_df</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>a <span class="op">=</span> <span class="va">fm_col_a</span>, b <span class="op">=</span> <span class="va">fm_col_b</span>, stringsAsFactors <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
+<span>  <span class="va">a</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/create_fmalloc_array.html">create_fmalloc_array</a></span><span class="op">(</span><span class="st">"numeric"</span>, dim <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">2L</span>, <span class="fl">1L</span>, <span class="fl">3L</span><span class="op">)</span>, runtime <span class="op">=</span> <span class="va">rt</span><span class="op">)</span></span>
+<span>  <span class="va">a</span><span class="op">[</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fl">1</span><span class="op">:</span><span class="fl">6</span></span>
 <span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/tracemem.html" class="external-link">tracemem</a></span><span class="op">(</span><span class="va">fm_df</span><span class="op">)</span></span>
-<span>  <span class="va">df_copy_events_on_read</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/utils/capture.output.html" class="external-link">capture.output</a></span><span class="op">(</span><span class="op">{</span></span>
-<span>    <span class="va">fm_df_view</span> <span class="op">&lt;-</span> <span class="va">fm_df</span></span>
-<span>    <span class="fu"><a href="https://rdrr.io/r/base/invisible.html" class="external-link">invisible</a></span><span class="op">(</span><span class="va">fm_df_view</span><span class="op">$</span><span class="va">a</span><span class="op">[</span><span class="fl">1L</span><span class="op">]</span><span class="op">)</span></span>
-<span>  <span class="op">}</span><span class="op">)</span></span>
-<span></span>
-<span>  <span class="va">fm_df_copy</span> <span class="op">&lt;-</span> <span class="va">fm_df</span></span>
-<span>  <span class="va">df_copy_events_on_write</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/utils/capture.output.html" class="external-link">capture.output</a></span><span class="op">(</span><span class="op">{</span></span>
-<span>    <span class="va">fm_df_copy</span><span class="op">$</span><span class="va">a</span><span class="op">[</span><span class="fl">1L</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fl">99L</span></span>
-<span>  <span class="op">}</span><span class="op">)</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/tracemem.html" class="external-link">untracemem</a></span><span class="op">(</span><span class="va">fm_matrix</span><span class="op">)</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/tracemem.html" class="external-link">untracemem</a></span><span class="op">(</span><span class="va">fm_df</span><span class="op">)</span></span>
+<span>  <span class="va">col_a</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/create_fmalloc_vector.html">create_fmalloc_vector</a></span><span class="op">(</span><span class="st">"integer"</span>, <span class="fl">3L</span>, runtime <span class="op">=</span> <span class="va">rt</span><span class="op">)</span></span>
+<span>  <span class="va">col_b</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/create_fmalloc_vector.html">create_fmalloc_vector</a></span><span class="op">(</span><span class="st">"integer"</span>, <span class="fl">3L</span>, runtime <span class="op">=</span> <span class="va">rt</span><span class="op">)</span></span>
+<span>  <span class="va">col_a</span><span class="op">[</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="fl">2L</span>, <span class="fl">3L</span><span class="op">)</span></span>
+<span>  <span class="va">col_b</span><span class="op">[</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">4L</span>, <span class="fl">5L</span>, <span class="fl">6L</span><span class="op">)</span></span>
+<span>  <span class="va">df</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/as_fmalloc_data_frame.html">as_fmalloc_data_frame</a></span><span class="op">(</span>a <span class="op">=</span> <span class="va">col_a</span>, b <span class="op">=</span> <span class="va">col_b</span>, stringsAsFactors <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
 <span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
-<span>    matrix_copy_on_read <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">matrix_copy_events_on_read</span><span class="op">)</span>,</span>
-<span>    matrix_copy_on_write <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">matrix_copy_events_on_write</span><span class="op">)</span>,</span>
-<span>    data_frame_copy_on_read <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">df_copy_events_on_read</span><span class="op">)</span>,</span>
-<span>    data_frame_copy_on_write <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">df_copy_events_on_write</span><span class="op">)</span>,</span>
-<span>    matrix_original <span class="op">=</span> <span class="va">fm_matrix</span><span class="op">[</span><span class="fl">1L</span>, <span class="fl">2L</span><span class="op">]</span>,</span>
-<span>    matrix_copy <span class="op">=</span> <span class="va">fm_matrix_copy</span><span class="op">[</span><span class="fl">1L</span>, <span class="fl">2L</span><span class="op">]</span>,</span>
-<span>    data_frame_original <span class="op">=</span> <span class="va">fm_df</span><span class="op">$</span><span class="va">a</span><span class="op">[</span><span class="op">]</span>,</span>
-<span>    data_frame_copy <span class="op">=</span> <span class="va">fm_df_copy</span><span class="op">$</span><span class="va">a</span><span class="op">[</span><span class="op">]</span></span>
+<span>    matrix_dims <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/dim.html" class="external-link">dim</a></span><span class="op">(</span><span class="va">m</span><span class="op">)</span>,</span>
+<span>    metadata_shares_payload <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">base_vec</span><span class="op">[</span><span class="fl">3L</span><span class="op">]</span>, <span class="va">m_view</span><span class="op">[</span><span class="fl">1L</span>, <span class="fl">2L</span><span class="op">]</span><span class="op">)</span>,</span>
+<span>    array_dims <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/dim.html" class="external-link">dim</a></span><span class="op">(</span><span class="va">a</span><span class="op">)</span>,</span>
+<span>    df_columns <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">df</span><span class="op">)</span></span>
 <span>  <span class="op">)</span></span>
-<span><span class="op">}</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmp3fxpHu/file13eb505529e6d5.bin (init: true, mode: persistent)</span></span>
-<span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
-<span><span class="co">#&gt; fmalloc cleaned up</span></span>
-<span><span class="co">#&gt; $matrix_copy_on_read</span></span>
-<span><span class="co">#&gt; [1] 0</span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; $matrix_copy_on_write</span></span>
-<span><span class="co">#&gt; [1] 1</span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; $data_frame_copy_on_read</span></span>
-<span><span class="co">#&gt; [1] 0</span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; $data_frame_copy_on_write</span></span>
-<span><span class="co">#&gt; [1] 2</span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; $matrix_original</span></span>
-<span><span class="co">#&gt; [1] 3</span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; $matrix_copy</span></span>
-<span><span class="co">#&gt; [1] 99</span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; $data_frame_original</span></span>
-<span><span class="co">#&gt; [1] 1 2 3</span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; $data_frame_copy</span></span>
-<span><span class="co">#&gt; [1] 99  2  3</span></span></code></pre></div>
+<span><span class="op">}</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="multiple-runtimes-and-lifetime">Multiple Runtimes and Lifetime<a class="anchor" aria-label="anchor" href="#multiple-runtimes-and-lifetime"></a>
