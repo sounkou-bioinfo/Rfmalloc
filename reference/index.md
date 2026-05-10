@@ -25,6 +25,11 @@
   : Explicitly destroy a fmalloc vector
 - [`diagnose_fmalloc_runtime()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/diagnose_fmalloc_runtime.md)
   : Diagnose fmalloc runtime state
+- [`rowSums()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md)
+  [`colSums()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md)
+  [`rowMeans()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md)
+  [`colMeans()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md)
+  : Matrix reduction helpers for fmalloc-backed matrices
 - [`init_fmalloc()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/init_fmalloc.md)
   : Initialize fmalloc
 - [`list_fmalloc_allocations()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/list_fmalloc_allocations.md)

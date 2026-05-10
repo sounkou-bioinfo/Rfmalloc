@@ -113,9 +113,12 @@ cleanup.</p></li>
     <h2 id="known-limitations">Known Limitations<a class="anchor" aria-label="anchor" href="#known-limitations"></a></h2>
 
 
-<ul><li><p>Full operator dispatch rewrites are not yet implemented. Some base
-<code>Ops</code> expressions (for example <code>1 + v</code>) may materialize ordinary R
-vectors because we do not yet cover all converted operator families.</p></li>
+<ul><li><p>Basic ALTREP-backed dispatch now covers core <code>Ops</code>, <code>Summary</code>, and
+matrix <code>rowSums</code>/<code>colSums</code> workflows through S3 method dispatch; this
+includes common scalar arithmetic and row/column reduction patterns.</p></li>
+<li><p>Full operator- and method-family coverage is still incomplete for all
+R generics. Some advanced families may still materialize ordinary R
+objects in a few edge cases.</p></li>
 </ul></div>
     <div class="section level2">
     <h2 id="future-work">Future Work<a class="anchor" aria-label="anchor" href="#future-work"></a></h2>
