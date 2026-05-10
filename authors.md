@@ -18,11 +18,11 @@
 Source:
 [`DESCRIPTION`](https://github.com/sounkou-bioinfo/Rfmalloc/blob/main/DESCRIPTION)
 
-Toure S (2026). *Rfmalloc: Memory-Mapped File Allocation for R*. R
-package version 0.1.0, <https://github.com/sounkou-bioinfo/Rfmalloc>.
+Toure S (2026). *Rfmalloc: File-Backed ALTREP Vectors for R*. R package
+version 0.1.0, <https://github.com/sounkou-bioinfo/Rfmalloc>.
 
     @Manual{,
-      title = {Rfmalloc: Memory-Mapped File Allocation for R},
+      title = {Rfmalloc: File-Backed ALTREP Vectors for R},
       author = {Sounkou Mahamane Toure},
       year = {2026},
       note = {R package version 0.1.0},
