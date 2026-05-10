@@ -83,6 +83,12 @@ with fmalloc payload storage.
 - Runtime and catalog diagnostics for planning recovery and operational
   cleanup.
 
+## Known Limitations
+
+- Full operator dispatch rewrites are not yet implemented. Some base
+  `Ops` expressions (for example `1 + v`) may materialize ordinary R
+  vectors because we do not yet cover all converted operator families.
+
 ## Future Work
 
 Future work includes view-based subset representations, catalog
