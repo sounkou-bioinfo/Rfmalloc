@@ -5,8 +5,20 @@
 - [`Rfmalloc-package`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/Rfmalloc-package.md)
   [`Rfmalloc`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/Rfmalloc-package.md)
   : Rfmalloc: Memory-Mapped File Allocation for R
+- [`as_fmalloc_array()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/as_fmalloc_array.md)
+  : Convert a vector to fmalloc array metadata
+- [`as_fmalloc_data_frame()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/as_fmalloc_data_frame.md)
+  : Convert to data.frame for fmalloc vectors
+- [`as_fmalloc_matrix()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/as_fmalloc_matrix.md)
+  : Convert a vector to fmalloc matrix metadata
 - [`cleanup_fmalloc()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/cleanup_fmalloc.md)
   : Clean Up fmalloc
+- [`create_fmalloc_array()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/create_fmalloc_array.md)
+  : Create Array Using fmalloc
+- [`create_fmalloc_data_frame()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/create_fmalloc_data_frame.md)
+  : Construct data.frame from fmalloc columns
+- [`create_fmalloc_matrix()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/create_fmalloc_matrix.md)
+  : Create Matrix Using fmalloc
 - [`create_fmalloc_vector()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/create_fmalloc_vector.md)
   : Create Vector Using fmalloc
 - [`destroy_fmalloc_vector()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/destroy_fmalloc_vector.md)

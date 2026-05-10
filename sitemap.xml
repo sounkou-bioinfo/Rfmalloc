@@ -5,7 +5,13 @@
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/index.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/news/index.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/reference/Rfmalloc-package.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/reference/as_fmalloc_array.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/reference/as_fmalloc_data_frame.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/reference/as_fmalloc_matrix.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/reference/cleanup_fmalloc.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/reference/create_fmalloc_array.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/reference/create_fmalloc_data_frame.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/reference/create_fmalloc_matrix.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/reference/create_fmalloc_vector.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/reference/destroy_fmalloc_vector.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/reference/index.html</loc></url>

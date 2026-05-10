@@ -20,6 +20,30 @@ with fmalloc payload storage.
 
   Create vectors using fmalloc.
 
+- [`create_fmalloc_matrix`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/create_fmalloc_matrix.md):
+
+  Create matrix-shaped fmalloc vectors.
+
+- [`create_fmalloc_array`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/create_fmalloc_array.md):
+
+  Create array-shaped fmalloc vectors.
+
+- [`create_fmalloc_data_frame`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/create_fmalloc_data_frame.md):
+
+  Create data.frames from fmalloc-backed columns.
+
+- [`as_fmalloc_matrix`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/as_fmalloc_matrix.md):
+
+  Convert fmalloc vectors to matrix-shaped objects.
+
+- [`as_fmalloc_array`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/as_fmalloc_array.md):
+
+  Convert fmalloc vectors to array-shaped objects.
+
+- [`as_fmalloc_data_frame`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/as_fmalloc_data_frame.md):
+
+  Convert fmalloc-backed objects to a data.frame.
+
 - [`cleanup_fmalloc`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/cleanup_fmalloc.md):
 
   Request cleanup of an fmalloc runtime.
