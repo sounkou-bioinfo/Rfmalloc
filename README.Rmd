@@ -11,6 +11,8 @@ knitr::opts_chunk$set(
 )
 has_bench <- requireNamespace("bench", quietly = TRUE)
 
+library(Rfmalloc)
+
 ```
 
 # Rfmalloc
@@ -441,6 +443,36 @@ local({
 })
 ```
 
+## Catalog diagnostics
+
+Use `diagnose_fmalloc_runtime()` to inspect runtime metadata, the live catalog,
+and a compact summary that can help decide when a runtime is a reset candidate:
+
+```{r}
+local({
+  diag_file <- tempfile(fileext = ".bin")
+  rt <- open_fmalloc(diag_file, mode = "persistent")
+
+  a <- create_fmalloc_vector("integer", 4, runtime = rt)
+  b <- create_fmalloc_vector("character", 2, runtime = rt)
+  a[] <- 1:4
+  b[] <- c("left", "right")
+
+  pre <- diagnose_fmalloc_runtime(rt)
+  destroy_fmalloc_vector(a)
+  post <- diagnose_fmalloc_runtime(rt)
+
+  list(
+    mode = post$runtime$mode,
+    pre_records = pre$summary$record_count,
+    pre_committed = pre$summary$committed_records,
+    post_records = post$summary$record_count,
+    post_tombstones = post$summary$tombstoned_records,
+    compaction_implemented = post$summary$compaction_implemented
+  )
+})
+```
+
 Scratch runtimes use ordinary R serialization instead. Their serialized values do
 not depend on reopening the scratch backing file.
 
@@ -643,7 +675,7 @@ points with `R_RegisterCCallable()`. Downstream packages can add Rfmalloc to
 `LinkingTo` and `Imports`, include the header, and use the inline wrappers.
 
 The current native surface exposes runtime open/cleanup, vector creation,
-default-runtime lookup, catalog listing, and an API-version query. Returned
+default-runtime lookup, catalog listing, runtime diagnostics, and an API-version query. Returned
 `SEXP` objects follow normal R API ownership rules.
 
 ## References

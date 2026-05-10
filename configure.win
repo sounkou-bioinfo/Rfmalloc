@@ -83,6 +83,9 @@ else
     exit 1
 fi
 
+# Remove intermediate build artifacts from source tree
+rm -f *.o
+
 cd ../..
 
 # Create Makevars file for R package compilation

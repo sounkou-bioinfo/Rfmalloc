@@ -434,6 +434,17 @@ as_fmalloc_data_frame <- function(..., row.names = NULL,
 #' catalog is stored in the backing file and records physical allocation metadata
 #' used to validate serialized persistent references.
 #'
+#' For successful recovery, look at the `state` column:
+#'
+#' - `"committed"`: valid serialized payload exists for that record;
+#' - `"tombstone"`: the payload has been destroyed and is non-recoverable unless
+#'   the runtime remains open and referenced directly by an existing SEXP;
+#' - other transient states are internal and are generally not expected.
+#'
+#' `recoverable` indicates whether the record can be reopened via serialized
+#' reference metadata. `payload_offset == 0` or `payload_nbytes == 0` generally
+#' indicates a non-payload entry.
+#'
 #' @param runtime Optional runtime handle returned by [open_fmalloc()]. If not
 #'   supplied, the default runtime established by [init_fmalloc()] is used.
 #'
@@ -455,6 +466,107 @@ list_fmalloc_allocations <- function(runtime = NULL) {
     runtime <- .fmalloc_get_runtime(runtime)
 
     .Call("list_fmalloc_allocations_impl", runtime)
+}
+
+.summarize_catalog_records <- function(catalog_df) {
+    if (nrow(catalog_df) == 0L) {
+        return(list(
+            record_count = 0L,
+            committed_records = 0L,
+            tombstoned_records = 0L,
+            unknown_records = 0L,
+            recoverable_records = 0L,
+            nonrecoverable_active_records = 0L,
+            active_payload_bytes = 0,
+            tombstoned_payload_bytes = 0,
+            committed_payload_gaps_bytes = 0,
+            potentially_reclaimable_payload_bytes = 0,
+            compaction_implemented = FALSE,
+            compaction_note = "Catalog compaction is currently not implemented; catalog entries are append-only to preserve serialized (record offset, generation) references."
+        ))
+    }
+
+    state <- as.character(catalog_df$state)
+    payload <- as.double(catalog_df$payload_nbytes)
+    recoverable <- as.logical(catalog_df$recoverable)
+    payload_offset <- as.double(catalog_df$payload_offset)
+
+    committed <- state == "committed"
+    tombstoned <- state == "tombstone"
+    unknown <- !committed & !tombstoned
+
+    active_intervals <- catalog_df[committed & payload_offset > 0 & payload > 0,
+                                  c("payload_offset", "payload_nbytes"), drop = FALSE]
+    payload_gaps <- 0
+    if (nrow(active_intervals) > 1L) {
+        ord <- order(active_intervals$payload_offset)
+        starts <- as.double(active_intervals$payload_offset[ord])
+        ends <- starts + as.double(active_intervals$payload_nbytes[ord])
+        gap <- starts[-1L] - ends[-nrow(active_intervals)]
+        payload_gaps <- sum(gap[gap > 0], na.rm = TRUE)
+    }
+
+    tombstone_payload <- sum(payload[tombstoned], na.rm = TRUE)
+    active_payload <- sum(payload[committed], na.rm = TRUE)
+
+    list(
+        record_count = as.integer(nrow(catalog_df)),
+        committed_records = as.integer(sum(committed, na.rm = TRUE)),
+        tombstoned_records = as.integer(sum(tombstoned, na.rm = TRUE)),
+        unknown_records = as.integer(sum(unknown, na.rm = TRUE)),
+        recoverable_records = as.integer(sum(recoverable, na.rm = TRUE)),
+        nonrecoverable_active_records = as.integer(sum(committed & !recoverable, na.rm = TRUE)),
+        active_payload_bytes = as.double(active_payload),
+        tombstoned_payload_bytes = as.double(tombstone_payload),
+        committed_payload_gaps_bytes = as.double(payload_gaps),
+        potentially_reclaimable_payload_bytes = as.double(tombstone_payload + payload_gaps),
+        compaction_implemented = FALSE,
+        compaction_note = "Catalog compaction is currently not implemented; catalog entries are append-only so reference offsets and generation values remain stable across a runtime's lifetime."
+    )
+}
+
+#' Diagnose fmalloc runtime state
+#'
+#' Returns diagnostic metadata for an open runtime handle, including lightweight
+#' runtime attributes, the current allocation catalog, and a catalog-level summary
+#' useful for estimating reclaimable/fragmented payload regions.
+#'
+#' @param runtime Optional runtime handle returned by [open_fmalloc()]. If not
+#'   supplied, the current default runtime is used.
+#'
+#' @return A named list with three components:
+#'
+#' - `runtime`: runtime metadata such as file path, UUID, mode, catalog
+#'   counters, live vectors, and reference state;
+#' - `catalog`: the full allocation catalog returned by
+#'   [list_fmalloc_allocations()];
+#' - `summary`: a compact set of computed diagnostics and an explicit compaction
+#'   status note.
+#'
+#' @examples
+#' \dontrun{
+#' rt <- open_fmalloc(tempfile(fileext = ".bin"), mode = "persistent")
+#' x <- create_fmalloc_vector("integer", 4, runtime = rt)
+#' y <- create_fmalloc_vector("logical", 2, runtime = rt)
+#' diagnose_fmalloc_runtime(rt)
+#' cleanup_fmalloc(rt)
+#' }
+#'
+#' @export
+#'
+#' @seealso [list_fmalloc_allocations()]
+#'
+diagnose_fmalloc_runtime <- function(runtime = NULL) {
+    runtime <- .fmalloc_get_runtime(runtime)
+    catalog <- list_fmalloc_allocations(runtime)
+    info <- .Call("fmalloc_runtime_info_impl", runtime)
+    summary <- .summarize_catalog_records(catalog)
+
+    list(
+        runtime = info,
+        catalog = catalog,
+        summary = summary
+    )
 }
 
 #' Clean Up fmalloc

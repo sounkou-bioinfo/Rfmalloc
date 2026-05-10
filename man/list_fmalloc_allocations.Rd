@@ -21,6 +21,19 @@ Returns the in-file allocation catalog for a persistent fmalloc runtime. The
 catalog is stored in the backing file and records physical allocation metadata
 used to validate serialized persistent references.
 }
+\details{
+For successful recovery, look at the \code{state} column:
+\itemize{
+\item \code{"committed"}: valid serialized payload exists for that record;
+\item \code{"tombstone"}: the payload has been destroyed and is non-recoverable unless
+the runtime remains open and referenced directly by an existing SEXP;
+\item other transient states are internal and are generally not expected.
+}
+
+\code{recoverable} indicates whether the record can be reopened via serialized
+reference metadata. \code{payload_offset == 0} or \code{payload_nbytes == 0} generally
+indicates a non-payload entry.
+}
 \examples{
 \dontrun{
 rt <- open_fmalloc(tempfile(fileext = ".bin"))

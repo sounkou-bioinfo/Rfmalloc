@@ -23,6 +23,8 @@ complex, character, and list vectors with fmalloc payload storage.
 \item{\code{\link{as_fmalloc_matrix}}}{Convert fmalloc vectors to matrix-shaped objects.}
 \item{\code{\link{as_fmalloc_array}}}{Convert fmalloc vectors to array-shaped objects.}
 \item{\code{\link{as_fmalloc_data_frame}}}{Convert fmalloc-backed objects to a data.frame.}
+\item{\code{\link{list_fmalloc_allocations}}}{List persistent allocation catalog records.}
+\item{\code{\link{diagnose_fmalloc_runtime}}}{Summarize persistent allocation catalog state and runtime diagnostics.}
 \item{\code{\link{cleanup_fmalloc}}}{Request cleanup of an fmalloc runtime.}
 }
 }
@@ -43,6 +45,8 @@ character ALTREP vectors.
 \item A C-callable API and installed header for other packages.
 \item Native lifetime tracking so runtime mappings outlive reachable
 vectors allocated from them.
+\item Runtime and catalog diagnostics for planning recovery and operational
+cleanup.
 }
 }
 

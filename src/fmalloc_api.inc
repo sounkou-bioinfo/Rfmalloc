@@ -96,6 +96,51 @@ SEXP list_fmalloc_allocations_impl(SEXP runtime_xptr)
     return make_catalog_data_frame(records);
 }
 
+SEXP fmalloc_runtime_info_impl(SEXP runtime_xptr)
+{
+    fm_runtime *runtime = runtime_from_xptr(runtime_xptr);
+
+    SEXP info = PROTECT(Rf_allocVector(VECSXP, 11));
+    SEXP names = PROTECT(Rf_allocVector(STRSXP, 11));
+    const char *name_values[] = {
+        "filepath", "uuid", "mode", "mapped_bytes", "close_requested",
+        "live_vectors", "external_refs", "catalog_head_offset", "catalog_count",
+        "catalog_epoch", "runtime_open"
+    };
+    for (int i = 0; i < 11; i++) {
+        SET_STRING_ELT(names, i, Rf_mkChar(name_values[i]));
+    }
+    Rf_setAttrib(info, R_NamesSymbol, names);
+
+    SET_VECTOR_ELT(info, 0, Rf_mkString(runtime->filepath.c_str()));
+    std::string uuid = uuid_string(runtime->file_uuid_hi, runtime->file_uuid_lo);
+    SET_VECTOR_ELT(info, 1, Rf_mkString(uuid.c_str()));
+    SET_VECTOR_ELT(info, 2, Rf_mkString(runtime->mode == FM_MODE_PERSISTENT ? "persistent" : "scratch"));
+
+    if (runtime->info) {
+        SET_VECTOR_ELT(info, 3, Rf_ScalarReal((double)runtime->info->len));
+        SET_VECTOR_ELT(info, 4, Rf_ScalarLogical(runtime->close_requested));
+        SET_VECTOR_ELT(info, 5, Rf_ScalarReal((double)runtime->live_vectors));
+        SET_VECTOR_ELT(info, 6, Rf_ScalarReal((double)runtime->external_refs));
+        rfm_app_root *root = app_root(runtime->info);
+        SET_VECTOR_ELT(info, 7, Rf_ScalarReal((double)root->catalog_head_offset));
+        SET_VECTOR_ELT(info, 8, Rf_ScalarReal((double)root->catalog_count));
+        SET_VECTOR_ELT(info, 9, Rf_ScalarReal((double)root->catalog_epoch));
+    } else {
+        SET_VECTOR_ELT(info, 3, Rf_ScalarReal(NA_REAL));
+        SET_VECTOR_ELT(info, 4, Rf_ScalarLogical(runtime->close_requested));
+        SET_VECTOR_ELT(info, 5, Rf_ScalarReal(NA_REAL));
+        SET_VECTOR_ELT(info, 6, Rf_ScalarReal(NA_REAL));
+        SET_VECTOR_ELT(info, 7, Rf_ScalarReal(NA_REAL));
+        SET_VECTOR_ELT(info, 8, Rf_ScalarReal(NA_REAL));
+        SET_VECTOR_ELT(info, 9, Rf_ScalarReal(NA_REAL));
+    }
+
+    SET_VECTOR_ELT(info, 10, Rf_ScalarLogical(runtime->info != nullptr));
+    UNPROTECT(2);
+    return info;
+}
+
 SEXP fmalloc_set_dims_in_place_impl(SEXP vector_x, SEXP dim_sexp, SEXP dimnames_sexp)
 {
     if (!ALTREP(vector_x)) {
@@ -282,6 +327,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"init_fmalloc_impl", (DL_FUNC)&init_fmalloc_impl, 3},
     {"create_fmalloc_vector_impl", (DL_FUNC)&create_fmalloc_vector_impl, 3},
     {"list_fmalloc_allocations_impl", (DL_FUNC)&list_fmalloc_allocations_impl, 1},
+    {"fmalloc_runtime_info_impl", (DL_FUNC)&fmalloc_runtime_info_impl, 1},
     {"fmalloc_set_dims_in_place_impl", (DL_FUNC)&fmalloc_set_dims_in_place_impl, 3},
     {"destroy_fmalloc_vector_impl", (DL_FUNC)&destroy_fmalloc_vector_impl, 2},
     {"cleanup_fmalloc_impl", (DL_FUNC)&cleanup_fmalloc_impl, 1},

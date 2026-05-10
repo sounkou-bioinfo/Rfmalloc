@@ -7,6 +7,7 @@
   - `create_fmalloc_matrix()` and `create_fmalloc_array()` for metadata-initialized ALTREP matrix/array allocation.
   - `create_fmalloc_data_frame()` plus `as_fmalloc_matrix()`, `as_fmalloc_array()`, and `as_fmalloc_data_frame()` convenience converters for metadata-only reshaping.
 - Added `copy = FALSE` mode to `as_fmalloc_matrix()` and `as_fmalloc_array()` to install shape metadata in-place on fmalloc ALTREP vectors via C-level attribute assignment, with new tests proving this mode avoids additional payload allocations.
+- Added `diagnose_fmalloc_runtime()` for runtime+catalog diagnostics, including record state counts, payload usage summaries, and an explicit compaction status note to explain why catalog compaction is not yet implemented.
 - Implemented nested fmalloc list persistence by reference for persistent runtimes.
 - Added recursive fmalloc list/container serialized-reference recovery in ALTREP
   serialization/unserialization.
