@@ -14,7 +14,8 @@ a direct writable fmalloc \code{DATAPTR}; character vectors store string bytes i
 fmalloc and materialize R \code{CHARSXP} values on demand; list vectors use
 ALTREP element access with an R-visible reference sidecar for GC safety and
 only accept \code{NULL} or Rfmalloc-backed vectors from the same runtime as
-elements.}
+elements. Persistent list containers are serialized by nested reference
+states when all elements are recoverable from the same runtime.}
 
 \item{length}{Integer specifying the non-negative length of the vector to
 create.}

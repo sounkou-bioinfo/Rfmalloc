@@ -32,8 +32,8 @@
 #'
 #' @section Future Work:
 #' Future work includes view-based subset representations, catalog compaction
-#' and reset tooling, list-container recovery by reference, and metadata storage
-#' for attributes on persisted elements.
+#' and reset tooling, metadata storage for attributes on persisted elements,
+#' robust nested-list reference validation, and compaction of recovery metadata.
 #'
 #' @docType package
 #' @name Rfmalloc-package

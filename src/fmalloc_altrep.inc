@@ -140,41 +140,129 @@ static bool is_persistent_ref_state(SEXP state)
            strcmp(CHAR(STRING_ELT(format, 0)), "RfmallocRef") == 0;
 }
 
-static SEXP fmalloc_altrep_serialized_state(SEXP x)
+static bool is_persistent_list_state(SEXP state)
 {
-    fm_vector *vec = vector_from_altrep(x);
-    if (vec->runtime->mode == FM_MODE_PERSISTENT && !is_pointer_vector_type(vec->type)) {
-        return make_persistent_ref_state(vec);
+    if (TYPEOF(state) != VECSXP) {
+        return false;
     }
-
-    return fmalloc_plain_vector(x);
+    SEXP format = list_get(state, "format");
+    return TYPEOF(format) == STRSXP && LENGTH(format) == 1 &&
+           strcmp(CHAR(STRING_ELT(format, 0)), "RfmallocListRef") == 0;
 }
 
-static SEXP fmalloc_altrep_unserialize(SEXP cls, SEXP state)
+static SEXP fmalloc_altrep_unserialize(SEXP cls, SEXP state);
+
+static SEXP make_persistent_list_state_recursive(fm_vector *vec, std::vector<fm_vector *> &stack)
 {
-    (void)cls;
-    if (!is_persistent_ref_state(state)) {
-        return state;
+    if (!vec || vec->type != VECSXP || !vec->runtime || vec->runtime->mode != FM_MODE_PERSISTENT ||
+        TYPEOF(vec->refs) != VECSXP || XLENGTH(vec->refs) != vec->len) {
+        return R_NilValue;
     }
 
+    SEXP child_states = PROTECT(Rf_allocVector(VECSXP, vec->len));
+    bool recoverable = true;
+
+    for (R_xlen_t i = 0; i < vec->len; i++) {
+        SEXP child = VECTOR_ELT(vec->refs, i);
+        SEXP child_state = R_NilValue;
+
+        if (child == R_NilValue) {
+            SET_VECTOR_ELT(child_states, i, R_NilValue);
+            continue;
+        }
+
+        fm_vector *child_vec = maybe_vector_from_altrep(child);
+        if (!child_vec || child_vec->runtime != vec->runtime ||
+            !child_vec->runtime || child_vec->runtime->mode != FM_MODE_PERSISTENT) {
+            recoverable = false;
+            break;
+        }
+
+        if (child_vec->type == VECSXP) {
+            if (std::find(stack.begin(), stack.end(), child_vec) != stack.end()) {
+                recoverable = false;
+                break;
+            }
+            stack.push_back(child_vec);
+            child_state = make_persistent_list_state_recursive(child_vec, stack);
+            stack.pop_back();
+            if (child_state == R_NilValue) {
+                recoverable = false;
+                break;
+            }
+        } else {
+            child_state = make_persistent_ref_state(child_vec);
+        }
+
+        if (child_state == R_NilValue) {
+            recoverable = false;
+            break;
+        }
+        SET_VECTOR_ELT(child_states, i, child_state);
+    }
+
+    if (!recoverable) {
+        UNPROTECT(1);
+        return R_NilValue;
+    }
+
+    SEXP state = PROTECT(Rf_allocVector(VECSXP, 5));
+    SEXP names = PROTECT(Rf_allocVector(STRSXP, 5));
+    const char *name_values[] = {
+        "format", "path", "uuid", "length", "children"
+    };
+    for (int i = 0; i < 5; i++) {
+        SET_STRING_ELT(names, i, Rf_mkChar(name_values[i]));
+    }
+    Rf_setAttrib(state, R_NamesSymbol, names);
+
+    SET_VECTOR_ELT(state, 0, Rf_mkString("RfmallocListRef"));
+    SET_VECTOR_ELT(state, 1, Rf_mkString(vec->runtime->filepath.c_str()));
+    std::string uuid = uuid_string(vec->runtime->file_uuid_hi, vec->runtime->file_uuid_lo);
+    SET_VECTOR_ELT(state, 2, Rf_mkString(uuid.c_str()));
+    SET_VECTOR_ELT(state, 3, Rf_ScalarReal((double)vec->len));
+    SET_VECTOR_ELT(state, 4, child_states);
+
+    UNPROTECT(3);
+    return state;
+}
+
+static SEXP make_persistent_list_state(SEXP x)
+{
+    fm_vector *vec = vector_from_altrep(x);
+    if (!vec || vec->runtime->mode != FM_MODE_PERSISTENT) {
+        return R_NilValue;
+    }
+
+    std::vector<fm_vector *> stack;
+    stack.push_back(vec);
+    return make_persistent_list_state_recursive(vec, stack);
+}
+
+static SEXP restore_persistent_list_element(SEXP child_state)
+{
+    if (child_state == R_NilValue) {
+        return R_NilValue;
+    }
+    if (is_persistent_ref_state(child_state) || is_persistent_list_state(child_state)) {
+        return fmalloc_altrep_unserialize(R_NilValue, child_state);
+    }
+    Rf_error("invalid Rfmalloc serialized list element state");
+    return R_NilValue;
+}
+
+static SEXP restore_persistent_list(SEXP state)
+{
     SEXP path_sexp = list_get(state, "path");
     SEXP uuid_sexp = list_get(state, "uuid");
-    SEXP type_sexp = list_get(state, "type");
     SEXP length_sexp = list_get(state, "length");
-    SEXP offset_sexp = list_get(state, "offset");
-    SEXP nbytes_sexp = list_get(state, "nbytes");
-    SEXP catalog_offset_sexp = list_get(state, "catalog_offset");
-    SEXP generation_sexp = list_get(state, "generation");
+    SEXP children_sexp = list_get(state, "children");
 
     if (TYPEOF(path_sexp) != STRSXP || LENGTH(path_sexp) != 1 ||
         TYPEOF(uuid_sexp) != STRSXP || LENGTH(uuid_sexp) != 1 ||
-        TYPEOF(type_sexp) != INTSXP || LENGTH(type_sexp) != 1 ||
         TYPEOF(length_sexp) != REALSXP || LENGTH(length_sexp) != 1 ||
-        TYPEOF(offset_sexp) != REALSXP || LENGTH(offset_sexp) != 1 ||
-        TYPEOF(nbytes_sexp) != REALSXP || LENGTH(nbytes_sexp) != 1 ||
-        TYPEOF(catalog_offset_sexp) != REALSXP || LENGTH(catalog_offset_sexp) != 1 ||
-        TYPEOF(generation_sexp) != REALSXP || LENGTH(generation_sexp) != 1) {
-        Rf_error("invalid Rfmalloc serialized reference");
+        TYPEOF(children_sexp) != VECSXP || !std::isfinite(REAL(length_sexp)[0])) {
+        Rf_error("invalid Rfmalloc serialized list reference");
         return R_NilValue;
     }
 
@@ -185,35 +273,17 @@ static SEXP fmalloc_altrep_unserialize(SEXP cls, SEXP state)
         return R_NilValue;
     }
 
-    SEXPTYPE type = (SEXPTYPE)INTEGER(type_sexp)[0];
     double length_value = REAL(length_sexp)[0];
-    double offset_value = REAL(offset_sexp)[0];
-    double nbytes_value = REAL(nbytes_sexp)[0];
-    double catalog_offset_value = REAL(catalog_offset_sexp)[0];
-    double generation_value = REAL(generation_sexp)[0];
     if (!std::isfinite(length_value) || length_value < 0 ||
         length_value > (double)std::numeric_limits<R_xlen_t>::max() ||
-        !std::isfinite(offset_value) || offset_value < 0 ||
-        offset_value > (double)std::numeric_limits<uint64_t>::max() ||
-        !std::isfinite(nbytes_value) || nbytes_value < 0 ||
-        nbytes_value > (double)std::numeric_limits<size_t>::max() ||
-        !std::isfinite(catalog_offset_value) || catalog_offset_value <= 0 ||
-        catalog_offset_value > (double)std::numeric_limits<uint64_t>::max() ||
-        !std::isfinite(generation_value) || generation_value <= 0 ||
-        generation_value > (double)std::numeric_limits<uint64_t>::max()) {
-        Rf_error("invalid Rfmalloc serialized reference dimensions");
+        (R_xlen_t)length_value != length_value) {
+        Rf_error("invalid Rfmalloc serialized list reference dimensions");
         return R_NilValue;
     }
-    R_xlen_t length = (R_xlen_t)length_value;
-    uint64_t offset = (uint64_t)offset_value;
-    size_t nbytes = (size_t)nbytes_value;
-    uint64_t catalog_offset = (uint64_t)catalog_offset_value;
-    uint64_t generation = (uint64_t)generation_value;
-    if ((double)length != length_value || (double)offset != offset_value ||
-        (double)nbytes != nbytes_value || (double)catalog_offset != catalog_offset_value ||
-        (double)generation != generation_value || !is_supported_vector_type(type) ||
-        is_pointer_vector_type(type) || nbytes != payload_size_bytes(type, length)) {
-        Rf_error("invalid Rfmalloc serialized reference metadata");
+
+    R_xlen_t len = (R_xlen_t)length_value;
+    if (XLENGTH(children_sexp) != len) {
+        Rf_error("invalid Rfmalloc serialized list reference children");
         return R_NilValue;
     }
 
@@ -222,20 +292,128 @@ static SEXP fmalloc_altrep_unserialize(SEXP cls, SEXP state)
                                               FM_MODE_PERSISTENT, true);
     if (runtime->file_uuid_hi != expected_hi || runtime->file_uuid_lo != expected_lo) {
         close_unreferenced_runtime(runtime);
-        Rf_error("Rfmalloc serialized reference points to a different backing file UUID");
-        return R_NilValue;
-    }
-    const char *catalog_error = validate_catalog_record_for_ref(
-        runtime, catalog_offset, generation, type, length, offset, nbytes);
-    if (catalog_error) {
-        close_unreferenced_runtime(runtime);
-        Rf_error("invalid Rfmalloc serialized reference: %s", catalog_error);
+        Rf_error("Rfmalloc serialized list reference points to a different backing file UUID");
         return R_NilValue;
     }
 
-    fm_vector *vec = persistent_vector_from_offset(runtime, type, length, offset, nbytes,
+    fm_vector *vec = allocate_fm_vector(runtime, VECSXP, len, false);
+    SEXP ans = PROTECT(fmalloc_new_altrep(vec));
+    for (R_xlen_t i = 0; i < len; i++) {
+        SEXP child_state = VECTOR_ELT(children_sexp, i);
+        SEXP child = restore_persistent_list_element(child_state);
+        set_pointer_element(vec, i, child);
+    }
+
+    UNPROTECT(1);
+    return ans;
+}
+
+static SEXP fmalloc_altrep_serialized_state(SEXP x)
+{
+    fm_vector *vec = vector_from_altrep(x);
+    if (vec->runtime->mode == FM_MODE_PERSISTENT && !is_pointer_vector_type(vec->type)) {
+        return make_persistent_ref_state(vec);
+    }
+    if (vec->runtime->mode == FM_MODE_PERSISTENT && is_pointer_vector_type(vec->type)) {
+        SEXP state = make_persistent_list_state(x);
+        if (state != R_NilValue) {
+            return state;
+        }
+    }
+
+    return fmalloc_plain_vector(x);
+}
+
+static SEXP fmalloc_altrep_unserialize(SEXP cls, SEXP state)
+{
+    (void)cls;
+    if (is_persistent_ref_state(state)) {
+        SEXP path_sexp = list_get(state, "path");
+        SEXP uuid_sexp = list_get(state, "uuid");
+        SEXP type_sexp = list_get(state, "type");
+        SEXP length_sexp = list_get(state, "length");
+        SEXP offset_sexp = list_get(state, "offset");
+        SEXP nbytes_sexp = list_get(state, "nbytes");
+        SEXP catalog_offset_sexp = list_get(state, "catalog_offset");
+        SEXP generation_sexp = list_get(state, "generation");
+
+        if (TYPEOF(path_sexp) != STRSXP || LENGTH(path_sexp) != 1 ||
+            TYPEOF(uuid_sexp) != STRSXP || LENGTH(uuid_sexp) != 1 ||
+            TYPEOF(type_sexp) != INTSXP || LENGTH(type_sexp) != 1 ||
+            TYPEOF(length_sexp) != REALSXP || LENGTH(length_sexp) != 1 ||
+            TYPEOF(offset_sexp) != REALSXP || LENGTH(offset_sexp) != 1 ||
+            TYPEOF(nbytes_sexp) != REALSXP || LENGTH(nbytes_sexp) != 1 ||
+            TYPEOF(catalog_offset_sexp) != REALSXP || LENGTH(catalog_offset_sexp) != 1 ||
+            TYPEOF(generation_sexp) != REALSXP || LENGTH(generation_sexp) != 1) {
+            Rf_error("invalid Rfmalloc serialized reference");
+            return R_NilValue;
+        }
+
+        uint64_t expected_hi = 0;
+        uint64_t expected_lo = 0;
+        if (!parse_uuid_string(CHAR(STRING_ELT(uuid_sexp, 0)), &expected_hi, &expected_lo)) {
+            Rf_error("invalid Rfmalloc serialized UUID");
+            return R_NilValue;
+        }
+
+        SEXPTYPE type = (SEXPTYPE)INTEGER(type_sexp)[0];
+        double length_value = REAL(length_sexp)[0];
+        double offset_value = REAL(offset_sexp)[0];
+        double nbytes_value = REAL(nbytes_sexp)[0];
+        double catalog_offset_value = REAL(catalog_offset_sexp)[0];
+        double generation_value = REAL(generation_sexp)[0];
+        if (!std::isfinite(length_value) || length_value < 0 ||
+            length_value > (double)std::numeric_limits<R_xlen_t>::max() ||
+            !std::isfinite(offset_value) || offset_value < 0 ||
+            offset_value > (double)std::numeric_limits<uint64_t>::max() ||
+            !std::isfinite(nbytes_value) || nbytes_value < 0 ||
+            nbytes_value > (double)std::numeric_limits<size_t>::max() ||
+            !std::isfinite(catalog_offset_value) || catalog_offset_value <= 0 ||
+            catalog_offset_value > (double)std::numeric_limits<uint64_t>::max() ||
+            !std::isfinite(generation_value) || generation_value <= 0 ||
+            generation_value > (double)std::numeric_limits<uint64_t>::max()) {
+            Rf_error("invalid Rfmalloc serialized reference dimensions");
+            return R_NilValue;
+        }
+        R_xlen_t length = (R_xlen_t)length_value;
+        uint64_t offset = (uint64_t)offset_value;
+        size_t nbytes = (size_t)nbytes_value;
+        uint64_t catalog_offset = (uint64_t)catalog_offset_value;
+        uint64_t generation = (uint64_t)generation_value;
+        if ((double)length != length_value || (double)offset != offset_value ||
+            (double)nbytes != nbytes_value || (double)catalog_offset != catalog_offset_value ||
+            (double)generation != generation_value || !is_supported_vector_type(type) ||
+            is_pointer_vector_type(type) || nbytes != payload_size_bytes(type, length)) {
+            Rf_error("invalid Rfmalloc serialized reference metadata");
+            return R_NilValue;
+        }
+
+        const char *path = CHAR(STRING_ELT(path_sexp, 0));
+        fm_runtime *runtime = open_runtime_native(path, 32 * 1024 * 1024 + FMALLOC_OFF,
+                                                  FM_MODE_PERSISTENT, true);
+        if (runtime->file_uuid_hi != expected_hi || runtime->file_uuid_lo != expected_lo) {
+            close_unreferenced_runtime(runtime);
+            Rf_error("Rfmalloc serialized reference points to a different backing file UUID");
+            return R_NilValue;
+        }
+        const char *catalog_error = validate_catalog_record_for_ref(
+            runtime, catalog_offset, generation, type, length, offset, nbytes);
+        if (catalog_error) {
+            close_unreferenced_runtime(runtime);
+            Rf_error("invalid Rfmalloc serialized reference: %s", catalog_error);
+            return R_NilValue;
+        }
+
+        fm_vector *vec = persistent_vector_from_offset(runtime, type, length, offset, nbytes,
                                                    catalog_offset, generation);
-    return fmalloc_new_altrep(vec);
+        return fmalloc_new_altrep(vec);
+    }
+
+    if (is_persistent_list_state(state)) {
+        return restore_persistent_list(state);
+    }
+
+    return state;
 }
 
 static SEXP fmalloc_altrep_coerce(SEXP x, int type)

@@ -348,21 +348,114 @@ local({
 Rfmalloc list vectors are intentionally not general R lists. Element assignment
 accepts only `NULL` or Rfmalloc-backed vectors from the same runtime; ordinary R
 objects such as base vectors, data frames, or arbitrary lists are rejected. This
-keeps lists inside the same file-backed object universe and leaves room for a
-Mori-style element directory: each list slot can be described by physical
-allocation metadata rather than by session-local `SEXP` pointers.
+keeps lists inside the same file-backed object universe.
 
-The list container itself is still serialized as an ordinary R list state for
-now. Its Rfmalloc elements then serialize according to their own ALTREP hooks,
-so persistent atomic and character children can still round-trip by reference.
-Future list-container recovery should store a fmalloc element table with child
-catalog offsets, generations, payload offsets, and serialized attributes.
+For persistent runtimes, list containers now serialize as reference state when all
+children are recoverable fmalloc vectors. The serialized state stores per-slot
+child descriptors, so nested list containers can reopen recursively from the same
+backing file without carrying session-local `SEXP` pointers.
 
 This is reference-based recovery, not name-based object discovery. The catalog
 stores physical allocation records, not user variable names. Serialized
 references use the catalog record offset and generation for validation; the
 catalog can be listed, but it is not yet a high-level object store for recovering
 vectors by name.
+
+## List constraints and recovery examples
+
+List assignment rejects non-fmalloc payloads at runtime.
+
+```{r}
+library(Rfmalloc)
+
+local({
+  reject_file <- tempfile(fileext = ".bin")
+  rt <- open_fmalloc(reject_file, mode = "persistent")
+  on.exit({
+    cleanup_fmalloc(rt)
+    unlink(reject_file)
+  }, add = TRUE)
+
+  fm_list <- create_fmalloc_vector("list", 2, runtime = rt)
+  child <- create_fmalloc_vector("integer", 2, runtime = rt)
+  child[] <- c(1L, 2L)
+  fm_list[[1]] <- child
+
+  bad_assignment <- try({
+    fm_list[[2]] <- 1:2
+  }, silent = TRUE)
+
+  list(
+    same_runtime_child = fm_list[[1]][],
+    rejected_non_fmalloc_payload = inherits(bad_assignment, "try-error")
+  )
+})
+```
+
+Nested fmalloc lists recover recursively when serialized and unserialized from a
+persistent backing file.
+
+```{r}
+library(Rfmalloc)
+
+local({
+  recover_file <- tempfile(fileext = ".bin")
+  rt <- open_fmalloc(recover_file, mode = "persistent")
+  on.exit(unlink(recover_file), add = TRUE)
+
+  child <- create_fmalloc_vector("integer", 2, runtime = rt)
+  child[] <- 1:2
+
+  nested <- create_fmalloc_vector("list", 1, runtime = rt)
+  nested[[1]] <- child
+
+  labels <- create_fmalloc_vector("character", 2, runtime = rt)
+  labels[] <- c("alpha", "beta")
+
+  fm_list <- create_fmalloc_vector("list", 2, runtime = rt)
+  fm_list[[1]] <- nested
+  fm_list[[2]] <- labels
+
+  blob <- serialize(fm_list, NULL)
+
+  cleanup_fmalloc(rt)
+
+  recovered <- unserialize(blob)
+  list(
+    recovered_nested = recovered[[1]][[1]][],
+    recovered_labels = recovered[[2]]
+  )
+})
+```
+
+Cross-runtime insertion is also rejected.
+
+```{r}
+library(Rfmalloc)
+
+local({
+  cross_file_a <- tempfile(fileext = ".bin")
+  cross_file_b <- tempfile(fileext = ".bin")
+
+  rt_a <- open_fmalloc(cross_file_a, mode = "persistent")
+  rt_b <- open_fmalloc(cross_file_b, mode = "persistent")
+  on.exit({
+    cleanup_fmalloc(rt_a)
+    cleanup_fmalloc(rt_b)
+    unlink(c(cross_file_a, cross_file_b))
+  }, add = TRUE)
+
+  child_other_runtime <- create_fmalloc_vector("integer", 2, runtime = rt_b)
+  child_other_runtime[] <- c(10L, 20L)
+
+  fm_list <- create_fmalloc_vector("list", 1, runtime = rt_a)
+  cross_runtime_error <- try({
+    fm_list[[1]] <- child_other_runtime
+  }, silent = TRUE)
+
+  list(cross_runtime_rejected = inherits(cross_runtime_error, "try-error"))
+})
+```
 
 ## Performance
 

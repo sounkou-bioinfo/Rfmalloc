@@ -89,7 +89,8 @@ init_fmalloc <- function(filepath, size_gb = NULL, mode = c("persistent", "scrat
 #'   fmalloc and materialize R `CHARSXP` values on demand; list vectors use
 #'   ALTREP element access with an R-visible reference sidecar for GC safety and
 #'   only accept `NULL` or Rfmalloc-backed vectors from the same runtime as
-#'   elements.
+#'   elements. Persistent list containers are serialized by nested reference
+#'   states when all elements are recoverable from the same runtime.
 #' @param length Integer specifying the non-negative length of the vector to
 #'   create.
 #' @param runtime Optional runtime handle returned by [open_fmalloc()]. If not

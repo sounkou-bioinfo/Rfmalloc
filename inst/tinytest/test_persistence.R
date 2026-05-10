@@ -193,8 +193,15 @@ if (.Platform$OS.type == "unix") {
     chr_vec[] <- c("one", NA_character_, "three")
     list_child <- create_fmalloc_vector("integer", 2, runtime = rt)
     list_child[] <- 1:2
-    list_vec <- create_fmalloc_vector("list", 2, runtime = rt)
+    nested_child <- create_fmalloc_vector("integer", 2, runtime = rt)
+    nested_child[] <- 3:4
+    nested_list <- create_fmalloc_vector("list", 1, runtime = rt)
+    nested_list[[1]] <- nested_child
+
+    list_vec <- create_fmalloc_vector("list", 3, runtime = rt)
     list_vec[[1]] <- list_child
+    list_vec[[2]] <- nested_list
+    list_vec[[3]] <- NULL
     expect_error(list_vec[[2]] <- 1:2, "ordinary R objects")
 
     catalog <- list_fmalloc_allocations(rt)
@@ -221,7 +228,9 @@ if (.Platform$OS.type == "unix") {
     expect_equal(chr_recovered[], c("one", NA_character_, "three"))
     expect_true(is.list(list_recovered))
     expect_equal(list_recovered[[1]][], 1:2)
-    expect_equal(list_recovered[[2]], NULL)
+    expect_true(is.list(list_recovered[[2]]))
+    expect_equal(list_recovered[[2]][[1]][], 3:4)
+    expect_equal(list_recovered[[3]], NULL)
 
     message("  Persistent allocation catalog test passed")
 })()
