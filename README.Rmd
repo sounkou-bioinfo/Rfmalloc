@@ -24,8 +24,10 @@ copy of [fmalloc](https://github.com/yasukata/fmalloc). The current R-facing
 vector API creates fmalloc-backed ALTREP vectors for atomic, character, and list
 storage.
 
-Earlier prototypes explored R's custom allocator / `Rf_allocVector3()` path. The
-package has moved to direct ALTREP vectors for the public vector API. The patched
+Earlier prototypes explored R's custom allocator / `Rf_allocVector3()` path (see
+[this proof-of-concept](https://gist.github.com/s-u/6712c97ca74181f5a1a5)). The
+package has moved to direct ALTREP vectors for the public vector API and control over
+copy-on-write duplication. The patched
 fmalloc `malloc`/`free`/`realloc` layer is still built and installed for native
 consumers that use the C API or link against the bundled library.
 
@@ -528,6 +530,8 @@ default-runtime lookup, catalog listing, and an API-version query. Returned
 ## References
 
 - fmalloc: <https://github.com/yasukata/fmalloc>
+- Rfmalloc custom allocator PoC using `Rf_allocVector3()` with custom mmap allocator:
+  <https://gist.github.com/s-u/6712c97ca74181f5a1a5>
 
 ## License
 
