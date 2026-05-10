@@ -30,7 +30,7 @@ message("Testing fmalloc ALTREP vector types and duplication...")
 
     for (type in names(values)) {
         x <- create_fmalloc_vector(type, length(values[[type]]), runtime = rt)
-        expect_equal(attributes(x), NULL)
+        expect_true(inherits(x, "fmalloc"))
         x[] <- values[[type]]
         expect_equal(as.vector(x), values[[type]])
 
@@ -51,7 +51,7 @@ message("Testing fmalloc ALTREP vector types and duplication...")
     }
 
     lst <- create_fmalloc_vector("list", 3, runtime = rt)
-    expect_equal(attributes(lst), NULL)
+    expect_true(inherits(lst, "fmalloc"))
     child_int <- create_fmalloc_vector("integer", 2, runtime = rt)
     child_int[] <- 1:2
     child_chr <- create_fmalloc_vector("character", 1, runtime = rt)
@@ -146,7 +146,7 @@ message("Testing fmalloc ALTREP vector types and duplication...")
     scratch[] <- 21:24
     scratch_serialized <- unserialize(serialize(scratch, NULL))
     expect_true(is.integer(scratch_serialized))
-    expect_equal(scratch_serialized, 21:24)
+    expect_equal(unclass(scratch_serialized), 21:24)
 })()
 
 message("fmalloc ALTREP vector type tests completed!")

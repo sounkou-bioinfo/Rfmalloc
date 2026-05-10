@@ -53,9 +53,12 @@ cleanup.
 \section{Known Limitations}{
 
 \itemize{
-\item Full operator dispatch rewrites are not yet implemented. Some base
-\code{Ops} expressions (for example \code{1 + v}) may materialize ordinary R
-vectors because we do not yet cover all converted operator families.
+\item Basic ALTREP-backed dispatch now covers core \code{Ops}, \code{Summary}, and
+matrix \code{rowSums}/\code{colSums} workflows through S3 method dispatch; this
+includes common scalar arithmetic and row/column reduction patterns.
+\item Full operator- and method-family coverage is still incomplete for all
+R generics. Some advanced families may still materialize ordinary R
+objects in a few edge cases.
 }
 }
 

@@ -13,7 +13,11 @@ Description: Provides experimental file-backed, ALTREP-style vector allocation
     lifecycle management, and multiple runtime handles for working with several
     backing files in one R process.
 License: GPL (>= 2)
+Author: Sounkou Mahamane Toure [aut, cre], Kenichi Yasukata [cph] (fmalloc), Wolfram Gloger [cph] (ptmalloc3), Free Software Foundation, Inc. [cph] (selected GNU C Library support files)
+Maintainer: Sounkou Mahamane Toure <sounkoutoure@gmail.com>
 Encoding: UTF-8
+Imports:
+    methods
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Suggests: 

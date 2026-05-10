@@ -33,6 +33,102 @@
     as.integer(dims)
 }
 
+.fmalloc_normalize_type <- function(type) {
+    if (!is.character(type) || length(type) != 1L) {
+        stop("type must be a single character string")
+    }
+
+    type <- tolower(type)
+    switch(type,
+        "logical" = "logical",
+        "integer" = "integer",
+        "numeric" = "numeric",
+        "double" = "numeric",
+        "real" = "numeric",
+        "raw" = "raw",
+        "complex" = "complex",
+        "character" = "character",
+        "list" = "list",
+        stop("Unsupported vector type: ", type)
+    )
+}
+
+.fmalloc_class_from_type <- function(type) {
+    type <- .fmalloc_normalize_type(type)
+    switch(type,
+        "logical" = "logical",
+        "integer" = "integer",
+        "numeric" = "numeric",
+        "raw" = "raw",
+        "complex" = "complex",
+        "character" = "character",
+        "list" = "list"
+    )
+}
+
+.fmalloc_base_type_from_object <- function(x) {
+    .fmalloc_class_from_type(typeof(x))
+}
+
+.fmalloc_shape_class <- function(x) {
+    dim_values <- dim(x)
+    if (is.null(dim_values)) {
+        return("vector")
+    }
+    if (length(dim_values) == 2L) {
+        "matrix"
+    } else {
+        "array"
+    }
+}
+
+.fmalloc_reduction_result_threshold <- function() {
+    threshold <- getOption("Rfmalloc.reduce_result_length", 1e6)
+    if (is.null(threshold)) {
+        return(1e6)
+    }
+    if (!is.numeric(threshold) || length(threshold) != 1L || !is.finite(threshold) || threshold < 0L) {
+        warning("Invalid option Rfmalloc.reduce_result_length; using default 1000000")
+        return(1e6)
+    }
+    as.integer(threshold)
+}
+
+.fmalloc_set_class <- function(x, class_value) {
+    .Call("fmalloc_set_class_in_place_impl", x, as.character(class_value))
+}
+
+.fmalloc_apply_class <- function(x, type = NULL, shape = NULL) {
+    if (!is.null(type)) {
+        base_class <- .fmalloc_class_from_type(type)
+    } else {
+        base_class <- .fmalloc_base_type_from_object(x)
+    }
+
+    if (is.null(shape)) {
+        shape <- .fmalloc_shape_class(x)
+    }
+
+    shape_class <- switch(shape,
+        "matrix" = c("fmalloc_matrix", "matrix", "fmalloc", base_class),
+        "array" = c("fmalloc_array", "array", "fmalloc", base_class),
+        c("fmalloc_vector", "fmalloc", base_class)
+    )
+    .fmalloc_set_class(x, shape_class)
+}
+
+.fmalloc_strip_class <- function(x) {
+    if (!is.object(x) || !inherits(x, "fmalloc")) {
+        return(x)
+    }
+    class(x) <- NULL
+    x
+}
+
+.fmalloc_runtime_for_vector <- function(x) {
+    .Call("fmalloc_runtime_of_vector_impl", x)
+}
+
 #' Open an fmalloc Runtime
 #'
 #' Opens a file-backed fmalloc runtime and returns an external-pointer handle.
@@ -152,13 +248,12 @@ create_fmalloc_vector <- function(type = "integer", length, runtime = NULL) {
         stop("length is too large for the current fmalloc vector interface")
     }
 
+    type <- .fmalloc_normalize_type(type)
     template <- switch(
         type,
         "logical" = logical(0),
         "integer" = integer(0),
         "numeric" = numeric(0),
-        "double" = numeric(0),
-        "real" = numeric(0),
         "raw" = raw(0),
         "complex" = complex(0),
         "character" = character(0),
@@ -168,7 +263,8 @@ create_fmalloc_vector <- function(type = "integer", length, runtime = NULL) {
 
     runtime <- .fmalloc_get_runtime(runtime)
 
-    .Call("create_fmalloc_vector_impl", runtime, template, as.integer(length))
+    ans <- .Call("create_fmalloc_vector_impl", runtime, template, as.integer(length))
+    .fmalloc_apply_class(ans, type = type, shape = "vector")
 }
 
 #' Create Matrix Using fmalloc
@@ -213,8 +309,9 @@ create_fmalloc_matrix <- function(type = "integer", nrow, ncol,
     if (!is.null(dimnames)) {
         dimnames(ans) <- dimnames
     }
-    ans
+    .fmalloc_apply_class(ans, shape = "matrix")
 }
+
 
 #' Create Array Using fmalloc
 #'
@@ -250,8 +347,9 @@ create_fmalloc_array <- function(type = "integer", dim, dimnames = NULL, runtime
     if (!is.null(dimnames)) {
         dimnames(ans) <- dimnames
     }
-    ans
+    .fmalloc_apply_class(ans, shape = "array")
 }
+
 
 #' Construct data.frame from fmalloc columns
 #'
@@ -360,10 +458,16 @@ as_fmalloc_matrix <- function(x, nrow = NULL, ncol = NULL, dimnames = NULL, copy
         if (!is.null(dimnames)) {
             dimnames(x) <- dimnames
         }
+        if (inherits(x, "fmalloc")) {
+            x <- .fmalloc_apply_class(x, shape = "matrix")
+        }
         return(x)
     }
 
     .fmalloc_set_dim_attrs(x, dims, dimnames)
+    if (inherits(x, "fmalloc")) {
+        x <- .fmalloc_apply_class(x, shape = "matrix")
+    }
     x
 }
 
@@ -400,10 +504,16 @@ as_fmalloc_array <- function(x, dim = NULL, dimnames = NULL, copy = TRUE) {
         if (!is.null(dimnames)) {
             dimnames(x) <- dimnames
         }
+        if (inherits(x, "fmalloc")) {
+            x <- .fmalloc_apply_class(x, shape = "array")
+        }
         return(x)
     }
 
     .fmalloc_set_dim_attrs(x, dim, dimnames)
+    if (inherits(x, "fmalloc")) {
+        x <- .fmalloc_apply_class(x, shape = "array")
+    }
     x
 }
 

@@ -9,10 +9,13 @@
 ^src/.*\.o$
 ^src/.*\.so$
 ^src/symbols\.rds$
+^src/Makevars$
 ^inst/fmalloc/.*\.o$
 ^inst/fmalloc/libfmalloc\.a$
 ^inst/fmalloc/libfmalloc\.so$
 ^inst/fmalloc/examples/
+^\.Rcheck$
+^\.\.?Rcheck$
 ^.*\.Rcheck$
 ^.*\.tar\.gz$
 ^_pkgdown\.yml$
@@ -20,3 +23,5 @@
 ^pkgdown$
 ^AGENTS\.md$
 ^README\.Rmd$
+^README\.html$
+^README\.knit\.md$

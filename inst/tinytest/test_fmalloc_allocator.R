@@ -78,7 +78,7 @@ message("Input validation tests passed!")
     expect_equal(v_log[1:3], c(TRUE, FALSE, TRUE))
 
     v_raw[] <- as.raw(1:8)
-    expect_equal(v_raw, as.raw(1:8))
+    expect_equal(unclass(v_raw), as.raw(1:8))
 
     v_cplx[] <- c(1+1i, 2+2i, 3+3i, 4+4i, 5+5i, 6+6i)
     expect_equal(v_cplx[1:3], c(1+1i, 2+2i, 3+3i))

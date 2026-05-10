@@ -53,9 +53,11 @@ Implemented now:
 
 Known limitations:
 
-- Full operator dispatch rewrites are not yet implemented. Some base `Ops`
-  expressions (for example `1 + v`) may materialize ordinary R vectors rather
-  than stay within the fmalloc ALTREP payload path.
+- Core `Ops`, `Summary`, and matrix `rowSums`/`colSums`/`rowMeans`/`colMeans`
+  methods now dispatch through S3 methods to keep behaviour closer to native
+  vector/matrix operations.
+- Full operator- and method-family coverage is still incomplete; some advanced
+  expressions may still materialize ordinary R objects in edge-case paths.
 
 Still experimental: richer catalog and inspection tooling, and mapped-file
 recovery diagnostics.
@@ -357,6 +359,57 @@ local({
     metadata_shares_payload = c(base_vec[3L], m_view[1L, 2L]),
     array_dims = dim(a),
     df_columns = names(df)
+  )
+})
+```
+
+## Reduction output materialization
+
+`rowSums()`, `colSums()`, `rowMeans()`, `colMeans()`, and other `Summary`
+pathways keep small results in regular R objects by default to avoid unnecessary
+small temporary mappings. You can tune this behavior with:
+
+- `options(Rfmalloc.reduce_result_length = n)`
+
+where `n` is the maximum allowed result length to keep in-memory. Results with
+length greater than `n` stay fmalloc-backed.
+
+```{r}
+
+local({
+  reduce_file <- tempfile(fileext = ".bin")
+  rt <- open_fmalloc(reduce_file, mode = "persistent")
+  old_limit <- getOption("Rfmalloc.reduce_result_length")
+  on.exit({
+    cleanup_fmalloc(rt)
+    options(Rfmalloc.reduce_result_length = old_limit)
+    unlink(reduce_file)
+  }, add = TRUE)
+
+  m <- create_fmalloc_matrix("integer", nrow = 4L, ncol = 4L, runtime = rt)
+  m[] <- 1:16
+
+  base_m <- matrix(1:16, nrow = 4L, ncol = 4L)
+  tiny_vec <- create_fmalloc_vector("integer", 4L, runtime = rt)
+  tiny_vec[] <- 11:14
+
+  options(Rfmalloc.reduce_result_length = 5L)
+  default_row_sums <- rowSums(m)
+  default_range <- range(tiny_vec)
+
+  options(Rfmalloc.reduce_result_length = 3L)
+  compact_row_sums <- rowSums(m)
+
+  options(Rfmalloc.reduce_result_length = 1L)
+  compact_range <- range(tiny_vec)
+
+  list(
+    default_row_sums_in_memory = inherits(default_row_sums, "fmalloc"),
+    compact_row_sums_filebacked = inherits(compact_row_sums, "fmalloc"),
+    default_range_in_memory = inherits(default_range, "fmalloc"),
+    compact_range_filebacked = inherits(compact_range, "fmalloc"),
+    rowSums_values = unclass(compact_row_sums),
+    expected_rowSums = rowSums(base_m)
   )
 })
 ```
