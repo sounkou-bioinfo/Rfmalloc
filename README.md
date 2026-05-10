@@ -37,9 +37,7 @@ Implemented now:
 - an installed C header and `R_RegisterCCallable()` API for other
   packages.
 
-Still experimental: view-based subsets (currently copy-only; true views
-would form an additional semantic layer), richer catalog maintenance
-tooling, and mapped-file recovery diagnostics.
+Still experimental: richer catalog and inspection tooling, and mapped-file recovery diagnostics.
 
 ## Installation
 
