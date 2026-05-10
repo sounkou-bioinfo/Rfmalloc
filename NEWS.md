@@ -2,7 +2,7 @@
 
 ## Development (unreleased)
 
-- Added ALTREP attribute regression coverage for matrix/array/data.frame attribute roundtripping and set minimum R dependency to `R (>= 4.3.0)`.
+- Added ALTREP attribute regression coverage for matrix/array/data.frame attribute roundtripping and set minimum R dependency to `R (>= 4.4.0)`.
 - Implemented nested fmalloc list persistence by reference for persistent runtimes.
 - Added recursive fmalloc list/container serialized-reference recovery in ALTREP
   serialization/unserialization.
