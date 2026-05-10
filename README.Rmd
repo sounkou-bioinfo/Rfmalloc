@@ -144,25 +144,41 @@ local({
 
 ## Larger Allocation Example
 
-```{r}
+This example is executed when building the README and uses a larger (but still modest)
+fmalloc payload for demonstration.
 
+```{r}
 local({
   large_file <- tempfile(fileext = ".bin")
-  # Requires substantial on-disk space; each 2e9-integer vector is ~8 GB payload.
-  init_fmalloc(large_file, size_gb = 20)
+  rt <- open_fmalloc(large_file)
   on.exit({
-    cleanup_fmalloc()
+    cleanup_fmalloc(rt)
     unlink(large_file)
   }, add = TRUE)
 
-  big_int_a <- create_fmalloc_vector("integer", 2e9)
-  big_int_b <- create_fmalloc_vector("integer", 2e9)
+  n <- 2e6
+  before_alloc <- nrow(list_fmalloc_allocations(rt))
+
+  big_int_a <- create_fmalloc_vector("integer", n, runtime = rt)
+  big_int_b <- create_fmalloc_vector("integer", n, runtime = rt)
   big_int_a[1:5] <- 1:5
   big_int_b[1:5] <- 6:10
+
+  # Elementwise arithmetic stays on fmalloc-managed ALTREP for the full-length result
+  big_sum <- big_int_a + big_int_b
+  after_alloc <- nrow(list_fmalloc_allocations(rt))
+
   list(
     a_head = big_int_a[1:5],
-    b_head = big_int_b[1:5]
+    b_head = big_int_b[1:5],
+    sum_head = big_sum[1:5],
+    sum_length = length(big_sum),
+    sum_managed = inherits(big_sum, "fmalloc") &&
+      grepl("fmalloc_altrep", capture.output(.Internal(inspect(big_sum)))[[1L]], fixed = TRUE),
+    allocations_delta = after_alloc - before_alloc
   )
+
+  # sum(big_sum) is not used here: Summary(S) generics return scalars.
 })
 ```
 
