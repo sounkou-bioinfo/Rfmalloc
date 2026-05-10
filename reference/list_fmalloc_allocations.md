@@ -27,6 +27,22 @@ catalog record offset, generation, state, vector type, length, payload
 offset, payload byte size, flags, and whether the record is recoverable
 by reference serialization.
 
+## Details
+
+For successful recovery, look at the `state` column:
+
+- `"committed"`: valid serialized payload exists for that record;
+
+- `"tombstone"`: the payload has been destroyed and is non-recoverable
+  unless the runtime remains open and referenced directly by an existing
+  SEXP;
+
+- other transient states are internal and are generally not expected.
+
+`recoverable` indicates whether the record can be reopened via
+serialized reference metadata. `payload_offset == 0` or
+`payload_nbytes == 0` generally indicates a non-payload entry.
+
 ## Examples
 
 ``` r

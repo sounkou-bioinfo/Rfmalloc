@@ -44,6 +44,14 @@ with fmalloc payload storage.
 
   Convert fmalloc-backed objects to a data.frame.
 
+- [`list_fmalloc_allocations`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/list_fmalloc_allocations.md):
+
+  List persistent allocation catalog records.
+
+- `diagnose_fmalloc_runtime`:
+
+  Summarize persistent allocation catalog state and runtime diagnostics.
+
 - [`cleanup_fmalloc`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/cleanup_fmalloc.md):
 
   Request cleanup of an fmalloc runtime.
@@ -71,6 +79,9 @@ with fmalloc payload storage.
 
 - Native lifetime tracking so runtime mappings outlive reachable vectors
   allocated from them.
+
+- Runtime and catalog diagnostics for planning recovery and operational
+  cleanup.
 
 ## Future Work
 

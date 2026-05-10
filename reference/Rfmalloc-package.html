@@ -78,6 +78,12 @@ complex, character, and list vectors with fmalloc payload storage.</p>
 <dt><code><a href="as_fmalloc_data_frame.html">as_fmalloc_data_frame</a></code></dt>
 <dd><p>Convert fmalloc-backed objects to a data.frame.</p></dd>
 
+<dt><code><a href="list_fmalloc_allocations.html">list_fmalloc_allocations</a></code></dt>
+<dd><p>List persistent allocation catalog records.</p></dd>
+
+<dt><code>diagnose_fmalloc_runtime</code></dt>
+<dd><p>Summarize persistent allocation catalog state and runtime diagnostics.</p></dd>
+
 <dt><code><a href="cleanup_fmalloc.html">cleanup_fmalloc</a></code></dt>
 <dd><p>Request cleanup of an fmalloc runtime.</p></dd>
 
@@ -100,6 +106,8 @@ character ALTREP vectors.</p></li>
 <li><p>A C-callable API and installed header for other packages.</p></li>
 <li><p>Native lifetime tracking so runtime mappings outlive reachable
 vectors allocated from them.</p></li>
+<li><p>Runtime and catalog diagnostics for planning recovery and operational
+cleanup.</p></li>
 </ul></div>
     <div class="section level2">
     <h2 id="future-work">Future Work<a class="anchor" aria-label="anchor" href="#future-work"></a></h2>

@@ -64,6 +64,16 @@ the catalog record offset, generation, state, vector type, length, payload
 offset, payload byte size, flags, and whether the record is recoverable by
 reference serialization.</p>
     </div>
+    <div class="section level2">
+    <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
+    <p>For successful recovery, look at the <code>state</code> column:</p><ul><li><p><code>"committed"</code>: valid serialized payload exists for that record;</p></li>
+<li><p><code>"tombstone"</code>: the payload has been destroyed and is non-recoverable unless
+the runtime remains open and referenced directly by an existing SEXP;</p></li>
+<li><p>other transient states are internal and are generally not expected.</p></li>
+</ul><p><code>recoverable</code> indicates whether the record can be reopened via serialized
+reference metadata. <code>payload_offset == 0</code> or <code>payload_nbytes == 0</code> generally
+indicates a non-payload entry.</p>
+    </div>
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
