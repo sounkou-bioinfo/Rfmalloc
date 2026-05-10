@@ -210,3 +210,37 @@ cleanup_fmalloc <- function(runtime = NULL) {
 
     invisible(.Call("cleanup_fmalloc_impl", runtime))
 }
+
+#' Explicitly destroy a fmalloc vector
+#'
+#' Releases runtime bookkeeping for a single fmalloc ALTREP vector immediately. In
+#' scratch mode, payload memory is immediately reclaimed. In persistent mode, the
+#' vector payload is retained by default so existing on-disk state remains
+#' durable; optional `unsafe = TRUE` reclaims payload memory and marks metadata
+#' as non-recoverable.
+#'
+#' Explicit destroy fails when a vector is still referenced by another fmalloc list
+#' vector as a child.
+#'
+#' @param x Fmalloc ALTREP vector to destroy.
+#' @param unsafe Whether to physically free persistent payload bytes. Unsafe
+#'   destroy is intended for short-lived scratch-like cleanup and will mark the
+#'   catalog entry as non-recoverable.
+#'
+#' @return Logical value indicating whether a live vector was destroyed.
+#'
+#' @examples
+#' \dontrun{
+#' rt <- open_fmalloc(tempfile(fileext = ".bin"), mode = "persistent")
+#' v <- create_fmalloc_vector("integer", 10, runtime = rt)
+#' destroy_fmalloc_vector(v)
+#' }
+#'
+#' @export
+destroy_fmalloc_vector <- function(x, unsafe = FALSE) {
+    if (!is.logical(unsafe) || length(unsafe) != 1 || is.na(unsafe)) {
+        stop("unsafe must be a single logical value")
+    }
+
+    .Call("destroy_fmalloc_vector_impl", x, as.logical(unsafe))
+}

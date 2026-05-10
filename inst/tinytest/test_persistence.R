@@ -201,7 +201,6 @@ if (.Platform$OS.type == "unix") {
     list_vec <- create_fmalloc_vector("list", 3, runtime = rt)
     list_vec[[1]] <- list_child
     list_vec[[2]] <- nested_list
-    list_vec[[3]] <- NULL
     expect_error(list_vec[[2]] <- 1:2, "ordinary R objects")
 
     catalog <- list_fmalloc_allocations(rt)

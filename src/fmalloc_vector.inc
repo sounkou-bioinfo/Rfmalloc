@@ -74,6 +74,8 @@ static size_t payload_size_bytes(SEXPTYPE type, R_xlen_t length)
 }
 
 static uint64_t pointer_offset(fm_runtime *runtime, void *ptr);
+static fm_vector *maybe_vector_from_altrep(SEXP x);
+static rfm_catalog_record *catalog_record_from_offset(fm_runtime *runtime, uint64_t offset);
 static rfm_catalog_record *create_catalog_record_locked(fm_runtime *runtime, SEXPTYPE type,
                                                         R_xlen_t length, void *payload,
                                                         size_t bytes);
@@ -167,7 +169,7 @@ static fm_vector *allocate_fm_vector(fm_runtime *runtime, SEXPTYPE type, R_xlen_
     return vec;
 }
 
-static void release_string_payloads_for_scratch(fm_vector *vec)
+static void free_string_payloads_generic(fm_vector *vec)
 {
     if (!vec || vec->type != STRSXP || !vec->data || !vec->runtime || !vec->runtime->info) {
         return;
@@ -182,46 +184,141 @@ static void release_string_payloads_for_scratch(fm_vector *vec)
     }
 }
 
-static void release_fm_vector(fm_vector *vec)
+static bool mark_catalog_record_tombstone(fm_runtime *runtime, uint64_t catalog_offset)
 {
-    if (!vec) {
+    if (!runtime || !runtime->info || catalog_offset == 0) {
+        return false;
+    }
+
+    rfm_catalog_record *record = catalog_record_from_offset(runtime, catalog_offset);
+    if (!record || record->magic != RFM_CATALOG_MAGIC || record->version != RFM_CATALOG_VERSION) {
+        return false;
+    }
+
+    record->state = RFM_CATALOG_STATE_TOMBSTONE;
+    return true;
+}
+
+static void adjust_parent_refs(fm_vector *child, int delta)
+{
+    if (!child || delta == 0) {
+        return;
+    }
+    if (delta > 0) {
+        child->parent_refs++;
+        return;
+    }
+    if (child->parent_refs > 0) {
+        child->parent_refs--;
+    }
+}
+
+static void decrement_pointer_children(fm_vector *vec)
+{
+    if (!vec || !is_pointer_vector_type(vec->type) || vec->refs == R_NilValue) {
         return;
     }
 
+    R_xlen_t len = XLENGTH(vec->refs);
+    for (R_xlen_t i = 0; i < len; i++) {
+        fm_vector *child = maybe_vector_from_altrep(VECTOR_ELT(vec->refs, i));
+        if (child) {
+            adjust_parent_refs(child, -1);
+        }
+    }
+}
+
+static bool destroy_fm_vector_impl(fm_vector *vec, bool free_payload, bool mark_catalog)
+{
+    if (!vec) {
+        return false;
+    }
+
     fm_runtime *runtime = vec->runtime;
+    if (!runtime) {
+        return false;
+    }
+
     bool missing_info = false;
     struct fm_info *info_to_destroy = nullptr;
     fm_runtime *runtime_to_destroy = nullptr;
 
-    if (runtime) {
-        {
-            std::lock_guard<std::mutex> runtime_lock(runtime->mutex);
-            if (vec->data && runtime->mode == FM_MODE_SCRATCH) {
-                if (!runtime->info) {
-                    missing_info = true;
-                } else {
-                    std::lock_guard<std::mutex> allocator_lock(fmalloc_allocator_mutex);
-                    fmalloc_set_target(runtime->info);
-                    release_string_payloads_for_scratch(vec);
-                    dlfree(vec->data);
+    {
+        std::lock_guard<std::mutex> runtime_lock(runtime->mutex);
+
+        if (mark_catalog && runtime->mode == FM_MODE_PERSISTENT && vec->catalog_offset != 0 &&
+            runtime->info) {
+            mark_catalog_record_tombstone(runtime, vec->catalog_offset);
+        }
+
+        if (free_payload && vec->data) {
+            if (!runtime->info) {
+                missing_info = true;
+            } else {
+                std::lock_guard<std::mutex> allocator_lock(fmalloc_allocator_mutex);
+                fmalloc_set_target(runtime->info);
+                if (vec->type == STRSXP) {
+                    free_string_payloads_generic(vec);
                 }
+                dlfree(vec->data);
+                vec->data = nullptr;
             }
-
-            if (runtime->live_vectors > 0) {
-                runtime->live_vectors--;
-            }
-            runtime_to_destroy = detach_runtime_if_ready(runtime, &info_to_destroy);
         }
 
-        if (missing_info) {
-            Rf_warning("fmalloc runtime was already destroyed before freeing %p", vec->data);
+        if (is_pointer_vector_type(vec->type)) {
+            decrement_pointer_children(vec);
         }
-        if (runtime_to_destroy) {
-            destroy_runtime_native(runtime_to_destroy, info_to_destroy);
+
+        if (runtime->live_vectors > 0) {
+            runtime->live_vectors--;
         }
+        runtime_to_destroy = detach_runtime_if_ready(runtime, &info_to_destroy);
     }
 
+    if (missing_info) {
+        Rf_warning("fmalloc runtime was already destroyed before freeing %p", vec->data);
+    }
+    if (runtime_to_destroy) {
+        destroy_runtime_native(runtime_to_destroy, info_to_destroy);
+    }
+
+    vec->runtime = nullptr;
+    vec->refs = R_NilValue;
+    vec->data = nullptr;
+    vec->catalog_offset = 0;
+    vec->generation = 0;
     delete vec;
+    return true;
+}
+
+static bool destroy_fm_vector(fm_vector *vec, bool unsafe, bool mark_catalog)
+{
+    if (!vec) {
+        return false;
+    }
+    if (vec->parent_refs > 0) {
+        Rf_error("cannot destroy fmalloc vector: %llu parent reference(s) still held",
+                 static_cast<unsigned long long>(vec->parent_refs));
+        return false;
+    }
+
+    bool free_payload = vec->runtime != nullptr &&
+        (vec->runtime->mode == FM_MODE_SCRATCH ||
+         (unsafe && vec->runtime->mode == FM_MODE_PERSISTENT));
+    return destroy_fm_vector_impl(vec, free_payload, mark_catalog);
+}
+
+static bool release_fm_vector(fm_vector *vec)
+{
+    if (!vec) {
+        return false;
+    }
+
+    bool free_payload = false;
+    if (vec->runtime && vec->runtime->mode == FM_MODE_SCRATCH) {
+        free_payload = true;
+    }
+    return destroy_fm_vector_impl(vec, free_payload, false);
 }
 
 static void fmalloc_vector_finalizer(SEXP vector_xptr)
@@ -528,7 +625,9 @@ static void validate_pointer_element(fm_vector *vec, SEXP value)
         Rf_error("fmalloc lists cannot contain themselves");
         return;
     }
-    if (child->runtime != vec->runtime) {
+    if (!child->runtime || !vec->runtime ||
+        child->runtime->file_uuid_hi != vec->runtime->file_uuid_hi ||
+        child->runtime->file_uuid_lo != vec->runtime->file_uuid_lo) {
         Rf_error("fmalloc list elements must be allocated from the same fmalloc runtime");
         return;
     }
@@ -537,7 +636,25 @@ static void validate_pointer_element(fm_vector *vec, SEXP value)
 static void set_pointer_element(fm_vector *vec, R_xlen_t i, SEXP value)
 {
     validate_pointer_element(vec, value);
+
+
+    fm_vector *old_child = maybe_vector_from_altrep(VECTOR_ELT(vec->refs, i));
+    fm_vector *new_child = maybe_vector_from_altrep(value);
+
+    if (old_child == new_child) {
+        return;
+    }
+
+    if (old_child) {
+        adjust_parent_refs(old_child, -1);
+    }
+
     SET_VECTOR_ELT(vec->refs, i, value);
+
+    if (new_child) {
+        adjust_parent_refs(new_child, +1);
+    }
+
     if (vec->data) {
         static_cast<SEXP *>(vec->data)[i] = value;
     }

@@ -96,6 +96,41 @@ SEXP list_fmalloc_allocations_impl(SEXP runtime_xptr)
     return make_catalog_data_frame(records);
 }
 
+SEXP destroy_fmalloc_vector_impl(SEXP vector_x, SEXP unsafe_sexp)
+{
+    if (!ALTREP(vector_x)) {
+        Rf_error("destroy_fmalloc_vector expects an fmalloc ALTREP vector");
+        return R_NilValue;
+    }
+
+    if (TYPEOF(unsafe_sexp) != LGLSXP || LENGTH(unsafe_sexp) != 1) {
+        Rf_error("unsafe must be a single logical value");
+        return R_NilValue;
+    }
+    int unsafe_i = Rf_asLogical(unsafe_sexp);
+    if (unsafe_i == NA_LOGICAL) {
+        Rf_error("unsafe must be TRUE or FALSE");
+        return R_NilValue;
+    }
+
+    SEXP vector_xptr = R_altrep_data1(vector_x);
+    if (TYPEOF(vector_xptr) != EXTPTRSXP || R_ExternalPtrTag(vector_xptr) != fmalloc_vector_tag) {
+        Rf_error("x is not an fmalloc ALTREP vector");
+        return R_NilValue;
+    }
+
+    fm_vector *vec = static_cast<fm_vector *>(R_ExternalPtrAddr(vector_xptr));
+    if (!vec) {
+        return Rf_ScalarLogical(FALSE);
+    }
+
+    bool unsafe = unsafe_i == 1;
+    bool destroyed = destroy_fm_vector(vec, unsafe, true);
+    R_ClearExternalPtr(vector_xptr);
+    R_SetExternalPtrProtected(vector_xptr, R_NilValue);
+    return Rf_ScalarLogical(destroyed);
+}
+
 SEXP cleanup_fmalloc_impl(SEXP runtime_xptr)
 {
     if (Rf_isNull(runtime_xptr)) {
@@ -210,6 +245,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"init_fmalloc_impl", (DL_FUNC)&init_fmalloc_impl, 3},
     {"create_fmalloc_vector_impl", (DL_FUNC)&create_fmalloc_vector_impl, 3},
     {"list_fmalloc_allocations_impl", (DL_FUNC)&list_fmalloc_allocations_impl, 1},
+    {"destroy_fmalloc_vector_impl", (DL_FUNC)&destroy_fmalloc_vector_impl, 2},
     {"cleanup_fmalloc_impl", (DL_FUNC)&cleanup_fmalloc_impl, 1},
     {nullptr, nullptr, 0}
 };

@@ -151,6 +151,7 @@ static bool is_persistent_list_state(SEXP state)
 }
 
 static SEXP fmalloc_altrep_unserialize(SEXP cls, SEXP state);
+static SEXP fmalloc_altrep_unserialize_with_runtime(SEXP cls, SEXP state, fm_runtime *runtime);
 
 static SEXP make_persistent_list_state_recursive(fm_vector *vec, std::vector<fm_vector *> &stack)
 {
@@ -239,19 +240,19 @@ static SEXP make_persistent_list_state(SEXP x)
     return make_persistent_list_state_recursive(vec, stack);
 }
 
-static SEXP restore_persistent_list_element(SEXP child_state)
+static SEXP restore_persistent_list_element(SEXP child_state, fm_runtime *runtime)
 {
     if (child_state == R_NilValue) {
         return R_NilValue;
     }
     if (is_persistent_ref_state(child_state) || is_persistent_list_state(child_state)) {
-        return fmalloc_altrep_unserialize(R_NilValue, child_state);
+        return fmalloc_altrep_unserialize_with_runtime(R_NilValue, child_state, runtime);
     }
     Rf_error("invalid Rfmalloc serialized list element state");
     return R_NilValue;
 }
 
-static SEXP restore_persistent_list(SEXP state)
+static SEXP restore_persistent_list(SEXP state, fm_runtime *runtime)
 {
     SEXP path_sexp = list_get(state, "path");
     SEXP uuid_sexp = list_get(state, "uuid");
@@ -288,10 +289,16 @@ static SEXP restore_persistent_list(SEXP state)
     }
 
     const char *path = CHAR(STRING_ELT(path_sexp, 0));
-    fm_runtime *runtime = open_runtime_native(path, 32 * 1024 * 1024 + FMALLOC_OFF,
-                                              FM_MODE_PERSISTENT, true);
-    if (runtime->file_uuid_hi != expected_hi || runtime->file_uuid_lo != expected_lo) {
-        close_unreferenced_runtime(runtime);
+    bool opened_runtime = false;
+    if (!runtime) {
+        runtime = open_runtime_native(path, 32 * 1024 * 1024 + FMALLOC_OFF,
+                                     FM_MODE_PERSISTENT, true);
+        opened_runtime = true;
+    }
+    if (!runtime || runtime->file_uuid_hi != expected_hi || runtime->file_uuid_lo != expected_lo) {
+        if (opened_runtime && runtime) {
+            close_unreferenced_runtime(runtime);
+        }
         Rf_error("Rfmalloc serialized list reference points to a different backing file UUID");
         return R_NilValue;
     }
@@ -300,7 +307,7 @@ static SEXP restore_persistent_list(SEXP state)
     SEXP ans = PROTECT(fmalloc_new_altrep(vec));
     for (R_xlen_t i = 0; i < len; i++) {
         SEXP child_state = VECTOR_ELT(children_sexp, i);
-        SEXP child = restore_persistent_list_element(child_state);
+        SEXP child = restore_persistent_list_element(child_state, runtime);
         set_pointer_element(vec, i, child);
     }
 
@@ -308,23 +315,7 @@ static SEXP restore_persistent_list(SEXP state)
     return ans;
 }
 
-static SEXP fmalloc_altrep_serialized_state(SEXP x)
-{
-    fm_vector *vec = vector_from_altrep(x);
-    if (vec->runtime->mode == FM_MODE_PERSISTENT && !is_pointer_vector_type(vec->type)) {
-        return make_persistent_ref_state(vec);
-    }
-    if (vec->runtime->mode == FM_MODE_PERSISTENT && is_pointer_vector_type(vec->type)) {
-        SEXP state = make_persistent_list_state(x);
-        if (state != R_NilValue) {
-            return state;
-        }
-    }
-
-    return fmalloc_plain_vector(x);
-}
-
-static SEXP fmalloc_altrep_unserialize(SEXP cls, SEXP state)
+static SEXP fmalloc_altrep_unserialize_with_runtime(SEXP cls, SEXP state, fm_runtime *runtime)
 {
     (void)cls;
     if (is_persistent_ref_state(state)) {
@@ -389,17 +380,27 @@ static SEXP fmalloc_altrep_unserialize(SEXP cls, SEXP state)
         }
 
         const char *path = CHAR(STRING_ELT(path_sexp, 0));
-        fm_runtime *runtime = open_runtime_native(path, 32 * 1024 * 1024 + FMALLOC_OFF,
-                                                  FM_MODE_PERSISTENT, true);
-        if (runtime->file_uuid_hi != expected_hi || runtime->file_uuid_lo != expected_lo) {
-            close_unreferenced_runtime(runtime);
+        bool opened_runtime = false;
+        if (!runtime) {
+            runtime = open_runtime_native(path, 32 * 1024 * 1024 + FMALLOC_OFF,
+                                         FM_MODE_PERSISTENT, true);
+            opened_runtime = true;
+        } else if (runtime->file_uuid_hi != expected_hi || runtime->file_uuid_lo != expected_lo) {
             Rf_error("Rfmalloc serialized reference points to a different backing file UUID");
             return R_NilValue;
         }
+
+        if (!runtime) {
+            Rf_error("Rfmalloc serialized reference points to an unreachable backing file");
+            return R_NilValue;
+        }
+
         const char *catalog_error = validate_catalog_record_for_ref(
             runtime, catalog_offset, generation, type, length, offset, nbytes);
         if (catalog_error) {
-            close_unreferenced_runtime(runtime);
+            if (opened_runtime) {
+                close_unreferenced_runtime(runtime);
+            }
             Rf_error("invalid Rfmalloc serialized reference: %s", catalog_error);
             return R_NilValue;
         }
@@ -410,10 +411,31 @@ static SEXP fmalloc_altrep_unserialize(SEXP cls, SEXP state)
     }
 
     if (is_persistent_list_state(state)) {
-        return restore_persistent_list(state);
+        return restore_persistent_list(state, runtime);
     }
 
     return state;
+}
+
+static SEXP fmalloc_altrep_serialized_state(SEXP x)
+{
+    fm_vector *vec = vector_from_altrep(x);
+    if (vec->runtime->mode == FM_MODE_PERSISTENT && !is_pointer_vector_type(vec->type)) {
+        return make_persistent_ref_state(vec);
+    }
+    if (vec->runtime->mode == FM_MODE_PERSISTENT && is_pointer_vector_type(vec->type)) {
+        SEXP state = make_persistent_list_state(x);
+        if (state != R_NilValue) {
+            return state;
+        }
+    }
+
+    return fmalloc_plain_vector(x);
+}
+
+static SEXP fmalloc_altrep_unserialize(SEXP cls, SEXP state)
+{
+    return fmalloc_altrep_unserialize_with_runtime(cls, state, nullptr);
 }
 
 static SEXP fmalloc_altrep_coerce(SEXP x, int type)
