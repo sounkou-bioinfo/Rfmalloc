@@ -27,4 +27,6 @@ Suggests:
     tinytest
 SystemRequirements: GNU make, POSIX threads
 URL: https://github.com/sounkou-bioinfo/Rfmalloc, https://sounkou-bioinfo.github.io/Rfmalloc/
+Depends:
+    R (>= 4.3.0)
 BugReports: https://github.com/sounkou-bioinfo/Rfmalloc/issues
