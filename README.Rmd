@@ -10,6 +10,8 @@ knitr::opts_chunk$set(
   out.width = "100%"
 )
 has_bench <- requireNamespace("bench", quietly = TRUE)
+library(Rfmalloc)
+
 ```
 
 # Rfmalloc
@@ -65,8 +67,6 @@ it as the package default runtime. Calls to `create_fmalloc_vector()` can then
 omit the `runtime` argument:
 
 ```{r}
-library(Rfmalloc)
-
 local({
   alloc_file <- tempfile(fileext = ".bin")
   init_fmalloc(alloc_file)
@@ -107,7 +107,6 @@ For multiple backing files or explicit lifetime management, prefer runtime
 handles returned by `open_fmalloc()`:
 
 ```{r}
-library(Rfmalloc)
 
 local({
   handle_file <- tempfile(fileext = ".bin")
@@ -126,7 +125,6 @@ local({
 ## Larger Allocation Example
 
 ```{r}
-library(Rfmalloc)
 
 local({
   large_file <- tempfile(fileext = ".bin")
@@ -158,7 +156,6 @@ local({
   ordinary R values.
 
 ```{r}
-library(Rfmalloc)
 
 local({
   persist_file <- tempfile(fileext = ".bin")
@@ -182,7 +179,6 @@ inspector reports the vector type, length, payload byte count, runtime mode,
 runtime state, payload offset, file UUID, and backing-file path.
 
 ```{r}
-library(Rfmalloc)
 
 local({
   inspect_file <- tempfile(fileext = ".bin")
@@ -210,7 +206,6 @@ materialized on `STRING_ELT()` access; Rfmalloc does not allocate `CHARSXP`
 objects inside fmalloc.
 
 ```{r}
-library(Rfmalloc)
 
 local({
   char_file <- tempfile(fileext = ".bin")
@@ -239,7 +234,6 @@ Runtime handles make it possible to use more than one backing file in one R
 process.
 
 ```{r}
-library(Rfmalloc)
 
 local({
   file_a <- tempfile(fileext = ".bin")
@@ -297,7 +291,6 @@ checks the recorded dimensions and file bounds, validates the catalog record and
 generation, and reconstructs an ALTREP vector around the same fmalloc allocation.
 
 ```{r}
-library(Rfmalloc)
 
 local({
   ser_file <- tempfile(fileext = ".bin")
@@ -366,7 +359,6 @@ vectors by name.
 List assignment rejects non-fmalloc payloads at runtime.
 
 ```{r}
-library(Rfmalloc)
 
 local({
   reject_file <- tempfile(fileext = ".bin")
@@ -396,7 +388,6 @@ Nested fmalloc lists recover recursively when serialized and unserialized from a
 persistent backing file.
 
 ```{r}
-library(Rfmalloc)
 
 local({
   recover_file <- tempfile(fileext = ".bin")
@@ -431,7 +422,6 @@ local({
 Cross-runtime insertion is also rejected.
 
 ```{r}
-library(Rfmalloc)
 
 local({
   cross_file_a <- tempfile(fileext = ".bin")
@@ -474,7 +464,6 @@ fmalloc allocations are not preserved as persistent records. Timings are
 machine- and R-version-specific; use this as a template for local measurements.
 
 ```{r performance-bench, message=FALSE, eval=has_bench}
-library(Rfmalloc)
 
 perf_file <- tempfile(fileext = ".bin")
 rt <- open_fmalloc(perf_file, mode = "scratch", size_gb = 0.1)
