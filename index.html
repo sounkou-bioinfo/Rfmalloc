@@ -551,7 +551,7 @@
 <div class="section level2">
 <h2 id="catalog-diagnostics">Catalog diagnostics<a class="anchor" aria-label="anchor" href="#catalog-diagnostics"></a>
 </h2>
-<p>Use <code>diagnose_fmalloc_runtime()</code> to inspect runtime metadata, the live catalog, and a compact summary that can help decide when a runtime is a reset candidate:</p>
+<p>Use <code><a href="reference/diagnose_fmalloc_runtime.html">diagnose_fmalloc_runtime()</a></code> to inspect runtime metadata, the live catalog, and a compact summary that can help decide when a runtime is a reset candidate:</p>
 <div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="va">diag_file</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
@@ -562,9 +562,9 @@
 <span>  <span class="va">a</span><span class="op">[</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fl">1</span><span class="op">:</span><span class="fl">4</span></span>
 <span>  <span class="va">b</span><span class="op">[</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"left"</span>, <span class="st">"right"</span><span class="op">)</span></span>
 <span></span>
-<span>  <span class="va">pre</span> <span class="op">&lt;-</span> <span class="fu">diagnose_fmalloc_runtime</span><span class="op">(</span><span class="va">rt</span><span class="op">)</span></span>
+<span>  <span class="va">pre</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/diagnose_fmalloc_runtime.html">diagnose_fmalloc_runtime</a></span><span class="op">(</span><span class="va">rt</span><span class="op">)</span></span>
 <span>  <span class="fu"><a href="reference/destroy_fmalloc_vector.html">destroy_fmalloc_vector</a></span><span class="op">(</span><span class="va">a</span><span class="op">)</span></span>
-<span>  <span class="va">post</span> <span class="op">&lt;-</span> <span class="fu">diagnose_fmalloc_runtime</span><span class="op">(</span><span class="va">rt</span><span class="op">)</span></span>
+<span>  <span class="va">post</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/diagnose_fmalloc_runtime.html">diagnose_fmalloc_runtime</a></span><span class="op">(</span><span class="va">rt</span><span class="op">)</span></span>
 <span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
 <span>    mode <span class="op">=</span> <span class="va">post</span><span class="op">$</span><span class="va">runtime</span><span class="op">$</span><span class="va">mode</span>,</span>

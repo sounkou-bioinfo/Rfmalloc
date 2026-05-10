@@ -48,7 +48,7 @@ with fmalloc payload storage.
 
   List persistent allocation catalog records.
 
-- `diagnose_fmalloc_runtime`:
+- [`diagnose_fmalloc_runtime`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/diagnose_fmalloc_runtime.md):
 
   Summarize persistent allocation catalog state and runtime diagnostics.
 

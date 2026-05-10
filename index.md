@@ -604,9 +604,10 @@ local({
 
 ## Catalog diagnostics
 
-Use `diagnose_fmalloc_runtime()` to inspect runtime metadata, the live
-catalog, and a compact summary that can help decide when a runtime is a
-reset candidate:
+Use
+[`diagnose_fmalloc_runtime()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/diagnose_fmalloc_runtime.md)
+to inspect runtime metadata, the live catalog, and a compact summary
+that can help decide when a runtime is a reset candidate:
 
 ``` r
 
