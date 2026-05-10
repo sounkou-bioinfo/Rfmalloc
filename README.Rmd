@@ -51,7 +51,14 @@ Implemented now:
   references;
 - an installed C header and `R_RegisterCCallable()` API for other packages.
 
-Still experimental: richer catalog and inspection tooling, and mapped-file recovery diagnostics.
+Known limitations:
+
+- Full operator dispatch rewrites are not yet implemented. Some base `Ops`
+  expressions (for example `1 + v`) may materialize ordinary R vectors rather
+  than stay within the fmalloc ALTREP payload path.
+
+Still experimental: richer catalog and inspection tooling, and mapped-file
+recovery diagnostics.
 
 ## Installation
 
@@ -130,22 +137,25 @@ local({
 
 ## Larger Allocation Example
 
-```{r}
+```{r, eval = FALSE}
 
 local({
   large_file <- tempfile(fileext = ".bin")
-  init_fmalloc(large_file, size_gb = 5)
+  init_fmalloc(large_file, size_gb = 10)
   on.exit({
     cleanup_fmalloc()
     unlink(large_file)
   }, add = TRUE)
 
-  big_int <- local({
-    x <- create_fmalloc_vector("integer", 1e9) # about 4 GB of payload
-    x[1:5] <- 1:5
-    x
-  })
-  big_int[1:5]
+  # Requires substantial on-disk space; each 2e9-integer vector is ~8 GB payload.
+  big_int_a <- create_fmalloc_vector("integer", 2e9)
+  big_int_b <- create_fmalloc_vector("integer", 2e9)
+  big_int_a[1:5] <- 1:5
+  big_int_b[1:5] <- 6:10
+  list(
+    a_head = big_int_a[1:5],
+    b_head = big_int_b[1:5]
+  )
 })
 ```
 

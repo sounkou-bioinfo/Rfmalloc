@@ -40,6 +40,13 @@
 #'         cleanup.
 #' }
 #'
+#' @section Known Limitations:
+#' \itemize{
+#'   \item Full operator dispatch rewrites are not yet implemented. Some base
+#'         `Ops` expressions (for example `1 + v`) may materialize ordinary R
+#'         vectors because we do not yet cover all converted operator families.
+#' }
+#'
 #' @section Future Work:
 #' Future work includes view-based subset representations, catalog compaction
 #' and reset tooling, metadata storage for attributes on persisted elements,

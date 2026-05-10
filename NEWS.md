@@ -3,10 +3,9 @@
 ## Development (unreleased)
 
 - Added ALTREP attribute regression coverage for matrix/array/data.frame attribute roundtripping and set minimum R dependency to `R (>= 4.4.0)`.
-- Added explicit constructor helpers for structured fmalloc objects:
-  - `create_fmalloc_matrix()` and `create_fmalloc_array()` for metadata-initialized ALTREP matrix/array allocation.
-  - `create_fmalloc_data_frame()` plus `as_fmalloc_matrix()`, `as_fmalloc_array()`, and `as_fmalloc_data_frame()` convenience converters for metadata-only reshaping.
+- Added `create_fmalloc_matrix()` and `create_fmalloc_array()` constructors and `create_fmalloc_data_frame()` plus `as_fmalloc_matrix()`, `as_fmalloc_array()`, and `as_fmalloc_data_frame()` convenience converters for metadata-only reshaping.
 - Added `copy = FALSE` mode to `as_fmalloc_matrix()` and `as_fmalloc_array()` to install shape metadata in-place on fmalloc ALTREP vectors via C-level attribute assignment, with new tests proving this mode avoids additional payload allocations.
+- Documented known operator-dispatch limitations (for example, `1 + v` may materialize a regular R vector when ALTREP operator families are not covered yet).
 - Added `diagnose_fmalloc_runtime()` for runtime+catalog diagnostics, including record state counts, payload usage summaries, and an explicit compaction status note to explain why catalog compaction is not yet implemented.
 - Implemented nested fmalloc list persistence by reference for persistent runtimes.
 - Added recursive fmalloc list/container serialized-reference recovery in ALTREP

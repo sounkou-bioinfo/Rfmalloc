@@ -50,6 +50,15 @@ cleanup.
 }
 }
 
+\section{Known Limitations}{
+
+\itemize{
+\item Full operator dispatch rewrites are not yet implemented. Some base
+\code{Ops} expressions (for example \code{1 + v}) may materialize ordinary R
+vectors because we do not yet cover all converted operator families.
+}
+}
+
 \section{Future Work}{
 
 Future work includes view-based subset representations, catalog compaction
