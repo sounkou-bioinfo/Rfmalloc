@@ -137,17 +137,17 @@ local({
 
 ## Larger Allocation Example
 
-```{r, eval = FALSE}
+```{r}
 
 local({
   large_file <- tempfile(fileext = ".bin")
-  init_fmalloc(large_file, size_gb = 10)
+  # Requires substantial on-disk space; each 2e9-integer vector is ~8 GB payload.
+  init_fmalloc(large_file, size_gb = 20)
   on.exit({
     cleanup_fmalloc()
     unlink(large_file)
   }, add = TRUE)
 
-  # Requires substantial on-disk space; each 2e9-integer vector is ~8 GB payload.
   big_int_a <- create_fmalloc_vector("integer", 2e9)
   big_int_b <- create_fmalloc_vector("integer", 2e9)
   big_int_a[1:5] <- 1:5
