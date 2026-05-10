@@ -73,6 +73,12 @@ operations while returning ordinary R vectors for small results.</p>
 <code>fmalloc</code> vector when result length exceeds
 <code>getOption("Rfmalloc.reduce_result_length", 1e6)</code>.</p>
     </div>
+    <div class="section level2">
+    <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
+    <p>For managed execution these methods support only 2D `fmalloc` matrices with
+`dims = 1L`.  If the input is not an exact 2D matrix or `dims != 1L`, the
+methods emit a warning and delegate to the corresponding base R implementation.</p>
+    </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

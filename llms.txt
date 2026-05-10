@@ -37,13 +37,21 @@ Implemented now:
 
 Known limitations:
 
-- Core `Ops`, `Summary`, and matrix
-  `rowSums`/`colSums`/`rowMeans`/`colMeans` methods now dispatch through
-  S3 methods to keep behaviour closer to native vector/matrix
-  operations.
-- Full operator- and method-family coverage is still incomplete; some
-  advanced expressions may still materialize ordinary R objects in
-  edge-case paths.
+- Core `Ops`, `Summary`, `Math`, and `Math2` workflows are dispatched
+  through S3 methods for common vector/matrix paths.
+- Explicit base-fallback boundaries:
+  - [`rowSums()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md),
+    [`colSums()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md),
+    [`rowMeans()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md),
+    and
+    [`colMeans()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md)
+    fall back to base implementations (with a warning) when the input is
+    not an exact 2D matrix or when `dims != 1L`.
+  - Scalar or zero-length outputs from `Summary`, `Math`, or `Math2`
+    (for example `sum(x)` returning a single value) are ordinary R
+    scalars by design.
+- Full operator- and method-family coverage is still incomplete;
+  additional edge cases may still materialize ordinary R objects.
 
 Still experimental: richer catalog and inspection tooling, and
 mapped-file recovery diagnostics.

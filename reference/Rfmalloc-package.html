@@ -113,9 +113,16 @@ cleanup.</p></li>
     <h2 id="known-limitations">Known Limitations<a class="anchor" aria-label="anchor" href="#known-limitations"></a></h2>
 
 
-<ul><li><p>Basic ALTREP-backed dispatch now covers core <code>Ops</code>, <code>Summary</code>, and
-matrix <code>rowSums</code>/<code>colSums</code> workflows through S3 method dispatch; this
-includes common scalar arithmetic and row/column reduction patterns.</p></li>
+<ul><li><p>ALTREP-backed dispatch now covers core <code>Ops</code>, <code>Summary</code>, <code>Math</code>,
+<code>Math2</code>, and matrix <code>rowSums</code>/<code>colSums</code>/<code>rowMeans</code>/<code>colMeans</code>
+workflows through S3 methods for common vector/matrix usage.</p></li>
+<li><p>Explicit base-fallback boundaries are:</p><ul><li><p><code><a href="fmalloc_reduction_methods.html">rowSums()</a></code>, <code><a href="fmalloc_reduction_methods.html">colSums()</a></code>, <code><a href="fmalloc_reduction_methods.html">rowMeans()</a></code>, and
+          <code><a href="fmalloc_reduction_methods.html">colMeans()</a></code> fall back to base implementations (with a warning)
+          when the input is not an exact 2D matrix or when <code>dims != 1L</code>.</p></li>
+<li><p>Scalar or zero-length outputs from <code>Summary</code>, <code>Math</code>, or
+          <code>Math2</code> (for example <code>sum(x)</code> returning a single value)
+          are ordinary R scalars by design.</p></li>
+</ul></li>
 <li><p>Full operator- and method-family coverage is still incomplete for all
 R generics. Some advanced families may still materialize ordinary R
 objects in a few edge cases.</p></li>

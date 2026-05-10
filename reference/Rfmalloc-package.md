@@ -85,9 +85,23 @@ with fmalloc payload storage.
 
 ## Known Limitations
 
-- Basic ALTREP-backed dispatch now covers core `Ops`, `Summary`, and
-  matrix `rowSums`/`colSums` workflows through S3 method dispatch; this
-  includes common scalar arithmetic and row/column reduction patterns.
+- ALTREP-backed dispatch now covers core `Ops`, `Summary`, `Math`,
+  `Math2`, and matrix `rowSums`/`colSums`/`rowMeans`/`colMeans`
+  workflows through S3 methods for common vector/matrix usage.
+
+- Explicit base-fallback boundaries are:
+
+  - [`rowSums()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md),
+    [`colSums()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md),
+    [`rowMeans()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md),
+    and
+    [`colMeans()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md)
+    fall back to base implementations (with a warning) when the input is
+    not an exact 2D matrix or when `dims != 1L`.
+
+  - Scalar or zero-length outputs from `Summary`, `Math`, or `Math2`
+    (for example `sum(x)` returning a single value) are ordinary R
+    scalars by design.
 
 - Full operator- and method-family coverage is still incomplete for all
   R generics. Some advanced families may still materialize ordinary R

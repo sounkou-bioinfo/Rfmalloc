@@ -69,8 +69,15 @@
 </ul>
 <p>Known limitations:</p>
 <ul>
-<li>Core <code>Ops</code>, <code>Summary</code>, and matrix <code>rowSums</code>/<code>colSums</code>/<code>rowMeans</code>/<code>colMeans</code> methods now dispatch through S3 methods to keep behaviour closer to native vector/matrix operations.</li>
-<li>Full operator- and method-family coverage is still incomplete; some advanced expressions may still materialize ordinary R objects in edge-case paths.</li>
+<li>Core <code>Ops</code>, <code>Summary</code>, <code>Math</code>, and <code>Math2</code> workflows are dispatched through S3 methods for common vector/matrix paths.</li>
+<li>Explicit base-fallback boundaries:
+<ul>
+<li>
+<code><a href="reference/fmalloc_reduction_methods.html">rowSums()</a></code>, <code><a href="reference/fmalloc_reduction_methods.html">colSums()</a></code>, <code><a href="reference/fmalloc_reduction_methods.html">rowMeans()</a></code>, and <code><a href="reference/fmalloc_reduction_methods.html">colMeans()</a></code> fall back to base implementations (with a warning) when the input is not an exact 2D matrix or when <code>dims != 1L</code>.</li>
+<li>Scalar or zero-length outputs from <code>Summary</code>, <code>Math</code>, or <code>Math2</code> (for example <code>sum(x)</code> returning a single value) are ordinary R scalars by design.</li>
+</ul>
+</li>
+<li>Full operator- and method-family coverage is still incomplete; additional edge cases may still materialize ordinary R objects.</li>
 </ul>
 <p>Still experimental: richer catalog and inspection tooling, and mapped-file recovery diagnostics.</p>
 </div>
