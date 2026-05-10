@@ -187,8 +187,41 @@ local({
 
 In persistent mode, destroying with default semantics retains payload bytes so the
 recorded on-disk allocation remains recoverable by normal `serialize()` flows.
-Use `destroy_fmalloc_vector(x, unsafe = TRUE)` to reclaim persistent payload memory
-and mark the catalog entry as non-recoverable.
+Use `destroy_fmalloc_vector(x, unsafe = TRUE)` to reclaim persistent payload
+memory and mark the catalog entry as non-recoverable.
+
+This is scoped to the targeted vector(s): if one object is unsafe-destroyed,
+other objects in the same runtime remain recoverable.
+
+```{r}
+
+local({
+  selective_file <- tempfile(fileext = ".bin")
+  rt <- open_fmalloc(selective_file, mode = "persistent")
+  on.exit({
+    cleanup_fmalloc(rt)
+    unlink(selective_file)
+  }, add = TRUE)
+
+  keep <- create_fmalloc_vector("integer", 3, runtime = rt)
+  drop <- create_fmalloc_vector("character", 2, runtime = rt)
+  keep[] <- c(101L, 202L, 303L)
+  drop[] <- c("alpha", "beta")
+
+  keep_blob <- serialize(keep, NULL)
+  drop_blob <- serialize(drop, NULL)
+
+  destroy_fmalloc_vector(drop, unsafe = TRUE)
+
+  keep_recovered <- unserialize(keep_blob)
+  drop_recover_error <- try(unserialize(drop_blob), silent = TRUE)
+
+  list(
+    keep_recovered_ok = all.equal(keep_recovered[], c(101L, 202L, 303L)) == TRUE,
+    drop_recover_fails = inherits(drop_recover_error, "try-error")
+  )
+})
+```
 
 ## Runtime Modes
 

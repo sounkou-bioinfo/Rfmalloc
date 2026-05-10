@@ -98,7 +98,7 @@ local({
   )
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpanpVAT/file13a09a24bb9e80.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/Rtmpe2cTmG/file13b558537607da.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> $integer
@@ -138,7 +138,7 @@ local({
   v[1:3]
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpanpVAT/file13a09a5c23c246.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/Rtmpe2cTmG/file13b558a7c3df.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> [1] 10 11 12
@@ -165,7 +165,7 @@ local({
 })
 #> Requested file size: 5.00 GB (5368709120 bytes)
 #> Creating file with size: 5368709120 bytes (5.00 GB)
-#> fmalloc initialized with file: /tmp/RtmpanpVAT/file13a09a18c6bd4c.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/Rtmpe2cTmG/file13b55875867b79.bin (init: true, mode: persistent)
 #> Creating fmalloc ALTREP vector: type=integer, length=1000000000
 #> Large allocation: 3814.70 MB requested
 #> SUCCESS: fmalloc allocated 4000000000 bytes
@@ -210,7 +210,7 @@ local({
   )
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpanpVAT/file13a09a586e101a.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/Rtmpe2cTmG/file13b5584a9b9ed6.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> $destroy_rejected_with_parent
@@ -225,6 +225,52 @@ bytes so the recorded on-disk allocation remains recoverable by normal
 `serialize()` flows. Use `destroy_fmalloc_vector(x, unsafe = TRUE)` to
 reclaim persistent payload memory and mark the catalog entry as
 non-recoverable.
+
+This is scoped to the targeted vector(s): if one object is
+unsafe-destroyed, other objects in the same runtime remain recoverable.
+
+``` r
+
+local({
+  selective_file <- tempfile(fileext = ".bin")
+  rt <- open_fmalloc(selective_file, mode = "persistent")
+  on.exit({
+    cleanup_fmalloc(rt)
+    unlink(selective_file)
+  }, add = TRUE)
+
+  keep <- create_fmalloc_vector("integer", 3, runtime = rt)
+  drop <- create_fmalloc_vector("character", 2, runtime = rt)
+  keep[] <- c(101L, 202L, 303L)
+  drop[] <- c("alpha", "beta")
+
+  keep_blob <- serialize(keep, NULL)
+  drop_blob <- serialize(drop, NULL)
+
+  destroy_fmalloc_vector(drop, unsafe = TRUE)
+
+  keep_recovered <- unserialize(keep_blob)
+  drop_recover_error <- try(unserialize(drop_blob), silent = TRUE)
+
+  list(
+    keep_recovered_ok = all.equal(keep_recovered[], c(101L, 202L, 303L)) == TRUE,
+    drop_recover_fails = inherits(drop_recover_error, "try-error")
+  )
+})
+#> Creating file with size: 33562624 bytes (0.03 GB)
+#> fmalloc initialized with file: /tmp/Rtmpe2cTmG/file13b5583555298d.bin (init: true, mode: persistent)
+#> Using existing file: /tmp/Rtmpe2cTmG/file13b5583555298d.bin (size: 33562624 bytes)
+#> fmalloc initialized with file: /tmp/Rtmpe2cTmG/file13b5583555298d.bin (init: false, mode: persistent)
+#> Using existing file: /tmp/Rtmpe2cTmG/file13b5583555298d.bin (size: 33562624 bytes)
+#> fmalloc initialized with file: /tmp/Rtmpe2cTmG/file13b5583555298d.bin (init: false, mode: persistent)
+#> Cleaning up fmalloc...
+#> fmalloc cleaned up
+#> $keep_recovered_ok
+#> [1] TRUE
+#> 
+#> $drop_recover_fails
+#> [1] TRUE
+```
 
 ## Runtime Modes
 
@@ -254,9 +300,9 @@ local({
   roundtrip[]
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpanpVAT/file13a09a24dc6ab.bin (init: true, mode: persistent)
-#> Using existing file: /tmp/RtmpanpVAT/file13a09a24dc6ab.bin (size: 33562624 bytes)
-#> fmalloc initialized with file: /tmp/RtmpanpVAT/file13a09a24dc6ab.bin (init: false, mode: persistent)
+#> fmalloc initialized with file: /tmp/Rtmpe2cTmG/file13b5583cc6e567.bin (init: true, mode: persistent)
+#> Using existing file: /tmp/Rtmpe2cTmG/file13b5583cc6e567.bin (size: 33562624 bytes)
+#> fmalloc initialized with file: /tmp/Rtmpe2cTmG/file13b5583cc6e567.bin (init: false, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> [1] 1 2 3 4 5
@@ -284,8 +330,8 @@ local({
   .Internal(inspect(inspect_vec))
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpanpVAT/file13a09a752af21c.bin (init: true, mode: persistent)
-#> @56ab44b932d0 13 INTSXP g0c0 [REF(1)] fmalloc_altrep type=integer length=4 bytes=16 data=0x71749a0023e8 mode=persistent runtime=open offset=9192 uuid=5a7bd9e6da0b0619e316edea31b14bc3 file=/tmp/RtmpanpVAT/file13a09a752af21c.bin
+#> fmalloc initialized with file: /tmp/Rtmpe2cTmG/file13b558167afc68.bin (init: true, mode: persistent)
+#> @5c848de6c8d8 13 INTSXP g0c0 [REF(1)] fmalloc_altrep type=integer length=4 bytes=16 data=0x7bb63f0023e8 mode=persistent runtime=open offset=9192 uuid=4555ce225129641e9687571595f56e8c file=/tmp/Rtmpe2cTmG/file13b558167afc68.bin
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 ```
@@ -323,7 +369,7 @@ local({
   )
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpanpVAT/file13a09a26153ce1.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/Rtmpe2cTmG/file13b55829beb873.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> $chars
@@ -368,10 +414,10 @@ local({
   )
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpanpVAT/file13a09a23f8aa0d.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/Rtmpe2cTmG/file13b55851c239de.bin (init: true, mode: persistent)
 #> Requested file size: 0.10 GB (107374182 bytes)
 #> Creating file with size: 107374182 bytes (0.10 GB)
-#> fmalloc initialized with file: /tmp/RtmpanpVAT/file13a09a2b16a8da.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/Rtmpe2cTmG/file13b55856f15a55.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> Cleaning up fmalloc...
@@ -441,13 +487,13 @@ local({
   output
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpanpVAT/file13a09a22b42e6.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/Rtmpe2cTmG/file13b5587a068c6.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
-#> Using existing file: /tmp/RtmpanpVAT/file13a09a22b42e6.bin (size: 33562624 bytes)
-#> fmalloc initialized with file: /tmp/RtmpanpVAT/file13a09a22b42e6.bin (init: false, mode: persistent)
-#> Using existing file: /tmp/RtmpanpVAT/file13a09a22b42e6.bin (size: 33562624 bytes)
-#> fmalloc initialized with file: /tmp/RtmpanpVAT/file13a09a22b42e6.bin (init: false, mode: persistent)
+#> Using existing file: /tmp/Rtmpe2cTmG/file13b5587a068c6.bin (size: 33562624 bytes)
+#> fmalloc initialized with file: /tmp/Rtmpe2cTmG/file13b5587a068c6.bin (init: false, mode: persistent)
+#> Using existing file: /tmp/Rtmpe2cTmG/file13b5587a068c6.bin (size: 33562624 bytes)
+#> fmalloc initialized with file: /tmp/Rtmpe2cTmG/file13b5587a068c6.bin (init: false, mode: persistent)
 #> $catalog
 #>   record_offset generation      type length
 #> 1          9440          2 character      3
@@ -477,7 +523,7 @@ local({
   scratch_copy
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpanpVAT/file13a09a655ef493.bin (init: true, mode: scratch)
+#> fmalloc initialized with file: /tmp/Rtmpe2cTmG/file13b5585b1670a0.bin (init: true, mode: scratch)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> [1] 1 2 3 4
@@ -530,7 +576,7 @@ local({
   )
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpanpVAT/file13a09aa1a9313.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/Rtmpe2cTmG/file13b5585bbe3480.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> $same_runtime_child
@@ -574,11 +620,11 @@ local({
   )
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpanpVAT/file13a09a663e555a.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/Rtmpe2cTmG/file13b5585144aff9.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
-#> Using existing file: /tmp/RtmpanpVAT/file13a09a663e555a.bin (size: 33562624 bytes)
-#> fmalloc initialized with file: /tmp/RtmpanpVAT/file13a09a663e555a.bin (init: false, mode: persistent)
+#> Using existing file: /tmp/Rtmpe2cTmG/file13b5585144aff9.bin (size: 33562624 bytes)
+#> fmalloc initialized with file: /tmp/Rtmpe2cTmG/file13b5585144aff9.bin (init: false, mode: persistent)
 #> $recovered_nested
 #> [1] 1 2
 #> 
@@ -613,9 +659,9 @@ local({
   list(cross_runtime_rejected = inherits(cross_runtime_error, "try-error"))
 })
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpanpVAT/file13a09a7f0512a6.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/Rtmpe2cTmG/file13b5581be04ecf.bin (init: true, mode: persistent)
 #> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpanpVAT/file13a09a578d85.bin (init: true, mode: persistent)
+#> fmalloc initialized with file: /tmp/Rtmpe2cTmG/file13b55873cac2a6.bin (init: true, mode: persistent)
 #> Cleaning up fmalloc...
 #> fmalloc cleaned up
 #> Cleaning up fmalloc...
@@ -648,7 +694,7 @@ perf_file <- tempfile(fileext = ".bin")
 rt <- open_fmalloc(perf_file, mode = "scratch", size_gb = 0.1)
 #> Requested file size: 0.10 GB (107374182 bytes)
 #> Creating file with size: 107374182 bytes (0.10 GB)
-#> fmalloc initialized with file: /tmp/RtmpanpVAT/file13a09afba904f.bin (init: true, mode: scratch)
+#> fmalloc initialized with file: /tmp/Rtmpe2cTmG/file13b558327ad8b0.bin (init: true, mode: scratch)
 
 n <- 100000L
 set.seed(1)
@@ -704,14 +750,14 @@ perf_result
 #> # A tibble: 8 × 5
 #>   expression               median `itr/sec` mem_alloc `gc/sec`
 #>   <bch:expr>             <bch:tm>     <dbl> <bch:byt>    <dbl>
-#> 1 base_sequential_sum     32.13µs    29871.        0B        0
-#> 2 fmalloc_sequential_sum  33.65µs    28125.        0B        0
-#> 3 base_scalar_read         32.1µs    29518.   24.55KB        0
-#> 4 fmalloc_scalar_read     61.59µs    16093.        0B        0
-#> 5 base_subset_copy         4.24µs   195001.    7.86KB        0
-#> 6 fmalloc_subset_copy      9.93µs    77875.        0B        0
-#> 7 base_indexed_write     109.01µs     8402.  390.67KB        0
-#> 8 fmalloc_indexed_write  194.85µs     5048.        0B        0
+#> 1 base_sequential_sum      33.6µs    27968.        0B        0
+#> 2 fmalloc_sequential_sum   33.6µs    28823.        0B        0
+#> 3 base_scalar_read         32.1µs    29019.   24.55KB        0
+#> 4 fmalloc_scalar_read      69.1µs    14281.        0B        0
+#> 5 base_subset_copy          4.2µs   206861.    7.86KB        0
+#> 6 fmalloc_subset_copy      10.1µs    78743.        0B        0
+#> 7 base_indexed_write      109.1µs     8503.  390.67KB        0
+#> 8 fmalloc_indexed_write   188.9µs     5102.        0B        0
 ```
 
 ## Native C API for Other Packages

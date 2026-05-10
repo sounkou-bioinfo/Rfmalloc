@@ -82,7 +82,7 @@ message("Testing explicit destroy for fmalloc vectors...")
 })()
 
 (function() {
-    message("  Test 4: Persistent unsafe destroy keeps metadata non-recoverable")
+    message("  Test 4: Persistent unsafe destroy invalidates only the targeted object")
     tmp <- tempfile(fileext = ".bin")
     on.exit({
         cleanup_fmalloc(rt)
@@ -90,15 +90,25 @@ message("Testing explicit destroy for fmalloc vectors...")
     }, add = TRUE)
 
     rt <- open_fmalloc(tmp, mode = "persistent")
-    x <- create_fmalloc_vector("character", 2, runtime = rt)
-    x[] <- c("alpha", "beta")
+    kept <- create_fmalloc_vector("integer", 3, runtime = rt)
+    destroyed <- create_fmalloc_vector("character", 2, runtime = rt)
 
-    blob <- serialize(x, NULL)
-    expect_true(destroy_fmalloc_vector(x, unsafe = TRUE))
+    kept[] <- c(100L, 200L, 300L)
+    destroyed[] <- c("alpha", "beta")
 
+    kept_blob <- serialize(kept, NULL)
+    destroyed_blob <- serialize(destroyed, NULL)
+
+    expect_true(destroy_fmalloc_vector(destroyed, unsafe = TRUE))
     state <- list_fmalloc_allocations(rt)
     expect_true(any(state$state == "tombstone"))
-    expect_error(unserialize(blob), "serialized fmalloc catalog record is not committed|tombstone")
+
+    # Destroyed object must fail to unserialize
+    expect_error(unserialize(destroyed_blob), "invalid Rfmalloc serialized reference")
+
+    # Undestroyed object remains recoverable
+    recovered_kept <- unserialize(kept_blob)
+    expect_equal(recovered_kept[], c(100L, 200L, 300L))
 
     message("  Persistent unsafe destroy test passed")
 })()
