@@ -10,11 +10,14 @@ knitr::opts_chunk$set(
   out.width = "100%"
 )
 has_bench <- requireNamespace("bench", quietly = TRUE)
-library(Rfmalloc)
 
 ```
 
 # Rfmalloc
+
+```{r}
+library(Rfmalloc)
+```
 
  <!-- badges: start -->
   [![R-CMD-check](https://github.com/sounkou-bioinfo/Rfmalloc/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/sounkou-bioinfo/Rfmalloc/actions/workflows/R-CMD-check.yaml)
