@@ -43,6 +43,8 @@ Implemented now:
   vectors;
 - fmalloc-backed coercion and subset-copy results for supported vector types;
 - nested list-container recovery by reference for persistent runtimes;
+- explicit `destroy_fmalloc_vector()` for immediate vector invalidation/cleanup
+  with parent-reference safety checks;
 - an in-file persistent allocation catalog used to validate serialized
   references;
 - an installed C header and `R_RegisterCCallable()` API for other packages.
@@ -146,6 +148,47 @@ local({
   big_int[1:5]
 })
 ```
+
+## Explicit destruction and parent safety
+
+`destroy_fmalloc_vector()` immediately releases native bookkeeping for one fmalloc
+ALTREP vector and returns a logical indicating whether a live vector was destroyed.
+The helper enforces parent-reference safety: a vector cannot be destroyed while it
+is still stored as a child of any fmalloc list. When needed, drop parent links
+first.
+
+```{r}
+
+local({
+  destroy_file <- tempfile(fileext = ".bin")
+  rt <- open_fmalloc(destroy_file, mode = "persistent")
+  on.exit({
+    cleanup_fmalloc(rt)
+    unlink(destroy_file)
+  }, add = TRUE)
+
+  child <- create_fmalloc_vector("integer", 2, runtime = rt)
+  child[] <- 1:2
+
+  parent <- create_fmalloc_vector("list", 1, runtime = rt)
+  parent[[1]] <- child
+
+  destroy_error <- try(destroy_fmalloc_vector(child), silent = TRUE)
+
+  parent[[1]] <- NULL
+  destroy_ok <- destroy_fmalloc_vector(child)
+
+  list(
+    destroy_rejected_with_parent = inherits(destroy_error, "try-error"),
+    destroy_succeeded_after_unset = destroy_ok
+  )
+})
+```
+
+In persistent mode, destroying with default semantics retains payload bytes so the
+recorded on-disk allocation remains recoverable by normal `serialize()` flows.
+Use `destroy_fmalloc_vector(x, unsafe = TRUE)` to reclaim persistent payload memory
+and mark the catalog entry as non-recoverable.
 
 ## Runtime Modes
 
