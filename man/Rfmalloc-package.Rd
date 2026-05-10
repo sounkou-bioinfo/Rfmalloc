@@ -53,9 +53,18 @@ cleanup.
 \section{Known Limitations}{
 
 \itemize{
-\item Basic ALTREP-backed dispatch now covers core \code{Ops}, \code{Summary}, and
-matrix \code{rowSums}/\code{colSums} workflows through S3 method dispatch; this
-includes common scalar arithmetic and row/column reduction patterns.
+\item ALTREP-backed dispatch now covers core \code{Ops}, \code{Summary}, \code{Math},
+\code{Math2}, and matrix \code{rowSums}/\code{colSums}/\code{rowMeans}/\code{colMeans}
+workflows through S3 methods for common vector/matrix usage.
+\item Explicit base-fallback boundaries are:
+  \itemize{
+    \item \code{rowSums()}, \code{colSums()}, \code{rowMeans()}, and
+          \code{colMeans()} fall back to base implementations (with a warning)
+          when the input is not an exact 2D matrix or when \code{dims != 1L}.
+    \item Scalar or zero-length outputs from \code{Summary}, \code{Math}, or
+          \code{Math2} (for example \code{sum(x)} returning a single value)
+          are ordinary R scalars by design.
+  }
 \item Full operator- and method-family coverage is still incomplete for all
 R generics. Some advanced families may still materialize ordinary R
 objects in a few edge cases.

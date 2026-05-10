@@ -77,10 +77,23 @@ Math2.fmalloc <- function(x, digits) {
     .fmalloc_math2_unary_kernel(x, .Primitive(.Generic), digits, runtime)
 }
 
+.fmalloc_warn_base_fallback <- function(op, reason) {
+    warning(sprintf("fmalloc: falling back to base %s() for %s; result may be an ordinary R object", op, reason),
+        call. = FALSE)
+}
+
+
 #' Matrix reduction helpers for fmalloc-backed matrices
 #'
 #' These S3 methods preserve current fmalloc behavior for matrix summary/reduction
 #' operations while returning ordinary R vectors for small results.
+#'
+#' @details
+#' These implementations keep managed execution for 2D `fmalloc` matrices with
+#' `dims = 1L`.  For unsupported shapes or `dims` values (for example,
+#' non-2D arrays or `dims != 1L`), the methods warn and delegate to the base R
+#' implementations (`base::rowSums`, `base::colSums`, `base::rowMeans`, and
+#' `base::colMeans`).
 #'
 #' @param x A matrix-like object.
 #' @param na.rm Logical scalar controlling NA removal.
@@ -101,6 +114,7 @@ rowSums <- function(x, na.rm = FALSE, dims = 1L) {
 
     x_stripped <- .fmalloc_strip_class(x)
     if (!is.matrix(x_stripped) || length(dim(x_stripped)) != 2L || length(dims) != 1L || as.integer(dims) != 1L) {
+        .fmalloc_warn_base_fallback("rowSums", "unsupported shape or dims argument")
         return(base::rowSums(x_stripped, na.rm = na.rm, dims = dims))
     }
     if (!is.numeric(x_stripped) && !is.logical(x_stripped) && !is.complex(x_stripped)) {
@@ -128,6 +142,7 @@ colSums <- function(x, na.rm = FALSE, dims = 1L) {
 
     x_stripped <- .fmalloc_strip_class(x)
     if (!is.matrix(x_stripped) || length(dim(x_stripped)) != 2L || length(dims) != 1L || as.integer(dims) != 1L) {
+        .fmalloc_warn_base_fallback("colSums", "unsupported shape or dims argument")
         return(base::colSums(x_stripped, na.rm = na.rm, dims = dims))
     }
     if (!is.numeric(x_stripped) && !is.logical(x_stripped) && !is.complex(x_stripped)) {
@@ -155,6 +170,7 @@ rowMeans <- function(x, na.rm = FALSE, dims = 1L) {
 
     x_stripped <- .fmalloc_strip_class(x)
     if (!is.matrix(x_stripped) || length(dim(x_stripped)) != 2L || length(dims) != 1L || as.integer(dims) != 1L) {
+        .fmalloc_warn_base_fallback("rowMeans", "unsupported shape or dims argument")
         return(base::rowMeans(x_stripped, na.rm = na.rm, dims = dims))
     }
     if (!is.numeric(x_stripped) && !is.logical(x_stripped) && !is.complex(x_stripped)) {
@@ -183,6 +199,7 @@ colMeans <- function(x, na.rm = FALSE, dims = 1L) {
 
     x_stripped <- .fmalloc_strip_class(x)
     if (!is.matrix(x_stripped) || length(dim(x_stripped)) != 2L || length(dims) != 1L || as.integer(dims) != 1L) {
+        .fmalloc_warn_base_fallback("colMeans", "unsupported shape or dims argument")
         return(base::colMeans(x_stripped, na.rm = na.rm, dims = dims))
     }
     if (!is.numeric(x_stripped) && !is.logical(x_stripped) && !is.complex(x_stripped)) {

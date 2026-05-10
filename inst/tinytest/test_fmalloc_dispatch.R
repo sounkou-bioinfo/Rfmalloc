@@ -135,6 +135,17 @@ assert_fmalloc_managed <- function(obj, runtime, class_contains = NULL, before_r
     expect_equal(unclass(rowMeans(m)), rowMeans(base))
     expect_equal(unclass(colMeans(m)), colMeans(base))
 
+    arr <- create_fmalloc_array("numeric", c(2L, 2L, 2L), runtime = rt)
+    arr[] <- 1:8
+    base_arr <- array(1:8, dim = c(2L, 2L, 2L))
+
+    fallback_row <- NULL
+    expect_warning(fallback_row <- rowSums(arr), "fmalloc: falling back to base rowSums")
+    fallback_col <- NULL
+    expect_warning(fallback_col <- colMeans(arr), "fmalloc: falling back to base colMeans")
+    expect_identical(fallback_row, rowSums(base_arr))
+    expect_identical(fallback_col, colMeans(base_arr))
+
     old_limit <- getOption("Rfmalloc.reduce_result_length")
     on.exit(options(Rfmalloc.reduce_result_length = old_limit), add = TRUE)
 

@@ -42,9 +42,19 @@
 #'
 #' @section Known Limitations:
 #' \itemize{
-#'   \item Basic ALTREP-backed dispatch now covers core `Ops`, `Summary`, and
-#'         matrix `rowSums`/`colSums` workflows through S3 method dispatch; this
-#'         includes common scalar arithmetic and row/column reduction patterns.
+#'   \item ALTREP-backed dispatch now covers core `Ops`, `Summary`, `Math`,
+#'         `Math2`, and matrix `rowSums`/`colSums`/`rowMeans`/`colMeans`
+#'         workflows through S3 methods for common vector/matrix usage.
+#'   \item Explicit base-fallback boundaries are:
+#'         \itemize{
+#'           \item `rowSums()`, `colSums()`, `rowMeans()`, and `colMeans()` when
+#'                 the input is not an exact 2D matrix or `dims != 1L`; these
+#'                 cases now emit a warning and call the corresponding
+#'                 `base::` reducer.
+#'           \item Scalar or zero-length results from `Summary`, `Math`, and
+#'                 `Math2` generics (for example `sum(x)` returning a single
+#'                 value) are returned as ordinary R scalars by design.
+#'         }
 #'   \item Full operator- and method-family coverage is still incomplete for all
 #'         R generics. Some advanced families may still materialize ordinary R
 #'         objects in a few edge cases.
