@@ -1,11 +1,13 @@
 <urlset xmlns = 'http://www.sitemaps.org/schemas/sitemap/0.9'>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/404.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/AGENTS.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/authors.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/index.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/news/index.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/reference/Rfmalloc-package.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/reference/cleanup_fmalloc.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/reference/create_fmalloc_vector.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/reference/destroy_fmalloc_vector.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/reference/index.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/reference/init_fmalloc.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/reference/list_fmalloc_allocations.html</loc></url>

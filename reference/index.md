@@ -9,6 +9,8 @@
   : Clean Up fmalloc
 - [`create_fmalloc_vector()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/create_fmalloc_vector.md)
   : Create Vector Using fmalloc
+- [`destroy_fmalloc_vector()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/destroy_fmalloc_vector.md)
+  : Explicitly destroy a fmalloc vector
 - [`init_fmalloc()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/init_fmalloc.md)
   : Initialize fmalloc
 - [`list_fmalloc_allocations()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/list_fmalloc_allocations.md)
