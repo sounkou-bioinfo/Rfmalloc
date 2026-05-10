@@ -42,12 +42,14 @@ Implemented now:
 - persistent serialization and reopening for fixed-width atomic and character
   vectors;
 - fmalloc-backed coercion and subset-copy results for supported vector types;
+- nested list-container recovery by reference for persistent runtimes;
 - an in-file persistent allocation catalog used to validate serialized
   references;
 - an installed C header and `R_RegisterCCallable()` API for other packages.
 
-Still experimental: view-based subsets, richer catalog maintenance tooling,
-list-container recovery by reference, and mapped-file recovery diagnostics.
+Still experimental: view-based subsets (currently copy-only; true views would
+form an additional semantic layer), richer catalog maintenance tooling, and
+mapped-file recovery diagnostics.
 
 ## Installation
 
