@@ -15,10 +15,6 @@ has_bench <- requireNamespace("bench", quietly = TRUE)
 
 # Rfmalloc
 
-```{r}
-library(Rfmalloc)
-```
-
  <!-- badges: start -->
   [![R-CMD-check](https://github.com/sounkou-bioinfo/Rfmalloc/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/sounkou-bioinfo/Rfmalloc/actions/workflows/R-CMD-check.yaml)
   <!-- badges: end -->
@@ -70,6 +66,7 @@ it as the package default runtime. Calls to `create_fmalloc_vector()` can then
 omit the `runtime` argument:
 
 ```{r}
+library(Rfmalloc)
 local({
   alloc_file <- tempfile(fileext = ".bin")
   init_fmalloc(alloc_file)
