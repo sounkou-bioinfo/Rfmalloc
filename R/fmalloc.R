@@ -2,6 +2,37 @@
 .fmalloc_state <- new.env(parent = emptyenv())
 .fmalloc_state$default_runtime <- NULL
 
+.fmalloc_get_runtime <- function(runtime = NULL) {
+    if (is.null(runtime)) {
+        runtime <- .fmalloc_state$default_runtime
+    }
+    if (is.null(runtime)) {
+        stop("fmalloc not initialized. Call init_fmalloc() first or pass a runtime from open_fmalloc().")
+    }
+    runtime
+}
+
+.fmalloc_validate_non_negative_integer <- function(value, arg_name) {
+    if (!is.numeric(value) || length(value) != 1 || !is.finite(value) || is.na(value) ||
+        value < 0 || value != floor(value)) {
+        stop(sprintf("%s must be a positive integer or zero", arg_name))
+    }
+    as.integer(value)
+}
+
+.fmalloc_validate_dimensions <- function(dimensions, arg_name) {
+    if (!is.numeric(dimensions) || length(dimensions) < 1) {
+        stop(sprintf("%s must be a non-empty integer vector", arg_name))
+    }
+
+    dims <- as.numeric(dimensions)
+    if (any(!is.finite(dims)) || any(is.na(dims)) || any(dims < 0) || any(dims != floor(dims))) {
+        stop(sprintf("%s must be a non-negative integer vector", arg_name))
+    }
+
+    as.integer(dims)
+}
+
 #' Open an fmalloc Runtime
 #'
 #' Opens a file-backed fmalloc runtime and returns an external-pointer handle.
@@ -88,7 +119,7 @@ init_fmalloc <- function(filepath, size_gb = NULL, mode = c("persistent", "scrat
 #'   a direct writable fmalloc `DATAPTR`; character vectors store string bytes in
 #'   fmalloc and materialize R `CHARSXP` values on demand; list vectors use
 #'   ALTREP element access with an R-visible reference sidecar for GC safety and
-#'   only accept `NULL` or Rfmalloc-backed vectors from the same runtime as
+#'   only accept `NULL` or fmalloc-backed vectors from the same runtime as
 #'   elements. Persistent list containers are serialized by nested reference
 #'   states when all elements are recoverable from the same runtime.
 #' @param length Integer specifying the non-negative length of the vector to
@@ -135,14 +166,266 @@ create_fmalloc_vector <- function(type = "integer", length, runtime = NULL) {
         stop("Unsupported vector type: ", type)
     )
 
-    if (is.null(runtime)) {
-        runtime <- .fmalloc_state$default_runtime
-    }
-    if (is.null(runtime)) {
-        stop("fmalloc not initialized. Call init_fmalloc() first or pass a runtime from open_fmalloc().")
-    }
+    runtime <- .fmalloc_get_runtime(runtime)
 
     .Call("create_fmalloc_vector_impl", runtime, template, as.integer(length))
+}
+
+#' Create Matrix Using fmalloc
+#'
+#' Creates an fmalloc-backed ALTREP matrix in a single step by allocating vector
+#' storage and installing matrix dimensions (and optional dimnames).
+#'
+#' @param type Character string specifying the vector type. Supported values are
+#'   the same as for [create_fmalloc_vector()].
+#' @param nrow Integer number of rows.
+#' @param ncol Integer number of columns.
+#' @param dimnames Optional `dimnames` list for the matrix.
+#' @param runtime Optional runtime handle returned by [open_fmalloc()]. If not
+#'   supplied, the default runtime established by [init_fmalloc()] is used.
+#'
+#' @return An fmalloc-backed ALTREP matrix object.
+#'
+#' @examples
+#' \dontrun{
+#' rt <- open_fmalloc(tempfile(fileext = ".bin"))
+#' m <- create_fmalloc_matrix("integer", nrow = 2, ncol = 3, runtime = rt)
+#' cleanup_fmalloc(rt)
+#' }
+#'
+#' @export
+create_fmalloc_matrix <- function(type = "integer", nrow, ncol,
+                                 dimnames = NULL, runtime = NULL) {
+    if (missing(nrow) || missing(ncol)) {
+        stop("nrow and ncol are required")
+    }
+
+    nrow <- .fmalloc_validate_non_negative_integer(nrow, "nrow")
+    ncol <- .fmalloc_validate_non_negative_integer(ncol, "ncol")
+
+    total <- as.double(nrow) * as.double(ncol)
+    if (!is.finite(total) || total > .Machine$integer.max) {
+        stop("length is too large for the current fmalloc vector interface")
+    }
+
+    ans <- create_fmalloc_vector(type = type, length = as.integer(total), runtime = runtime)
+    dim(ans) <- c(nrow, ncol)
+    if (!is.null(dimnames)) {
+        dimnames(ans) <- dimnames
+    }
+    ans
+}
+
+#' Create Array Using fmalloc
+#'
+#' Creates an fmalloc-backed ALTREP array in a single step by allocating vector
+#' storage and installing array dimensions (and optional dimnames).
+#'
+#' @param type Character string specifying the vector type. Supported values are
+#'   the same as for [create_fmalloc_vector()].
+#' @param dim Integer dimension vector.
+#' @param dimnames Optional `dimnames` for the array.
+#' @param runtime Optional runtime handle returned by [open_fmalloc()]. If not
+#'   supplied, the default runtime established by [init_fmalloc()] is used.
+#'
+#' @return An fmalloc-backed ALTREP array.
+#'
+#' @examples
+#' \dontrun{
+#' rt <- open_fmalloc(tempfile(fileext = ".bin"))
+#' a <- create_fmalloc_array("numeric", dim = c(2L, 3L), runtime = rt)
+#' cleanup_fmalloc(rt)
+#' }
+#'
+#' @export
+create_fmalloc_array <- function(type = "integer", dim, dimnames = NULL, runtime = NULL) {
+    dims <- .fmalloc_validate_dimensions(dim, "dim")
+    total <- as.double(prod(dims))
+    if (!is.finite(total) || total > .Machine$integer.max) {
+        stop("length is too large for the current fmalloc vector interface")
+    }
+
+    ans <- create_fmalloc_vector(type = type, length = as.integer(total), runtime = runtime)
+    dim(ans) <- dims
+    if (!is.null(dimnames)) {
+        dimnames(ans) <- dimnames
+    }
+    ans
+}
+
+#' Construct data.frame from fmalloc columns
+#'
+#' Thin constructor wrapper around [data.frame()] that keeps fmalloc vectors as
+#' column payloads.
+#'
+#' @param ... Columns to include in the frame.
+#' @param row.names Optional row names for the frame.
+#' @param check.names Whether to enforce syntactic column names.
+#' @param stringsAsFactors Deprecated: retained for compatibility.
+#'
+#' @return A `data.frame` with the provided columns.
+#'
+#' @examples
+#' \dontrun{
+#' rt <- open_fmalloc(tempfile(fileext = ".bin"))
+#' x <- create_fmalloc_vector("integer", 3, runtime = rt)
+#' y <- create_fmalloc_vector("character", 3, runtime = rt)
+#' x[] <- 1:3
+#' y[] <- c("a", "b", "c")
+#' df <- create_fmalloc_data_frame(x = x, y = y)
+#' cleanup_fmalloc(rt)
+#' }
+#'
+#' @export
+create_fmalloc_data_frame <- function(..., row.names = NULL,
+                                     check.names = TRUE,
+                                     stringsAsFactors = FALSE) {
+    data.frame(
+        ..., row.names = row.names, check.names = check.names,
+        stringsAsFactors = stringsAsFactors
+    )
+}
+
+.fmalloc_set_dim_attrs <- function(x, dim, dimnames) {
+    .Call("fmalloc_set_dims_in_place_impl", x, dim, dimnames)
+}
+
+#' Convert a vector to fmalloc matrix metadata
+#'
+#' Returns an existing vector re-typed as a matrix by installing matrix
+#' dimensions (and optional dimnames) as metadata.
+#'
+#' @param x A vector.
+#' @param nrow Optional target row count.
+#' @param ncol Optional target column count.
+#' @param dimnames Optional `dimnames` for the resulting matrix.
+#' @param copy If TRUE (default), allocate a new fmalloc-backed matrix object.
+#'   If FALSE, install metadata in place on the same fmalloc ALTREP payload
+#'   without allocation (this also updates any aliases of `x`).
+#'
+#' @return A matrix object, backed by the same payload when `copy = FALSE`.
+#'
+#' @export
+as_fmalloc_matrix <- function(x, nrow = NULL, ncol = NULL, dimnames = NULL, copy = TRUE) {
+    vec_len <- as.integer(length(x))
+
+    if (missing(nrow) && missing(ncol)) {
+        nrow <- vec_len
+        ncol <- 1L
+    }
+
+    if (!is.null(nrow)) {
+        nrow <- .fmalloc_validate_non_negative_integer(nrow, "nrow")
+    }
+    if (!is.null(ncol)) {
+        ncol <- .fmalloc_validate_non_negative_integer(ncol, "ncol")
+    }
+
+    if (is.null(nrow) && is.null(ncol)) {
+        nrow <- vec_len
+        ncol <- 1L
+    } else if (is.null(nrow)) {
+        if (ncol == 0L) {
+            if (vec_len != 0L) {
+                stop("length of x is not compatible with ncol")
+            }
+            nrow <- 0L
+        } else {
+            if (vec_len %% ncol != 0L) {
+                stop("length of x is not a multiple of ncol")
+            }
+            nrow <- as.integer(vec_len / ncol)
+        }
+    } else if (is.null(ncol)) {
+        if (nrow == 0L) {
+            if (vec_len != 0L) {
+                stop("length of x is not compatible with nrow")
+            }
+            ncol <- 0L
+        } else {
+            if (vec_len %% nrow != 0L) {
+                stop("length of x is not a multiple of nrow")
+            }
+            ncol <- as.integer(vec_len / nrow)
+        }
+    } else {
+        if (as.double(nrow) * as.double(ncol) != as.double(vec_len)) {
+            stop("nrow and ncol do not match length of x")
+        }
+    }
+
+    dims <- c(nrow, ncol)
+    if (copy) {
+        dim(x) <- dims
+        if (!is.null(dimnames)) {
+            dimnames(x) <- dimnames
+        }
+        return(x)
+    }
+
+    .fmalloc_set_dim_attrs(x, dims, dimnames)
+    x
+}
+
+#' Convert a vector to fmalloc array metadata
+#'
+#' Returns an existing vector re-typed as an array by installing array
+#' dimensions (and optional dimnames) as metadata.
+#'
+#' @param x A vector.
+#' @param dim Target dimension vector.
+#' @param dimnames Optional `dimnames` for the resulting array.
+#' @param copy If TRUE (default), allocate a new fmalloc-backed array object.
+#'   If FALSE, install metadata in place on the same fmalloc ALTREP payload
+#'   without allocation (this also updates any aliases of `x`).
+#'
+#' @return An array object, backed by the same payload when `copy = FALSE`.
+#'
+#' @export
+as_fmalloc_array <- function(x, dim = NULL, dimnames = NULL, copy = TRUE) {
+    vec_len <- as.integer(length(x))
+
+    if (is.null(dim)) {
+        dim <- as.integer(vec_len)
+    } else {
+        dim <- .fmalloc_validate_dimensions(dim, "dim")
+        total <- as.double(prod(dim))
+        if (total != as.double(vec_len)) {
+            stop("dim does not match the length of x")
+        }
+    }
+
+    if (copy) {
+        dim(x) <- dim
+        if (!is.null(dimnames)) {
+            dimnames(x) <- dimnames
+        }
+        return(x)
+    }
+
+    .fmalloc_set_dim_attrs(x, dim, dimnames)
+    x
+}
+
+#' Convert to data.frame for fmalloc vectors
+#'
+#' Thin convenience wrapper around [data.frame()].
+#'
+#' @param ... Columns or objects to include in the frame.
+#' @param row.names Optional row names for the frame.
+#' @param check.names Whether to enforce syntactic column names.
+#' @param stringsAsFactors Deprecated: retained for compatibility.
+#'
+#' @return A `data.frame` containing the supplied columns.
+#'
+#' @export
+as_fmalloc_data_frame <- function(..., row.names = NULL,
+                                  check.names = TRUE,
+                                  stringsAsFactors = FALSE) {
+    data.frame(
+        ..., row.names = row.names, check.names = check.names,
+        stringsAsFactors = stringsAsFactors
+    )
 }
 
 #' List Persistent fmalloc Allocations
@@ -169,12 +452,7 @@ create_fmalloc_vector <- function(type = "integer", length, runtime = NULL) {
 #'
 #' @export
 list_fmalloc_allocations <- function(runtime = NULL) {
-    if (is.null(runtime)) {
-        runtime <- .fmalloc_state$default_runtime
-    }
-    if (is.null(runtime)) {
-        stop("fmalloc not initialized. Call init_fmalloc() first or pass a runtime from open_fmalloc().")
-    }
+    runtime <- .fmalloc_get_runtime(runtime)
 
     .Call("list_fmalloc_allocations_impl", runtime)
 }

@@ -1,5 +1,5 @@
 Package: Rfmalloc
-Title: File-Backed ALTREP Vectors for R
+Title: Persistent ALTREP Vectors
 Version: 0.1.0
 Authors@R: c(
     person(given = "Sounkou Mahamane", family = "Toure", email = "sounkoutoure@gmail.com", role = c("aut", "cre")),

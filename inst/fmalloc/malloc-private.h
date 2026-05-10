@@ -85,8 +85,10 @@ struct malloc_state {
   that may be needed to place segment records and fenceposts when new
   noncontiguous segments are added.
 */
-#define TOP_FOOT_SIZE\
-  (align_offset(chunk2mem(0))+pad_request(sizeof(struct malloc_segment))+MIN_CHUNK_SIZE)
+#define CHUNK2MEM_OFFSET0 \
+  (((TWO_SIZE_T_SIZES % MALLOC_ALIGNMENT) == 0) ? 0 : (MALLOC_ALIGNMENT - (TWO_SIZE_T_SIZES % MALLOC_ALIGNMENT)))
+#define TOP_FOOT_SIZE \
+  (CHUNK2MEM_OFFSET0 + pad_request(sizeof(struct malloc_segment)) + MIN_CHUNK_SIZE)
 
 /* ------------------- Chunks sizes and alignments ----------------------- */
 

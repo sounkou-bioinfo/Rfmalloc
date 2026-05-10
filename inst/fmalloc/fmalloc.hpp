@@ -91,7 +91,7 @@ struct fm_super {
 	uint64_t total_size;
 	uint64_t chunk_size;
 	uint64_t num_chunk;
-	uint8_t bm[0]; /* this must be at the end */
+	__extension__ uint8_t bm[0]; /* this must be at the end */
 
 	void set_total_size(uint64_t size)
 	{

@@ -10,6 +10,12 @@
 #'   \item{\code{\link{open_fmalloc}}}{Open an explicit fmalloc runtime handle.}
 #'   \item{\code{\link{init_fmalloc}}}{Open and install a default fmalloc runtime.}
 #'   \item{\code{\link{create_fmalloc_vector}}}{Create vectors using fmalloc.}
+#'   \item{\code{\link{create_fmalloc_matrix}}}{Create matrix-shaped fmalloc vectors.}
+#'   \item{\code{\link{create_fmalloc_array}}}{Create array-shaped fmalloc vectors.}
+#'   \item{\code{\link{create_fmalloc_data_frame}}}{Create data.frames from fmalloc-backed columns.}
+#'   \item{\code{\link{as_fmalloc_matrix}}}{Convert fmalloc vectors to matrix-shaped objects.}
+#'   \item{\code{\link{as_fmalloc_array}}}{Convert fmalloc vectors to array-shaped objects.}
+#'   \item{\code{\link{as_fmalloc_data_frame}}}{Convert fmalloc-backed objects to a data.frame.}
 #'   \item{\code{\link{cleanup_fmalloc}}}{Request cleanup of an fmalloc runtime.}
 #' }
 #'

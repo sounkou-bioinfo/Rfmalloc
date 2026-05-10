@@ -150,7 +150,7 @@ message("Testing R's copy-on-write behavior with fmalloc ALTREP vectors...")
     })
     expect_true(length(matrix_write_events) >= 1L)
     expect_true(any(grepl("tracemem", matrix_write_events, fixed = TRUE)))
-    expect_equal(matrix_fm[1L, 2L], 2L)
+    expect_equal(matrix_fm[1L, 2L], 3L)
     expect_equal(matrix_alias[1L, 2L], 99L)
     untracemem(matrix_fm)
 

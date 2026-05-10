@@ -96,6 +96,43 @@ SEXP list_fmalloc_allocations_impl(SEXP runtime_xptr)
     return make_catalog_data_frame(records);
 }
 
+SEXP fmalloc_set_dims_in_place_impl(SEXP vector_x, SEXP dim_sexp, SEXP dimnames_sexp)
+{
+    if (!ALTREP(vector_x)) {
+        Rf_error("x must be an ALTREP object");
+        return R_NilValue;
+    }
+
+    if (dimnames_sexp != R_NilValue && TYPEOF(dimnames_sexp) != VECSXP) {
+        Rf_error("dimnames must be a list or NULL");
+        return R_NilValue;
+    }
+
+    SEXP vector_xptr = R_altrep_data1(vector_x);
+    if (TYPEOF(vector_xptr) != EXTPTRSXP || R_ExternalPtrTag(vector_xptr) != fmalloc_vector_tag) {
+        Rf_error("x is not an fmalloc ALTREP vector");
+        return R_NilValue;
+    }
+
+    fm_vector *vec = static_cast<fm_vector *>(R_ExternalPtrAddr(vector_xptr));
+    if (!vec || !vec->runtime) {
+        Rf_error("x is a closed fmalloc vector");
+        return R_NilValue;
+    }
+
+    if (TYPEOF(dim_sexp) != INTSXP || LENGTH(dim_sexp) == 0) {
+        Rf_error("dim must be a non-empty integer vector");
+        return R_NilValue;
+    }
+
+    Rf_setAttrib(vector_x, R_DimSymbol, dim_sexp);
+    if (dimnames_sexp != R_NilValue) {
+        Rf_setAttrib(vector_x, R_DimNamesSymbol, dimnames_sexp);
+    }
+
+    return vector_x;
+}
+
 SEXP destroy_fmalloc_vector_impl(SEXP vector_x, SEXP unsafe_sexp)
 {
     if (!ALTREP(vector_x)) {
@@ -245,6 +282,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"init_fmalloc_impl", (DL_FUNC)&init_fmalloc_impl, 3},
     {"create_fmalloc_vector_impl", (DL_FUNC)&create_fmalloc_vector_impl, 3},
     {"list_fmalloc_allocations_impl", (DL_FUNC)&list_fmalloc_allocations_impl, 1},
+    {"fmalloc_set_dims_in_place_impl", (DL_FUNC)&fmalloc_set_dims_in_place_impl, 3},
     {"destroy_fmalloc_vector_impl", (DL_FUNC)&destroy_fmalloc_vector_impl, 2},
     {"cleanup_fmalloc_impl", (DL_FUNC)&cleanup_fmalloc_impl, 1},
     {nullptr, nullptr, 0}
