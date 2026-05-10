@@ -131,6 +131,54 @@ message("Testing R's copy-on-write behavior with fmalloc ALTREP vectors...")
     expect_equal(copy3[4], 4L)
     message("  Deep COW test passed")
 
+    message("Test 8: COW with matrix and data.frame wrappers")
+    matrix_fm <- create_fmalloc_vector("integer", 6)
+    matrix_fm[] <- 1:6
+    dim(matrix_fm) <- c(2L, 3L)
+    dimnames(matrix_fm) <- list(c("r1", "r2"), c("c1", "c2", "c3"))
+
+    tracemem(matrix_fm)
+    matrix_read_events <- capture.output({
+        matrix_alias <- matrix_fm
+        invisible(matrix_alias[1L, 1L])
+    })
+    expect_equal(length(matrix_read_events), 0L)
+
+    matrix_alias <- matrix_fm
+    matrix_write_events <- capture.output({
+        matrix_alias[1L, 2L] <- 99L
+    })
+    expect_true(length(matrix_write_events) >= 1L)
+    expect_true(any(grepl("tracemem", matrix_write_events, fixed = TRUE)))
+    expect_equal(matrix_fm[1L, 2L], 2L)
+    expect_equal(matrix_alias[1L, 2L], 99L)
+    untracemem(matrix_fm)
+
+    df_a <- create_fmalloc_vector("integer", 3)
+    df_b <- create_fmalloc_vector("integer", 3)
+    df_a[] <- c(1L, 2L, 3L)
+    df_b[] <- c(4L, 5L, 6L)
+
+    df_fm <- data.frame(a = df_a, b = df_b, stringsAsFactors = FALSE)
+
+    tracemem(df_fm)
+    df_read_events <- capture.output({
+        df_alias <- df_fm
+        invisible(df_alias$a[1L])
+    })
+    expect_equal(length(df_read_events), 0L)
+
+    df_alias <- df_fm
+    df_write_events <- capture.output({
+        df_alias$a[1L] <- 99L
+    })
+    expect_true(any(grepl("tracemem", df_write_events, fixed = TRUE)))
+    expect_equal(df_fm$a[], c(1L, 2L, 3L))
+    expect_equal(df_alias$a[], c(99L, 2L, 3L))
+    untracemem(df_fm)
+
+    message("  Matrix/data.frame COW test passed")
+
     cleanup_fmalloc()
 })()
 
