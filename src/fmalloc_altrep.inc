@@ -9,13 +9,19 @@ static R_xlen_t fmalloc_altrep_length(SEXP x)
 
 static void *fmalloc_altrep_dataptr(SEXP x, Rboolean writeable)
 {
-    (void)writeable;
-    return vector_data_or_dummy(vector_from_altrep(x));
+    fm_vector *vec = vector_from_altrep(x);
+    vec->dataptr_exposed = true;
+    if (writeable == TRUE) {
+        vec->maybe_dirty = true;
+    }
+    return vector_data_or_dummy(vec);
 }
 
 static const void *fmalloc_altrep_dataptr_or_null(SEXP x)
 {
-    return vector_data_or_dummy(vector_from_altrep(x));
+    fm_vector *vec = vector_from_altrep(x);
+    vec->dataptr_exposed = true;
+    return vector_data_or_dummy(vec);
 }
 
 static Rboolean fmalloc_altrep_inspect(SEXP x, int pre, int deep, int pvec,
@@ -78,6 +84,46 @@ static SEXP fmalloc_altrep_duplicate(SEXP x, Rboolean deep)
     return ans;
 }
 
+static SEXP scalar_u64_hex(uint64_t value)
+{
+    char buf[17];
+    std::snprintf(buf, sizeof(buf), "%016llx", (unsigned long long)value);
+    return Rf_mkString(buf);
+}
+
+static bool parse_u64_state_hex_or_real(SEXP value_sexp, uint64_t *out)
+{
+    if (TYPEOF(value_sexp) == STRSXP && LENGTH(value_sexp) == 1) {
+        const char *value_text = CHAR(STRING_ELT(value_sexp, 0));
+        if (!value_text || std::strlen(value_text) != 16) {
+            return false;
+        }
+        char *end = nullptr;
+        unsigned long long parsed = std::strtoull(value_text, &end, 16);
+        if (!end || *end != '\0') {
+            return false;
+        }
+        *out = (uint64_t)parsed;
+        return true;
+    }
+
+    if (TYPEOF(value_sexp) == REALSXP && LENGTH(value_sexp) == 1) {
+        double value = REAL(value_sexp)[0];
+        if (!std::isfinite(value) || value < 0 ||
+            value > (double)std::numeric_limits<uint64_t>::max()) {
+            return false;
+        }
+        uint64_t parsed = static_cast<uint64_t>(value);
+        if ((double)parsed != value) {
+            return false;
+        }
+        *out = parsed;
+        return true;
+    }
+
+    return false;
+}
+
 static SEXP make_persistent_ref_state(fm_vector *vec)
 {
     uint64_t payload_offset = pointer_offset(vec->runtime, vec->data);
@@ -106,11 +152,11 @@ static SEXP make_persistent_ref_state(fm_vector *vec)
     SET_VECTOR_ELT(state, 2, Rf_mkString(uuid.c_str()));
     SET_VECTOR_ELT(state, 3, Rf_ScalarInteger((int)vec->type));
     SET_VECTOR_ELT(state, 4, Rf_ScalarReal((double)vec->len));
-    SET_VECTOR_ELT(state, 5, Rf_ScalarReal((double)payload_offset));
-    SET_VECTOR_ELT(state, 6, Rf_ScalarReal((double)vec->bytes));
+    SET_VECTOR_ELT(state, 5, scalar_u64_hex(payload_offset));
+    SET_VECTOR_ELT(state, 6, scalar_u64_hex(static_cast<uint64_t>(vec->bytes)));
     SET_VECTOR_ELT(state, 7, Rf_ScalarInteger(2));
-    SET_VECTOR_ELT(state, 8, Rf_ScalarReal((double)vec->catalog_offset));
-    SET_VECTOR_ELT(state, 9, Rf_ScalarReal((double)vec->generation));
+    SET_VECTOR_ELT(state, 8, scalar_u64_hex(vec->catalog_offset));
+    SET_VECTOR_ELT(state, 9, scalar_u64_hex(vec->generation));
 
     UNPROTECT(2);
     return state;
@@ -332,10 +378,10 @@ static SEXP fmalloc_altrep_unserialize_with_runtime(SEXP cls, SEXP state, fm_run
             TYPEOF(uuid_sexp) != STRSXP || LENGTH(uuid_sexp) != 1 ||
             TYPEOF(type_sexp) != INTSXP || LENGTH(type_sexp) != 1 ||
             TYPEOF(length_sexp) != REALSXP || LENGTH(length_sexp) != 1 ||
-            TYPEOF(offset_sexp) != REALSXP || LENGTH(offset_sexp) != 1 ||
-            TYPEOF(nbytes_sexp) != REALSXP || LENGTH(nbytes_sexp) != 1 ||
-            TYPEOF(catalog_offset_sexp) != REALSXP || LENGTH(catalog_offset_sexp) != 1 ||
-            TYPEOF(generation_sexp) != REALSXP || LENGTH(generation_sexp) != 1) {
+            (TYPEOF(offset_sexp) != REALSXP && TYPEOF(offset_sexp) != STRSXP) || LENGTH(offset_sexp) != 1 ||
+            (TYPEOF(nbytes_sexp) != REALSXP && TYPEOF(nbytes_sexp) != STRSXP) || LENGTH(nbytes_sexp) != 1 ||
+            (TYPEOF(catalog_offset_sexp) != REALSXP && TYPEOF(catalog_offset_sexp) != STRSXP) || LENGTH(catalog_offset_sexp) != 1 ||
+            (TYPEOF(generation_sexp) != REALSXP && TYPEOF(generation_sexp) != STRSXP) || LENGTH(generation_sexp) != 1) {
             Rf_error("invalid Rfmalloc serialized reference");
             return R_NilValue;
         }
@@ -349,31 +395,27 @@ static SEXP fmalloc_altrep_unserialize_with_runtime(SEXP cls, SEXP state, fm_run
 
         SEXPTYPE type = (SEXPTYPE)INTEGER(type_sexp)[0];
         double length_value = REAL(length_sexp)[0];
-        double offset_value = REAL(offset_sexp)[0];
-        double nbytes_value = REAL(nbytes_sexp)[0];
-        double catalog_offset_value = REAL(catalog_offset_sexp)[0];
-        double generation_value = REAL(generation_sexp)[0];
+        uint64_t offset = 0;
+        uint64_t nbytes_value = 0;
+        uint64_t catalog_offset = 0;
+        uint64_t generation = 0;
+
         if (!std::isfinite(length_value) || length_value < 0 ||
             length_value > (double)std::numeric_limits<R_xlen_t>::max() ||
-            !std::isfinite(offset_value) || offset_value < 0 ||
-            offset_value > (double)std::numeric_limits<uint64_t>::max() ||
-            !std::isfinite(nbytes_value) || nbytes_value < 0 ||
-            nbytes_value > (double)std::numeric_limits<size_t>::max() ||
-            !std::isfinite(catalog_offset_value) || catalog_offset_value <= 0 ||
-            catalog_offset_value > (double)std::numeric_limits<uint64_t>::max() ||
-            !std::isfinite(generation_value) || generation_value <= 0 ||
-            generation_value > (double)std::numeric_limits<uint64_t>::max()) {
+            !parse_u64_state_hex_or_real(offset_sexp, &offset) ||
+            !parse_u64_state_hex_or_real(nbytes_sexp, &nbytes_value) ||
+            !parse_u64_state_hex_or_real(catalog_offset_sexp, &catalog_offset) ||
+            !parse_u64_state_hex_or_real(generation_sexp, &generation) ||
+            nbytes_value > (uint64_t)std::numeric_limits<size_t>::max() ||
+            catalog_offset == 0 ||
+            generation == 0) {
             Rf_error("invalid Rfmalloc serialized reference dimensions");
             return R_NilValue;
         }
+
         R_xlen_t length = (R_xlen_t)length_value;
-        uint64_t offset = (uint64_t)offset_value;
-        size_t nbytes = (size_t)nbytes_value;
-        uint64_t catalog_offset = (uint64_t)catalog_offset_value;
-        uint64_t generation = (uint64_t)generation_value;
-        if ((double)length != length_value || (double)offset != offset_value ||
-            (double)nbytes != nbytes_value || (double)catalog_offset != catalog_offset_value ||
-            (double)generation != generation_value || !is_supported_vector_type(type) ||
+        size_t nbytes = static_cast<size_t>(nbytes_value);
+        if ((double)length != length_value || !is_supported_vector_type(type) ||
             is_pointer_vector_type(type) || nbytes != payload_size_bytes(type, length)) {
             Rf_error("invalid Rfmalloc serialized reference metadata");
             return R_NilValue;
@@ -482,7 +524,11 @@ static bool subset_index_to_offset(SEXP indx, R_xlen_t i, R_xlen_t source_length
             value > (double)std::numeric_limits<R_xlen_t>::max()) {
             return false;
         }
-        R_xlen_t offset = (R_xlen_t)(value - 1);
+        double truncated = std::floor(value);
+        if (truncated != value) {
+            return false;
+        }
+        R_xlen_t offset = (R_xlen_t)(truncated - 1.0);
         if (offset >= 0 && offset < source_length) {
             *source_i = offset;
             return true;
@@ -491,6 +537,21 @@ static bool subset_index_to_offset(SEXP indx, R_xlen_t i, R_xlen_t source_length
     }
 
     return false;
+}
+
+static bool subset_index_fast_compatible(SEXP indx)
+{
+    if (TYPEOF(indx) != INTSXP) {
+        return false;
+    }
+
+    for (R_xlen_t i = 0; i < XLENGTH(indx); i++) {
+        int value = INTEGER(indx)[i];
+        if (value == NA_INTEGER || value <= 0) {
+            return false;
+        }
+    }
+    return true;
 }
 
 static void set_subset_na_element(fm_vector *vec, R_xlen_t i)
@@ -567,6 +628,10 @@ static SEXP fmalloc_altvec_extract_subset(SEXP x, SEXP indx, SEXP call)
 {
     (void)call;
     if (TYPEOF(indx) != INTSXP && TYPEOF(indx) != REALSXP) {
+        return nullptr;
+    }
+
+    if (TYPEOF(indx) == REALSXP || !subset_index_fast_compatible(indx)) {
         return nullptr;
     }
 

@@ -13,6 +13,8 @@
 #include <random>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
+#include <filesystem>
 #include <vector>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -57,10 +59,13 @@ struct fm_vector {
     uint64_t generation;
     SEXP refs;
     size_t parent_refs;
+    bool dataptr_exposed;
+    bool maybe_dirty;
 
     fm_vector(fm_runtime *_runtime, SEXPTYPE _type, R_xlen_t _length, void *_data, size_t _bytes)
         : runtime(_runtime), type(_type), len(_length), data(_data), bytes(_bytes),
-          catalog_offset(0), generation(0), refs(R_NilValue), parent_refs(0) {}
+          catalog_offset(0), generation(0), refs(R_NilValue), parent_refs(0),
+          dataptr_exposed(false), maybe_dirty(false) {}
 };
 
 static constexpr uint32_t FM_STRING_FLAG_NA = 1u;

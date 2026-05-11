@@ -628,10 +628,8 @@ static void validate_pointer_element(fm_vector *vec, SEXP value)
         Rf_error("fmalloc lists cannot contain themselves");
         return;
     }
-    if (!child->runtime || !vec->runtime ||
-        child->runtime->file_uuid_hi != vec->runtime->file_uuid_hi ||
-        child->runtime->file_uuid_lo != vec->runtime->file_uuid_lo) {
-        Rf_error("fmalloc list elements must be allocated from the same fmalloc runtime");
+    if (!child->runtime || !vec->runtime || child->runtime != vec->runtime) {
+        Rf_error("fmalloc list elements must be allocated from the same open fmalloc runtime");
         return;
     }
 }

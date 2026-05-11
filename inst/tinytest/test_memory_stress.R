@@ -136,7 +136,7 @@ message("Testing memory management and allocator stress scenarios...")
     )
     expect_error(
         create_fmalloc_vector("integer", -1),
-        "positive integer"
+        "non-negative"
     )
     recovery_vec <- create_fmalloc_vector("logical", 3)
     recovery_vec[1:3] <- c(TRUE, FALSE, TRUE)

@@ -94,7 +94,7 @@ message("Testing ALTREP fmalloc edge cases and duplication behavior...")
     )
     expect_error(
         create_fmalloc_vector("integer", -5),
-        "positive integer"
+        "non-negative"
     )
     message("  Error condition tests passed")
 

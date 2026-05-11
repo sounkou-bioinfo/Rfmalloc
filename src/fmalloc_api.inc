@@ -53,13 +53,45 @@ SEXP init_fmalloc_impl(SEXP filepath_sexp, SEXP size_gb_sexp, SEXP mode_sexp)
     return Rf_ScalarLogical(result);
 }
 
+static R_xlen_t parse_xlen_arg(SEXP length_sexp, const char *arg_name)
+{
+    if (TYPEOF(length_sexp) == INTSXP && LENGTH(length_sexp) == 1) {
+        int value = INTEGER(length_sexp)[0];
+        if (value == NA_INTEGER || value < 0) {
+            Rf_error("%s must be a non-negative integer value", arg_name);
+            return 0;
+        }
+        return static_cast<R_xlen_t>(value);
+    }
+
+    if (TYPEOF(length_sexp) == REALSXP && LENGTH(length_sexp) == 1) {
+        double value = REAL(length_sexp)[0];
+        if (!R_FINITE(value) || value < 0) {
+            Rf_error("%s must be a finite non-negative value", arg_name);
+            return 0;
+        }
+        if (std::floor(value) != value) {
+            Rf_error("%s must be an exact integer value", arg_name);
+            return 0;
+        }
+        if (value > (double)std::numeric_limits<R_xlen_t>::max()) {
+            Rf_error("%s exceeds supported length", arg_name);
+            return 0;
+        }
+        return static_cast<R_xlen_t>(value);
+    }
+
+    Rf_error("%s must be an integer-like scalar", arg_name);
+    return 0;
+}
+
 SEXP create_fmalloc_vector_impl(SEXP runtime_xptr, SEXP template_vec, SEXP length_sexp,
                                      SEXP zero_initialize_sexp)
 {
 
     fm_runtime *runtime = runtime_from_xptr(runtime_xptr);
 
-    if (!template_vec || TYPEOF(length_sexp) != INTSXP) {
+    if (!template_vec) {
         Rf_error("Invalid arguments to create_fmalloc_vector");
         return R_NilValue;
     }
@@ -76,11 +108,7 @@ SEXP create_fmalloc_vector_impl(SEXP runtime_xptr, SEXP template_vec, SEXP lengt
     }
     zero_initialize = zero_initialize_i == 1;
 
-    int length = Rf_asInteger(length_sexp);
-    if (length < 0) {
-        Rf_error("length must be a positive integer or zero");
-        return R_NilValue;
-    }
+    R_xlen_t length = parse_xlen_arg(length_sexp, "length");
 
     SEXPTYPE vec_type = (SEXPTYPE)TYPEOF(template_vec);
     if (!is_supported_vector_type(vec_type)) {
@@ -89,7 +117,7 @@ SEXP create_fmalloc_vector_impl(SEXP runtime_xptr, SEXP template_vec, SEXP lengt
     }
 
     if (length >= 1000) {
-        Rprintf("Creating fmalloc ALTREP vector: type=%s, length=%d\n", type_label(vec_type), length);
+        Rprintf("Creating fmalloc ALTREP vector: type=%s, length=%ld\n", type_label(vec_type), (long)length);
     }
 
     fm_vector *vec = allocate_fm_vector(runtime, vec_type, (R_xlen_t)length, true, zero_initialize);

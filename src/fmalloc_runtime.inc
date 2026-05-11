@@ -11,9 +11,69 @@ static R_altrep_class_t fmalloc_altcomplex_class;
 static R_altrep_class_t fmalloc_altstring_class;
 static R_altrep_class_t fmalloc_altlist_class;
 
+// Global in-process runtime registry keeps one runtime object per backing file
+// while there are open references in the process.
+static std::unordered_map<std::string, fm_runtime *> g_runtime_registry;
+static std::mutex g_runtime_registry_mutex;
+
 // Backward-compatible default runtime used by init_fmalloc()/cleanup_fmalloc()
 // wrappers. New code should pass runtime handles explicitly.
 static SEXP default_runtime_xptr = R_NilValue;
+
+static std::string runtime_registry_key(const char *filepath)
+{
+    if (!filepath) {
+        return std::string();
+    }
+    try {
+        return std::filesystem::absolute(filepath).lexically_normal().string();
+    } catch (...) {
+        return std::string(filepath);
+    }
+}
+
+static fm_runtime *find_registered_runtime(const char *filepath)
+{
+    std::string key = runtime_registry_key(filepath);
+    std::lock_guard<std::mutex> registry_lock(g_runtime_registry_mutex);
+    auto it = g_runtime_registry.find(key);
+    if (it == g_runtime_registry.end()) {
+        return nullptr;
+    }
+
+    fm_runtime *runtime = it->second;
+    if (!runtime || !runtime->info) {
+        g_runtime_registry.erase(it);
+        return nullptr;
+    }
+
+    return runtime;
+}
+
+static void register_runtime_handle(const char *filepath, fm_runtime *runtime)
+{
+    if (!filepath || !runtime) {
+        return;
+    }
+    std::string key = runtime_registry_key(filepath);
+    std::lock_guard<std::mutex> registry_lock(g_runtime_registry_mutex);
+    g_runtime_registry[key] = runtime;
+}
+
+static void unregister_runtime_handle(fm_runtime *runtime)
+{
+    if (!runtime) {
+        return;
+    }
+    std::lock_guard<std::mutex> registry_lock(g_runtime_registry_mutex);
+    for (auto it = g_runtime_registry.begin(); it != g_runtime_registry.end();) {
+        if (it->second == runtime) {
+            it = g_runtime_registry.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
 
 static void destroy_runtime_native(fm_runtime *runtime, struct fm_info *info)
 {
@@ -21,6 +81,7 @@ static void destroy_runtime_native(fm_runtime *runtime, struct fm_info *info)
         std::lock_guard<std::mutex> allocator_lock(fmalloc_allocator_mutex);
         fmalloc_destroy(info);
     }
+    unregister_runtime_handle(runtime);
     delete runtime;
 }
 
@@ -301,6 +362,36 @@ static fm_runtime *open_runtime_native(const char *filepath, size_t requested_si
                                        fm_runtime_mode mode, bool auto_close,
                                        bool *initialized_out = nullptr)
 {
+    if (filepath == nullptr || filepath[0] == '\0') {
+        Rf_error("Invalid fmalloc filepath");
+        return nullptr;
+    }
+
+    if (fm_runtime *runtime = find_registered_runtime(filepath)) {
+        std::lock_guard<std::mutex> runtime_lock(runtime->mutex);
+        if (runtime->mode != mode) {
+            Rf_error("fmalloc runtime for %s is already open with mode %s", filepath,
+                     runtime->mode == FM_MODE_PERSISTENT ? "persistent" : "scratch");
+            return nullptr;
+        }
+        if (!runtime->info) {
+            return nullptr;
+        }
+        if (runtime->close_pending || runtime->close_requested) {
+            runtime->close_pending = false;
+            runtime->close_requested = false;
+        }
+
+        if (initialized_out) {
+            *initialized_out = false;
+        }
+
+        Rprintf("fmalloc initialized with existing runtime: %s (init: false, mode: %s)\n",
+                filepath, mode == FM_MODE_PERSISTENT ? "persistent" : "scratch");
+
+        return runtime;
+    }
+
     ensure_backing_file(filepath, requested_size);
     validate_backing_file(filepath);
 
@@ -333,9 +424,19 @@ static fm_runtime *open_runtime_native(const char *filepath, size_t requested_si
     rfm_app_root *root = app_root(info);
     fm_runtime *runtime = new fm_runtime(info, mode, filepath, root->file_uuid_hi, root->file_uuid_lo);
     runtime->close_requested = auto_close;
+    runtime->filepath = runtime_registry_key(filepath);
+    register_runtime_handle(runtime->filepath.c_str(), runtime);
 
-    Rprintf("fmalloc initialized with file: %s (init: %s, mode: %s)\n",
-            filepath, init_flag ? "true" : "false",
-            mode == FM_MODE_PERSISTENT ? "persistent" : "scratch");
+    if (runtime->filepath != filepath) {
+        Rprintf("fmalloc initialized with file: %s (requested: %s, init: %s, mode: %s)\n",
+                runtime->filepath.c_str(), filepath,
+                init_flag ? "true" : "false",
+                mode == FM_MODE_PERSISTENT ? "persistent" : "scratch");
+    } else {
+        Rprintf("fmalloc initialized with file: %s (init: %s, mode: %s)\n",
+                filepath,
+                init_flag ? "true" : "false",
+                mode == FM_MODE_PERSISTENT ? "persistent" : "scratch");
+    }
     return runtime;
 }

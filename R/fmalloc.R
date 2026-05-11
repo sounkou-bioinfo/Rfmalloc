@@ -15,9 +15,23 @@
 .fmalloc_validate_non_negative_integer <- function(value, arg_name) {
     if (!is.numeric(value) || length(value) != 1 || !is.finite(value) || is.na(value) ||
         value < 0 || value != floor(value)) {
-        stop(sprintf("%s must be a positive integer or zero", arg_name))
+        stop(sprintf("%s must be a non-negative integer value", arg_name))
     }
-    as.integer(value)
+    if (value > .Machine$integer.max) {
+        stop(sprintf("%s exceeds supported dimension size", arg_name))
+    }
+    as.double(value)
+}
+
+.fmalloc_validate_xlen <- function(value, arg_name) {
+    if (!is.numeric(value) || length(value) != 1 || !is.finite(value) || is.na(value) ||
+        value < 0 || value != floor(value)) {
+        stop(sprintf("%s must be a non-negative integer-valued number", arg_name))
+    }
+    if (value > 2^52) {
+        stop(sprintf("%s exceeds R long-vector limit", arg_name))
+    }
+    as.double(value)
 }
 
 .fmalloc_validate_dimensions <- function(dimensions, arg_name) {
@@ -29,8 +43,11 @@
     if (any(!is.finite(dims)) || any(is.na(dims)) || any(dims < 0) || any(dims != floor(dims))) {
         stop(sprintf("%s must be a non-negative integer vector", arg_name))
     }
+    if (any(dims > .Machine$integer.max)) {
+        stop(sprintf("Each element of %s must be <= .Machine$integer.max", arg_name))
+    }
 
-    as.integer(dims)
+    as.numeric(dims)
 }
 
 .fmalloc_normalize_type <- function(type) {
@@ -132,10 +149,11 @@
 #' Open an fmalloc Runtime
 #'
 #' Opens a file-backed fmalloc runtime and returns an external-pointer handle.
-#' Multiple runtime handles may be open in one R process. Runtime mode controls
-#' whether vector payloads are durable persistent allocations or scratch
-#' allocations that can be returned to fmalloc when their ALTREP handles are
-#' garbage-collected.
+#' Multiple handles to the same path share the same underlying runtime within a
+#' process. Runtime mode mismatches are rejected for an already-open path.
+#' Runtime mode controls whether vector payloads are durable persistent
+#' allocations or scratch allocations that can be returned to fmalloc when their
+#' ALTREP handles are garbage-collected.
 #'
 #' @param filepath Character string specifying the file path for fmalloc data.
 #' @param size_gb Numeric value specifying the size of the backing file in GB
@@ -218,8 +236,8 @@ init_fmalloc <- function(filepath, size_gb = NULL, mode = c("persistent", "scrat
 #'   only accept `NULL` or fmalloc-backed vectors from the same runtime as
 #'   elements. Persistent list containers are serialized by nested reference
 #'   states when all elements are recoverable from the same runtime.
-#' @param length Integer specifying the non-negative length of the vector to
-#'   create.
+#' @param length Non-negative integer-valued length of the vector to
+#'   create. Supports exact values up to `2^52` in the R interface.
 #' @param runtime Optional runtime handle returned by [open_fmalloc()]. If not
 #'   supplied, the default runtime established by [init_fmalloc()] is used.
 #' @param zero_initialize Logical scalar. If TRUE (default), newly allocated payload
@@ -240,16 +258,7 @@ create_fmalloc_vector <- function(type = "integer", length, runtime = NULL, zero
     if (!is.character(type) || length(type) != 1) {
         stop("type must be a single character string")
     }
-    if (
-        !is.numeric(length) || length(length) != 1 ||
-            !is.finite(length) || is.na(length) ||
-            length < 0 || length != floor(length)
-    ) {
-        stop("length must be a positive integer or zero")
-    }
-    if (length > .Machine$integer.max) {
-        stop("length is too large for the current fmalloc vector interface")
-    }
+    length <- .fmalloc_validate_xlen(length, "length")
 
     type <- .fmalloc_normalize_type(type)
     template <- switch(
@@ -270,7 +279,7 @@ create_fmalloc_vector <- function(type = "integer", length, runtime = NULL, zero
 
     runtime <- .fmalloc_get_runtime(runtime)
 
-    ans <- .Call("create_fmalloc_vector_impl", runtime, template, as.integer(length), as.logical(zero_initialize))
+    ans <- .Call("create_fmalloc_vector_impl", runtime, template, as.numeric(length), as.logical(zero_initialize))
     .fmalloc_apply_class(ans, type = type, shape = "vector")
 }
 
@@ -310,13 +319,13 @@ create_fmalloc_matrix <- function(type = "integer", nrow, ncol,
     ncol <- .fmalloc_validate_non_negative_integer(ncol, "ncol")
 
     total <- as.double(nrow) * as.double(ncol)
-    if (!is.finite(total) || total > .Machine$integer.max) {
+    if (!is.finite(total) || total > 2^52) {
         stop("length is too large for the current fmalloc vector interface")
     }
 
-    ans <- create_fmalloc_vector(type = type, length = as.integer(total), runtime = runtime,
+    ans <- create_fmalloc_vector(type = type, length = as.double(total), runtime = runtime,
         zero_initialize = zero_initialize)
-    dim(ans) <- c(nrow, ncol)
+    dim(ans) <- as.integer(c(nrow, ncol))
     if (!is.null(dimnames)) {
         dimnames(ans) <- dimnames
     }
@@ -352,13 +361,13 @@ create_fmalloc_array <- function(type = "integer", dim, dimnames = NULL, runtime
                                  zero_initialize = TRUE) {
     dims <- .fmalloc_validate_dimensions(dim, "dim")
     total <- as.double(prod(dims))
-    if (!is.finite(total) || total > .Machine$integer.max) {
+    if (!is.finite(total) || total > 2^52) {
         stop("length is too large for the current fmalloc vector interface")
     }
 
-    ans <- create_fmalloc_vector(type = type, length = as.integer(total), runtime = runtime,
+    ans <- create_fmalloc_vector(type = type, length = as.double(total), runtime = runtime,
         zero_initialize = zero_initialize)
-    dim(ans) <- dims
+    dim(ans) <- as.integer(dims)
     if (!is.null(dimnames)) {
         dimnames(ans) <- dimnames
     }
@@ -420,7 +429,7 @@ create_fmalloc_data_frame <- function(..., row.names = NULL,
 #'
 #' @export
 as_fmalloc_matrix <- function(x, nrow = NULL, ncol = NULL, dimnames = NULL, copy = TRUE) {
-    vec_len <- as.integer(length(x))
+    vec_len <- as.double(length(x))
 
     if (missing(nrow) && missing(ncol)) {
         nrow <- vec_len
@@ -447,7 +456,7 @@ as_fmalloc_matrix <- function(x, nrow = NULL, ncol = NULL, dimnames = NULL, copy
             if (vec_len %% ncol != 0L) {
                 stop("length of x is not a multiple of ncol")
             }
-            nrow <- as.integer(vec_len / ncol)
+            nrow <- vec_len / ncol
         }
     } else if (is.null(ncol)) {
         if (nrow == 0L) {
@@ -459,15 +468,24 @@ as_fmalloc_matrix <- function(x, nrow = NULL, ncol = NULL, dimnames = NULL, copy
             if (vec_len %% nrow != 0L) {
                 stop("length of x is not a multiple of nrow")
             }
-            ncol <- as.integer(vec_len / nrow)
+            ncol <- vec_len / nrow
         }
     } else {
-        if (as.double(nrow) * as.double(ncol) != as.double(vec_len)) {
+        if (as.double(nrow) * as.double(ncol) != vec_len) {
             stop("nrow and ncol do not match length of x")
         }
     }
 
-    dims <- c(nrow, ncol)
+    nrow <- .fmalloc_validate_non_negative_integer(nrow, "nrow")
+    ncol <- .fmalloc_validate_non_negative_integer(ncol, "ncol")
+    if (nrow * ncol != vec_len) {
+        stop("nrow and ncol do not match length of x")
+    }
+
+    dims <- as.integer(c(nrow, ncol))
+    if (anyNA(dims)) {
+        stop("length of x exceeds supported dimension limits")
+    }
     if (copy) {
         dim(x) <- dims
         if (!is.null(dimnames)) {
@@ -502,16 +520,21 @@ as_fmalloc_matrix <- function(x, nrow = NULL, ncol = NULL, dimnames = NULL, copy
 #'
 #' @export
 as_fmalloc_array <- function(x, dim = NULL, dimnames = NULL, copy = TRUE) {
-    vec_len <- as.integer(length(x))
+    vec_len <- as.double(length(x))
 
     if (is.null(dim)) {
-        dim <- as.integer(vec_len)
+        dim <- .fmalloc_validate_xlen(vec_len, "dim")
     } else {
         dim <- .fmalloc_validate_dimensions(dim, "dim")
         total <- as.double(prod(dim))
-        if (total != as.double(vec_len)) {
+        if (total != vec_len) {
             stop("dim does not match the length of x")
         }
+    }
+
+    dim <- as.integer(dim)
+    if (anyNA(dim)) {
+        stop("array dim exceeds supported dimension limit")
     }
 
     if (copy) {

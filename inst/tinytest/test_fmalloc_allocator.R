@@ -7,14 +7,11 @@ message("Testing fmalloc ALTREP vector functionality...")
 
 # Test error conditions first (these should work without fmalloc initialization)
 expect_error(create_fmalloc_vector("integer", 50), "fmalloc not initialized")
-expect_error(create_fmalloc_vector("integer", -1), "positive integer")
-expect_error(create_fmalloc_vector("integer", 2.5), "positive integer or zero")
-expect_error(create_fmalloc_vector("integer", NA_real_), "positive integer or zero")
-expect_error(create_fmalloc_vector("integer", Inf), "positive integer or zero")
-expect_error(
-    create_fmalloc_vector("integer", .Machine$integer.max + 1),
-    "too large"
-)
+expect_error(create_fmalloc_vector("integer", -1), "non-negative")
+expect_error(create_fmalloc_vector("integer", 2.5), "integer-valued")
+expect_error(create_fmalloc_vector("integer", NA_real_), "integer-valued")
+expect_error(create_fmalloc_vector("integer", Inf), "integer-valued")
+expect_error(create_fmalloc_vector("integer", .Machine$integer.max + 1), "fmalloc not initialized")
 expect_error(create_fmalloc_vector(123, 50), "character string")
 expect_error(
     create_fmalloc_vector("invalid_type", 50),

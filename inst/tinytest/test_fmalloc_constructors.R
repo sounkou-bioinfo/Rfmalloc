@@ -42,7 +42,7 @@ message("Testing fmalloc explicit constructors and conversion helpers")
 
     expect_error(create_fmalloc_matrix("integer", nrow = 3L, runtime = rt), "nrow and ncol are required")
     expect_error(create_fmalloc_matrix("integer", nrow = -1L, ncol = 2L, runtime = rt), "nrow must be")
-    expect_error(create_fmalloc_matrix("integer", nrow = 2L, ncol = -1L, runtime = rt), "must be a positive integer or zero")
+    expect_error(create_fmalloc_matrix("integer", nrow = 2L, ncol = -1L, runtime = rt), "non-negative")
     
 
 

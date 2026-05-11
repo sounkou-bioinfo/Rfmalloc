@@ -23,8 +23,8 @@ An external pointer of class \code{fmalloc_runtime}.
 }
 \description{
 Opens a file-backed fmalloc runtime and returns an external-pointer handle.
-Multiple runtime handles may be open in one R process. Runtime mode controls
-whether vector payloads are durable persistent allocations or scratch
-allocations that can be returned to fmalloc when their ALTREP handles are
-garbage-collected.
+Multiple handles to the same path share a single in-process runtime while the
+underlying file-backed runtime remains open. Runtime mode controls whether
+vector payloads are durable persistent allocations or scratch allocations that can
+be returned to fmalloc when their ALTREP handles are garbage-collected.
 }

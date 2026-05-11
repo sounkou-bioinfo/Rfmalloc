@@ -82,7 +82,8 @@ message("Testing fmalloc ALTREP vector types and duplication...")
     expect_equal(lst_subset[[2]][], 1:2)
     expect_equal(lst_subset[[3]], NULL)
     expect_equal(lst_subset[[4]], NULL)
-    expect_error(lst_subset[[2]] <- "changed", "ordinary R objects")
+    expect_silent(lst_subset[[2]] <- "changed")
+    expect_equal(lst_subset[[2]], "changed")
     subset_replacement <- create_fmalloc_vector("character", 1, runtime = rt)
     subset_replacement[] <- "changed"
     lst_subset[[2]] <- subset_replacement
@@ -96,7 +97,7 @@ message("Testing fmalloc ALTREP vector types and duplication...")
     }, add = TRUE)
     other_child <- create_fmalloc_vector("integer", 1, runtime = other_rt)
     other_child[] <- 7L
-    expect_error(lst[[1]] <- other_child, "same fmalloc runtime")
+    expect_error(lst[[1]] <- other_child, "same .*fmalloc runtime")
 
     coerce_src <- create_fmalloc_vector("integer", 4, runtime = rt)
     coerce_src[] <- 1:4
@@ -147,6 +148,33 @@ message("Testing fmalloc ALTREP vector types and duplication...")
     scratch_serialized <- unserialize(serialize(scratch, NULL))
     expect_true(is.integer(scratch_serialized))
     expect_equal(unclass(scratch_serialized), 21:24)
+})()
+
+(function() {
+    test_file <- tempfile(fileext = ".bin")
+    rt_one <- open_fmalloc(test_file, mode = "scratch", size_gb = 0.05)
+    rt_two <- open_fmalloc(test_file, mode = "scratch", size_gb = 0.05)
+    expect_error(open_fmalloc(test_file, mode = "persistent"), "already open with mode scratch")
+    on.exit({
+        cleanup_fmalloc(rt_one)
+        cleanup_fmalloc(rt_two)
+        unlink(test_file)
+    }, add = TRUE)
+
+    list_parent <- create_fmalloc_vector("list", 1, runtime = rt_one)
+    child <- create_fmalloc_vector("integer", 1, runtime = rt_two)
+    child[] <- 123L
+
+    x <- create_fmalloc_vector("integer", 4, runtime = rt_one)
+    x[] <- 1:4
+    expect_true(identical(.Call("fmalloc_runtime_of_vector_impl", child),
+                           .Call("fmalloc_runtime_of_vector_impl", list_parent)))
+
+    expect_equal(x[c(1L, 0L, 3L)], as.integer(1:4)[c(1L, 0L, 3L)])
+    expect_equal(x[c(0L)], integer(0))
+    expect_equal(x[c(1.5, 3L)], as.integer(1:4)[c(1.5, 3L)])
+    expect_equal(x[as.numeric(c(1, 3))], as.integer(1:4)[as.numeric(c(1, 3))])
+    expect_error(x[c(2L, -2L)])
 })()
 
 message("fmalloc ALTREP vector type tests completed!")
