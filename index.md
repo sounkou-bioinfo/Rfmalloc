@@ -590,7 +590,7 @@ local({
 #> [1] TRUE
 #> 
 #> $rowSums_values
-#> [1] 0 0 0 0
+#> [1] 28 32 36 40
 #> 
 #> $expected_rowSums
 #> [1] 28 32 36 40
