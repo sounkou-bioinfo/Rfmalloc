@@ -4,7 +4,12 @@
 \alias{create_fmalloc_vector}
 \title{Create Vector Using fmalloc}
 \usage{
-create_fmalloc_vector(type = "integer", length, runtime = NULL)
+create_fmalloc_vector(
+  type = "integer",
+  length,
+  runtime = NULL,
+  zero_initialize = TRUE
+)
 }
 \arguments{
 \item{type}{Character string specifying the vector type. Supported values are
@@ -22,6 +27,10 @@ create.}
 
 \item{runtime}{Optional runtime handle returned by \code{\link[=open_fmalloc]{open_fmalloc()}}. If not
 supplied, the default runtime established by \code{\link[=init_fmalloc]{init_fmalloc()}} is used.}
+
+\item{zero_initialize}{Logical scalar. If TRUE (default), newly allocated payload
+bytes are zero-initialized. Set FALSE to skip initialization for faster large
+allocations when you will fully initialize values yourself.}
 }
 \value{
 A vector of the specified type and length, allocated using fmalloc.

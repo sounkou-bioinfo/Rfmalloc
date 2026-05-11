@@ -57,14 +57,15 @@ cleanup.
 \code{Math2}, and matrix \code{rowSums}/\code{colSums}/\code{rowMeans}/\code{colMeans}
 workflows through S3 methods for common vector/matrix usage.
 \item Explicit base-fallback boundaries are:
-  \itemize{
-    \item \code{rowSums()}, \code{colSums()}, \code{rowMeans()}, and
-          \code{colMeans()} fall back to base implementations (with a warning)
-          when the input is not an exact 2D matrix or when \code{dims != 1L}.
-    \item Scalar or zero-length outputs from \code{Summary}, \code{Math}, or
-          \code{Math2} (for example \code{sum(x)} returning a single value)
-          are ordinary R scalars by design.
-  }
+\itemize{
+\item \code{rowSums()}, \code{colSums()}, \code{rowMeans()}, and \code{colMeans()} when
+the input is not an exact 2D matrix or \code{dims != 1L}; these
+cases now emit a warning and call the corresponding
+\verb{base::} reducer.
+\item Scalar or zero-length results from \code{Summary}, \code{Math}, and
+\code{Math2} generics (for example \code{sum(x)} returning a single
+value) are returned as ordinary R scalars by design.
+}
 \item Full operator- and method-family coverage is still incomplete for all
 R generics. Some advanced families may still materialize ordinary R
 objects in a few edge cases.

@@ -80,7 +80,7 @@ static rfm_catalog_record *create_catalog_record_locked(fm_runtime *runtime, SEX
                                                         R_xlen_t length, void *payload,
                                                         size_t bytes);
 
-static fm_vector *allocate_fm_vector(fm_runtime *runtime, SEXPTYPE type, R_xlen_t length, bool require_open)
+static fm_vector *allocate_fm_vector(fm_runtime *runtime, SEXPTYPE type, R_xlen_t length, bool require_open, bool zero_initialize)
 {
     if (!runtime) {
         Rf_error("fmalloc runtime is closed");
@@ -105,7 +105,7 @@ static fm_vector *allocate_fm_vector(fm_runtime *runtime, SEXPTYPE type, R_xlen_
 
     {
         std::lock_guard<std::mutex> runtime_lock(runtime->mutex);
-        if (!runtime->info || (require_open && runtime->close_requested)) {
+        if (!runtime->info || (require_open && (runtime->close_requested || runtime->close_pending))) {
             runtime_closed = true;
         } else {
             if (bytes >= 1024 * 1024) {
@@ -117,7 +117,7 @@ static fm_vector *allocate_fm_vector(fm_runtime *runtime, SEXPTYPE type, R_xlen_
                 fmalloc_clear_last_error();
                 mem = fmalloc(bytes);
                 saved_errno = errno;
-                if (mem) {
+                if (mem && (zero_initialize || type == STRSXP)) {
                     memset(mem, 0, bytes);
                 }
             }
@@ -271,6 +271,9 @@ static bool destroy_fm_vector_impl(fm_vector *vec, bool free_payload, bool mark_
 
         if (runtime->live_vectors > 0) {
             runtime->live_vectors--;
+        }
+        if (runtime->close_pending && !runtime->close_requested && runtime->live_vectors == 0) {
+            runtime->close_requested = true;
         }
         runtime_to_destroy = detach_runtime_if_ready(runtime, &info_to_destroy);
     }

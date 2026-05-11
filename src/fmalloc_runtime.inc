@@ -26,7 +26,8 @@ static void destroy_runtime_native(fm_runtime *runtime, struct fm_info *info)
 
 static bool runtime_ready_to_destroy(const fm_runtime *runtime)
 {
-    return runtime->close_requested && runtime->live_vectors == 0 && runtime->external_refs == 0;
+    bool close_allowed = runtime->close_requested || runtime->close_pending;
+    return close_allowed && runtime->live_vectors == 0 && runtime->external_refs == 0;
 }
 
 static fm_runtime *detach_runtime_if_ready(fm_runtime *runtime, struct fm_info **info_to_destroy)
@@ -56,7 +57,7 @@ static fm_runtime *runtime_from_xptr(SEXP runtime_xptr, bool allow_closed = fals
     return runtime;
 }
 
-static void request_runtime_close(SEXP runtime_xptr, bool clear_external_ptr)
+static void request_runtime_close(SEXP runtime_xptr, bool clear_external_ptr, bool mark_closed = true)
 {
     fm_runtime *runtime = runtime_from_xptr(runtime_xptr, true);
     if (!runtime) {
@@ -68,7 +69,12 @@ static void request_runtime_close(SEXP runtime_xptr, bool clear_external_ptr)
 
     {
         std::lock_guard<std::mutex> runtime_lock(runtime->mutex);
-        runtime->close_requested = true;
+        if (mark_closed) {
+            runtime->close_pending = true;
+        }
+        if (!runtime->close_requested && runtime->close_pending && runtime->live_vectors == 0) {
+            runtime->close_requested = true;
+        }
         if (clear_external_ptr && R_ExternalPtrAddr(runtime_xptr)) {
             if (runtime->external_refs > 0) {
                 runtime->external_refs--;
@@ -85,7 +91,12 @@ static void request_runtime_close(SEXP runtime_xptr, bool clear_external_ptr)
 
 static void fmalloc_runtime_finalizer(SEXP runtime_xptr)
 {
-    request_runtime_close(runtime_xptr, true);
+    request_runtime_close(runtime_xptr, true, true);
+}
+
+static void fmalloc_runtime_internal_finalizer(SEXP runtime_xptr)
+{
+    request_runtime_close(runtime_xptr, true, false);
 }
 
 static void close_unreferenced_runtime(fm_runtime *runtime)
@@ -98,7 +109,10 @@ static void close_unreferenced_runtime(fm_runtime *runtime)
     fm_runtime *runtime_to_destroy = nullptr;
     {
         std::lock_guard<std::mutex> runtime_lock(runtime->mutex);
-        runtime->close_requested = true;
+        runtime->close_pending = true;
+        if (!runtime->close_requested && runtime->close_pending && runtime->live_vectors == 0) {
+            runtime->close_requested = true;
+        }
         runtime_to_destroy = detach_runtime_if_ready(runtime, &info_to_destroy);
     }
     if (runtime_to_destroy) {
@@ -106,14 +120,20 @@ static void close_unreferenced_runtime(fm_runtime *runtime)
     }
 }
 
-static SEXP make_runtime_xptr(fm_runtime *runtime)
+static SEXP make_runtime_xptr(fm_runtime *runtime, bool managed = true, bool mark_closed = true)
 {
     SEXP runtime_xptr = PROTECT(R_MakeExternalPtr(runtime, fmalloc_runtime_tag, R_NilValue));
-    {
-        std::lock_guard<std::mutex> runtime_lock(runtime->mutex);
-        runtime->external_refs++;
+    if (managed) {
+        {
+            std::lock_guard<std::mutex> runtime_lock(runtime->mutex);
+            runtime->external_refs++;
+        }
+        if (mark_closed) {
+            R_RegisterCFinalizerEx(runtime_xptr, fmalloc_runtime_finalizer, TRUE);
+        } else {
+            R_RegisterCFinalizerEx(runtime_xptr, fmalloc_runtime_internal_finalizer, TRUE);
+        }
     }
-    R_RegisterCFinalizerEx(runtime_xptr, fmalloc_runtime_finalizer, TRUE);
     UNPROTECT(1);
     return runtime_xptr;
 }

@@ -32,9 +32,10 @@ The reduction result, as either an ordinary R object or a
 These S3 methods preserve current fmalloc behavior for matrix summary/reduction
 operations while returning ordinary R vectors for small results.
 }
-
 \details{
-For managed execution these methods support only 2D `fmalloc` matrices with
-`dims = 1L`.  If the input is not an exact 2D matrix or `dims != 1L`, the
-methods emit a warning and delegate to the corresponding base R implementation.
+These implementations keep managed execution for 2D \code{fmalloc} matrices with
+\code{dims = 1L}.  For unsupported shapes or \code{dims} values (for example,
+non-2D arrays or \code{dims != 1L}), the methods warn and delegate to the base R
+implementations (\code{base::rowSums}, \code{base::colSums}, \code{base::rowMeans}, and
+\code{base::colMeans}).
 }

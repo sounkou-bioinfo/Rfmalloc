@@ -222,6 +222,9 @@ init_fmalloc <- function(filepath, size_gb = NULL, mode = c("persistent", "scrat
 #'   create.
 #' @param runtime Optional runtime handle returned by [open_fmalloc()]. If not
 #'   supplied, the default runtime established by [init_fmalloc()] is used.
+#' @param zero_initialize Logical scalar. If TRUE (default), newly allocated payload
+#'   bytes are zero-initialized. Set FALSE to skip initialization for faster large
+#'   allocations when you will fully initialize values yourself.
 #'
 #' @return A vector of the specified type and length, allocated using fmalloc.
 #'
@@ -233,7 +236,7 @@ init_fmalloc <- function(filepath, size_gb = NULL, mode = c("persistent", "scrat
 #' }
 #'
 #' @export
-create_fmalloc_vector <- function(type = "integer", length, runtime = NULL) {
+create_fmalloc_vector <- function(type = "integer", length, runtime = NULL, zero_initialize = TRUE) {
     if (!is.character(type) || length(type) != 1) {
         stop("type must be a single character string")
     }
@@ -261,9 +264,13 @@ create_fmalloc_vector <- function(type = "integer", length, runtime = NULL) {
         stop("Unsupported vector type: ", type)
     )
 
+    if (!is.logical(zero_initialize) || length(zero_initialize) != 1 || is.na(zero_initialize)) {
+        stop("zero_initialize must be a single non-missing logical value")
+    }
+
     runtime <- .fmalloc_get_runtime(runtime)
 
-    ans <- .Call("create_fmalloc_vector_impl", runtime, template, as.integer(length))
+    ans <- .Call("create_fmalloc_vector_impl", runtime, template, as.integer(length), as.logical(zero_initialize))
     .fmalloc_apply_class(ans, type = type, shape = "vector")
 }
 
@@ -279,6 +286,8 @@ create_fmalloc_vector <- function(type = "integer", length, runtime = NULL) {
 #' @param dimnames Optional `dimnames` list for the matrix.
 #' @param runtime Optional runtime handle returned by [open_fmalloc()]. If not
 #'   supplied, the default runtime established by [init_fmalloc()] is used.
+#' @param zero_initialize Logical scalar passed through to payload allocation. See
+#'   [create_fmalloc_vector()] for semantics.
 #'
 #' @return An fmalloc-backed ALTREP matrix object.
 #'
@@ -291,7 +300,8 @@ create_fmalloc_vector <- function(type = "integer", length, runtime = NULL) {
 #'
 #' @export
 create_fmalloc_matrix <- function(type = "integer", nrow, ncol,
-                                 dimnames = NULL, runtime = NULL) {
+                                 dimnames = NULL, runtime = NULL,
+                                 zero_initialize = TRUE) {
     if (missing(nrow) || missing(ncol)) {
         stop("nrow and ncol are required")
     }
@@ -304,7 +314,8 @@ create_fmalloc_matrix <- function(type = "integer", nrow, ncol,
         stop("length is too large for the current fmalloc vector interface")
     }
 
-    ans <- create_fmalloc_vector(type = type, length = as.integer(total), runtime = runtime)
+    ans <- create_fmalloc_vector(type = type, length = as.integer(total), runtime = runtime,
+        zero_initialize = zero_initialize)
     dim(ans) <- c(nrow, ncol)
     if (!is.null(dimnames)) {
         dimnames(ans) <- dimnames
@@ -324,6 +335,8 @@ create_fmalloc_matrix <- function(type = "integer", nrow, ncol,
 #' @param dimnames Optional `dimnames` for the array.
 #' @param runtime Optional runtime handle returned by [open_fmalloc()]. If not
 #'   supplied, the default runtime established by [init_fmalloc()] is used.
+#' @param zero_initialize Logical scalar passed through to payload allocation. See
+#'   [create_fmalloc_vector()] for semantics.
 #'
 #' @return An fmalloc-backed ALTREP array.
 #'
@@ -335,14 +348,16 @@ create_fmalloc_matrix <- function(type = "integer", nrow, ncol,
 #' }
 #'
 #' @export
-create_fmalloc_array <- function(type = "integer", dim, dimnames = NULL, runtime = NULL) {
+create_fmalloc_array <- function(type = "integer", dim, dimnames = NULL, runtime = NULL,
+                                 zero_initialize = TRUE) {
     dims <- .fmalloc_validate_dimensions(dim, "dim")
     total <- as.double(prod(dims))
     if (!is.finite(total) || total > .Machine$integer.max) {
         stop("length is too large for the current fmalloc vector interface")
     }
 
-    ans <- create_fmalloc_vector(type = type, length = as.integer(total), runtime = runtime)
+    ans <- create_fmalloc_vector(type = type, length = as.integer(total), runtime = runtime,
+        zero_initialize = zero_initialize)
     dim(ans) <- dims
     if (!is.null(dimnames)) {
         dimnames(ans) <- dimnames

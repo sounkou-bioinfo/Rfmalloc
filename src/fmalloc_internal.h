@@ -35,6 +35,7 @@ struct fm_runtime {
     size_t live_vectors;
     size_t external_refs;
     bool close_requested;
+    bool close_pending;
     fm_runtime_mode mode;
     std::string filepath;
     uint64_t file_uuid_hi;
@@ -42,7 +43,7 @@ struct fm_runtime {
 
     fm_runtime(struct fm_info *_info, fm_runtime_mode _mode, const char *_filepath,
                uint64_t _uuid_hi, uint64_t _uuid_lo)
-        : info(_info), live_vectors(0), external_refs(0), close_requested(false),
+        : info(_info), live_vectors(0), external_refs(0), close_requested(false), close_pending(false),
           mode(_mode), filepath(_filepath), file_uuid_hi(_uuid_hi), file_uuid_lo(_uuid_lo) {}
 };
 

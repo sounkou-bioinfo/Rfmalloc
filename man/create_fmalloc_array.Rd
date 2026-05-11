@@ -4,7 +4,13 @@
 \alias{create_fmalloc_array}
 \title{Create Array Using fmalloc}
 \usage{
-create_fmalloc_array(type = "integer", dim, dimnames = NULL, runtime = NULL)
+create_fmalloc_array(
+  type = "integer",
+  dim,
+  dimnames = NULL,
+  runtime = NULL,
+  zero_initialize = TRUE
+)
 }
 \arguments{
 \item{type}{Character string specifying the vector type. Supported values are
@@ -16,6 +22,9 @@ the same as for \code{\link[=create_fmalloc_vector]{create_fmalloc_vector()}}.}
 
 \item{runtime}{Optional runtime handle returned by \code{\link[=open_fmalloc]{open_fmalloc()}}. If not
 supplied, the default runtime established by \code{\link[=init_fmalloc]{init_fmalloc()}} is used.}
+
+\item{zero_initialize}{Logical scalar passed through to payload allocation. See
+\code{\link[=create_fmalloc_vector]{create_fmalloc_vector()}} for semantics.}
 }
 \value{
 An fmalloc-backed ALTREP array.

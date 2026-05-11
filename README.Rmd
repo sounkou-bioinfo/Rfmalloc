@@ -144,19 +144,19 @@ local({
 
 ## Larger Allocation Example
 
-This example is executed when building the README and uses a larger (but still modest)
-fmalloc payload for demonstration.
+This example is executed when building the README and uses a 1B-length
+fmalloc payload.
 
 ```{r}
 local({
   large_file <- tempfile(fileext = ".bin")
-  rt <- open_fmalloc(large_file)
+  rt <- open_fmalloc(large_file, size_gb = 20)
   on.exit({
     cleanup_fmalloc(rt)
     unlink(large_file)
   }, add = TRUE)
 
-  n <- 2e6
+  n <- 1000000000L
   before_alloc <- nrow(list_fmalloc_allocations(rt))
 
   big_int_a <- create_fmalloc_vector("integer", n, runtime = rt)

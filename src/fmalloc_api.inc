@@ -53,14 +53,28 @@ SEXP init_fmalloc_impl(SEXP filepath_sexp, SEXP size_gb_sexp, SEXP mode_sexp)
     return Rf_ScalarLogical(result);
 }
 
-SEXP create_fmalloc_vector_impl(SEXP runtime_xptr, SEXP template_vec, SEXP length_sexp)
+SEXP create_fmalloc_vector_impl(SEXP runtime_xptr, SEXP template_vec, SEXP length_sexp,
+                                     SEXP zero_initialize_sexp)
 {
+
     fm_runtime *runtime = runtime_from_xptr(runtime_xptr);
 
     if (!template_vec || TYPEOF(length_sexp) != INTSXP) {
         Rf_error("Invalid arguments to create_fmalloc_vector");
         return R_NilValue;
     }
+
+    bool zero_initialize = true;
+    if (TYPEOF(zero_initialize_sexp) != LGLSXP || LENGTH(zero_initialize_sexp) != 1) {
+        Rf_error("zero_initialize must be a single logical value");
+        return R_NilValue;
+    }
+    int zero_initialize_i = Rf_asLogical(zero_initialize_sexp);
+    if (zero_initialize_i == NA_LOGICAL) {
+        Rf_error("zero_initialize must be TRUE or FALSE");
+        return R_NilValue;
+    }
+    zero_initialize = zero_initialize_i == 1;
 
     int length = Rf_asInteger(length_sexp);
     if (length < 0) {
@@ -78,7 +92,7 @@ SEXP create_fmalloc_vector_impl(SEXP runtime_xptr, SEXP template_vec, SEXP lengt
         Rprintf("Creating fmalloc ALTREP vector: type=%s, length=%d\n", type_label(vec_type), length);
     }
 
-    fm_vector *vec = allocate_fm_vector(runtime, vec_type, (R_xlen_t)length, true);
+    fm_vector *vec = allocate_fm_vector(runtime, vec_type, (R_xlen_t)length, true, zero_initialize);
     SEXP result = PROTECT(fmalloc_new_altrep(vec));
 
     if (length >= 1000) {
@@ -109,7 +123,7 @@ SEXP fmalloc_runtime_of_vector_impl(SEXP vector_x)
         return R_NilValue;
     }
 
-    return make_runtime_xptr(vec->runtime);
+    return make_runtime_xptr(vec->runtime, true, false);
 }
 
 SEXP fmalloc_set_class_in_place_impl(SEXP x, SEXP class_vec)
@@ -314,7 +328,7 @@ SEXP Rfmalloc_create_vector(SEXP runtime_xptr, int sexptype, R_xlen_t length)
     }
 
     fm_runtime *runtime = runtime_from_xptr(runtime_xptr);
-    fm_vector *vec = allocate_fm_vector(runtime, type, length, true);
+    fm_vector *vec = allocate_fm_vector(runtime, type, length, true, true);
     SEXP ans = PROTECT(fmalloc_new_altrep(vec));
     UNPROTECT(1);
     return ans;
@@ -352,7 +366,7 @@ static void register_c_callables(void)
 static const R_CallMethodDef CallEntries[] = {
     {"open_fmalloc_impl", (DL_FUNC)&open_fmalloc_impl, 3},
     {"init_fmalloc_impl", (DL_FUNC)&init_fmalloc_impl, 3},
-    {"create_fmalloc_vector_impl", (DL_FUNC)&create_fmalloc_vector_impl, 3},
+    {"create_fmalloc_vector_impl", (DL_FUNC)&create_fmalloc_vector_impl, 4},
     {"list_fmalloc_allocations_impl", (DL_FUNC)&list_fmalloc_allocations_impl, 1},
     {"fmalloc_runtime_of_vector_impl", (DL_FUNC)&fmalloc_runtime_of_vector_impl, 1},
     {"fmalloc_set_class_in_place_impl", (DL_FUNC)&fmalloc_set_class_in_place_impl, 2},

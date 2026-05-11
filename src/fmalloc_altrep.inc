@@ -51,7 +51,7 @@ static Rboolean fmalloc_altrep_inspect(SEXP x, int pre, int deep, int pvec,
 static SEXP fmalloc_altrep_duplicate(SEXP x, Rboolean deep)
 {
     fm_vector *old_vec = vector_from_altrep(x);
-    fm_vector *new_vec = allocate_fm_vector(old_vec->runtime, old_vec->type, old_vec->len, false);
+    fm_vector *new_vec = allocate_fm_vector(old_vec->runtime, old_vec->type, old_vec->len, false, false);
     SEXP ans = PROTECT(fmalloc_new_altrep(new_vec));
 
     if (old_vec->type == STRSXP) {
@@ -303,7 +303,7 @@ static SEXP restore_persistent_list(SEXP state, fm_runtime *runtime)
         return R_NilValue;
     }
 
-    fm_vector *vec = allocate_fm_vector(runtime, VECSXP, len, false);
+    fm_vector *vec = allocate_fm_vector(runtime, VECSXP, len, false, false);
     SEXP ans = PROTECT(fmalloc_new_altrep(vec));
     for (R_xlen_t i = 0; i < len; i++) {
         SEXP child_state = VECTOR_ELT(children_sexp, i);
@@ -451,7 +451,7 @@ static SEXP fmalloc_altrep_coerce(SEXP x, int type)
     fm_vector *old_vec = vector_from_altrep(x);
     SEXP plain = PROTECT(fmalloc_plain_vector(x));
     SEXP coerced = PROTECT(Rf_coerceVector(plain, target_type));
-    fm_vector *new_vec = allocate_fm_vector(old_vec->runtime, target_type, XLENGTH(coerced), false);
+    fm_vector *new_vec = allocate_fm_vector(old_vec->runtime, target_type, XLENGTH(coerced), false, false);
     if (target_type == STRSXP) {
         for (R_xlen_t i = 0; i < XLENGTH(coerced); i++) {
             set_string_element(new_vec, i, STRING_ELT(coerced, i));
@@ -572,7 +572,7 @@ static SEXP fmalloc_altvec_extract_subset(SEXP x, SEXP indx, SEXP call)
 
     fm_vector *src = vector_from_altrep(x);
     R_xlen_t n = XLENGTH(indx);
-    fm_vector *dst = allocate_fm_vector(src->runtime, src->type, n, false);
+    fm_vector *dst = allocate_fm_vector(src->runtime, src->type, n, false, false);
     SEXP ans = PROTECT(fmalloc_new_altrep(dst));
 
     for (R_xlen_t i = 0; i < n; i++) {

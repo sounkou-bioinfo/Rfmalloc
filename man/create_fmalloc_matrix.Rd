@@ -9,7 +9,8 @@ create_fmalloc_matrix(
   nrow,
   ncol,
   dimnames = NULL,
-  runtime = NULL
+  runtime = NULL,
+  zero_initialize = TRUE
 )
 }
 \arguments{
@@ -24,6 +25,9 @@ the same as for \code{\link[=create_fmalloc_vector]{create_fmalloc_vector()}}.}
 
 \item{runtime}{Optional runtime handle returned by \code{\link[=open_fmalloc]{open_fmalloc()}}. If not
 supplied, the default runtime established by \code{\link[=init_fmalloc]{init_fmalloc()}} is used.}
+
+\item{zero_initialize}{Logical scalar passed through to payload allocation. See
+\code{\link[=create_fmalloc_vector]{create_fmalloc_vector()}} for semantics.}
 }
 \value{
 An fmalloc-backed ALTREP matrix object.
