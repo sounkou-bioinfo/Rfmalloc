@@ -2,23 +2,29 @@
 #' @noRd
 #' @exportS3Method
 Ops.fmalloc <- function(e1, e2) {
-    generic <- .Generic
-    e1_stripped <- .fmalloc_strip_class(e1)
-    e2_stripped <- if (missing(e2)) NULL else .fmalloc_strip_class(e2)
+    unary <- missing(e2)
+    ans <- .Call("rfm_ops_dispatch", .Generic, e1, if (unary) NULL else e2, unary)
 
-    runtime <- if (inherits(e1, "fmalloc")) {
-        .fmalloc_runtime_for_vector(e1)
-    } else if (!missing(e2) && inherits(e2, "fmalloc")) {
-        .fmalloc_runtime_for_vector(e2)
-    } else {
-        stop("Ops.fmalloc requires a fmalloc vector input")
+    # Propagate names for binary ops (longer operand wins)
+    if (!unary) {
+        n1 <- names(e1)
+        n2 <- names(e2)
+        if (length(n1) > 0L || length(n2) > 0L) {
+            out_names <- if (length(e1) >= length(e2)) n1 else n2
+            if (length(out_names) > 0L) names(ans) <- out_names
+        }
     }
 
-    if (missing(e2)) {
-        return(.fmalloc_ops_unary(generic, e1_stripped, runtime))
-    }
+    out_type <- typeof(ans)
+    shape <- .fmalloc_shape_class(ans)
+    .fmalloc_apply_class(ans, type = .fmalloc_normalize_type(out_type), shape = shape)
+}
 
-    .fmalloc_ops_binary(e1_stripped, e2_stripped, generic, runtime)
+#' @noRd
+#' @exportS3Method
+chooseOpsMethod.fmalloc <- function(x, y, mx, my, cl, reverse) {
+    if (missing(y) || is.null(y)) return(TRUE)
+    .Call("rfm_can_handle_ops_pair", x, y, .Generic)
 }
 
 #' @noRd
@@ -463,134 +469,6 @@ colMeans <- function(x, na.rm = FALSE, dims = 1L) {
 
     names(out) <- .fmalloc_matrix_margin_names(x, margin)
     out
-}
-
-.fmalloc_ops_binary <- function(e1, e2, generic, runtime) {
-    n1 <- length(e1)
-    n2 <- length(e2)
-    if (n1 == 0L || n2 == 0L) {
-        value <- .Primitive(generic)(e1, e2)
-        return(.fmalloc_box_into_fmalloc(value, runtime))
-    }
-
-    dim1 <- dim(e1)
-    dim2 <- dim(e2)
-    if (!is.null(dim1) && !is.null(dim2) && !identical(dim1, dim2)) {
-        stop("non-conformable arrays")
-    }
-
-    output_dim <- if (!is.null(dim1)) dim1 else dim2
-    output_names <- if (!is.null(dim1)) dimnames(e1) else dimnames(e2)
-    output_shape <- if (is.null(output_dim)) {
-        NULL
-    } else if (length(output_dim) == 2L) {
-        "matrix"
-    } else {
-        "array"
-    }
-
-    if ((n1 %% n2) != 0L && (n2 %% n1) != 0L) {
-        warning("longer object length is not a multiple of shorter object length")
-    }
-
-    n <- max(n1, n2)
-    out_type <- .fmalloc_ops_type_from_sample(generic, e1, e2)
-    if (is.null(out_type)) {
-        stop(sprintf("Unsupported %s result type for fmalloc Ops", .Generic))
-    }
-
-    ans <- create_fmalloc_vector(type = out_type, length = n, runtime = runtime)
-    for (i in seq_len(n)) {
-        lhs <- e1[((i - 1L) %% n1) + 1L]
-        rhs <- e2[((i - 1L) %% n2) + 1L]
-        ans[i] <- .Primitive(generic)(lhs, rhs)
-    }
-
-    if (is.null(output_shape)) {
-        if (length(names(e1)) > 0L || length(names(e2)) > 0L) {
-            output_names <- if (n1 >= n2) names(e1) else names(e2)
-            if (length(output_names) > 0L) {
-                names(ans) <- output_names
-            }
-        }
-        return(.fmalloc_apply_class(ans, type = out_type, shape = "vector"))
-    }
-
-    ans <- .fmalloc_apply_class(ans, type = out_type, shape = output_shape)
-    dim(ans) <- output_dim
-    if (!is.null(output_names)) {
-        dimnames(ans) <- output_names
-    }
-    ans
-}
-
-.fmalloc_ops_unary <- function(generic, x, runtime) {
-    n <- length(x)
-    if (n == 0L) {
-        value <- .Primitive(generic)(x)
-        return(.fmalloc_box_into_fmalloc(value, runtime))
-    }
-
-    out_type <- .fmalloc_ops_type_from_sample(generic, x, NULL)
-    if (is.null(out_type)) {
-        stop(sprintf("Unsupported %s result type for fmalloc Ops", .Generic))
-    }
-
-    output_dim <- dim(x)
-    output_shape <- if (is.null(output_dim)) {
-        NULL
-    } else if (length(output_dim) == 2L) {
-        "matrix"
-    } else {
-        "array"
-    }
-
-    ans <- create_fmalloc_vector(type = out_type, length = n, runtime = runtime)
-    for (i in seq_len(n)) {
-        ans[[i]] <- .Primitive(generic)(x[[i]])
-    }
-
-    if (is.null(output_shape)) {
-        if (length(names(x)) > 0L) {
-            names(ans) <- names(x)
-        }
-        return(.fmalloc_apply_class(ans, type = out_type, shape = "vector"))
-    }
-
-    ans <- .fmalloc_apply_class(ans, type = out_type, shape = output_shape)
-    dim(ans) <- output_dim
-    output_names <- dimnames(x)
-    if (!is.null(output_names)) {
-        dimnames(ans) <- output_names
-    }
-    ans
-}
-
-.fmalloc_ops_fallback <- function(e1, e2, generic, runtime) {
-    value <- .Primitive(generic)(e1, e2)
-    .fmalloc_box_into_fmalloc(value, runtime)
-}
-
-.fmalloc_ops_type_from_sample <- function(generic, lhs, rhs = NULL) {
-    sample <- tryCatch(
-        if (is.null(rhs)) {
-            .Primitive(generic)(lhs[[1L]])
-        } else {
-            .Primitive(generic)(lhs[[1L]], rhs[[1L]])
-        },
-        error = function(err) {
-            NULL
-        }
-    )
-
-    if (is.null(sample)) {
-        return(NULL)
-    }
-
-    type <- typeof(sample)
-    tryCatch(.fmalloc_normalize_type(type), error = function(err) {
-        NULL
-    })
 }
 
 .fmalloc_box_into_fmalloc <- function(value, runtime) {

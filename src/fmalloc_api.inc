@@ -138,6 +138,48 @@ SEXP list_fmalloc_allocations_impl(SEXP runtime_xptr)
     return make_catalog_data_frame(records);
 }
 
+SEXP fmalloc_is_fmalloc_vector_impl(SEXP vector_x)
+{
+    fm_vector *vec = maybe_vector_from_altrep(vector_x);
+    return Rf_ScalarLogical(vec != nullptr);
+}
+
+SEXP fmalloc_vector_type_impl(SEXP vector_x)
+{
+    fm_vector *vec = maybe_vector_from_altrep(vector_x);
+    if (!vec) {
+        Rf_error("x is not an fmalloc ALTREP vector");
+        return R_NilValue;
+    }
+    return Rf_ScalarInteger((int)vec->type);
+}
+
+SEXP fmalloc_vector_length_impl(SEXP vector_x)
+{
+    fm_vector *vec = maybe_vector_from_altrep(vector_x);
+    if (!vec) {
+        Rf_error("x is not an fmalloc ALTREP vector");
+        return R_NilValue;
+    }
+    return Rf_ScalarReal((double)vec->len);
+}
+
+SEXP fmalloc_vector_payload_ptr_impl(SEXP vector_x)
+{
+    fm_vector *vec = maybe_vector_from_altrep(vector_x);
+    if (!vec) {
+        Rf_error("x is not an fmalloc ALTREP vector");
+        return R_NilValue;
+    }
+    if (!vec->data) {
+        return R_NilValue;
+    }
+
+    SEXP ptr = R_MakeExternalPtr(vec->data, Rf_install("Rfmalloc.payload"), vector_x);
+    R_SetExternalPtrProtected(ptr, vector_x);
+    return ptr;
+}
+
 SEXP fmalloc_runtime_of_vector_impl(SEXP vector_x)
 {
     fm_vector *vec = maybe_vector_from_altrep(vector_x);
@@ -307,7 +349,7 @@ SEXP cleanup_fmalloc_impl(SEXP runtime_xptr)
 
 int Rfmalloc_api_version(void)
 {
-    return 1;
+    return 2;
 }
 
 SEXP Rfmalloc_default_runtime(void)
@@ -389,6 +431,10 @@ static void register_c_callables(void)
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_create_vector", (DL_FUNC)Rfmalloc_create_vector);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_cleanup_runtime", (DL_FUNC)Rfmalloc_cleanup_runtime);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_list_allocations", (DL_FUNC)Rfmalloc_list_allocations);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_is_fmalloc_vector", (DL_FUNC)fmalloc_is_fmalloc_vector_impl);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_vector_type", (DL_FUNC)fmalloc_vector_type_impl);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_vector_length", (DL_FUNC)fmalloc_vector_length_impl);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_vector_payload_ptr", (DL_FUNC)fmalloc_vector_payload_ptr_impl);
 }
 
 static const R_CallMethodDef CallEntries[] = {
@@ -396,12 +442,18 @@ static const R_CallMethodDef CallEntries[] = {
     {"init_fmalloc_impl", (DL_FUNC)&init_fmalloc_impl, 3},
     {"create_fmalloc_vector_impl", (DL_FUNC)&create_fmalloc_vector_impl, 4},
     {"list_fmalloc_allocations_impl", (DL_FUNC)&list_fmalloc_allocations_impl, 1},
+    {"fmalloc_is_fmalloc_vector_impl", (DL_FUNC)&fmalloc_is_fmalloc_vector_impl, 1},
+    {"fmalloc_vector_type_impl", (DL_FUNC)&fmalloc_vector_type_impl, 1},
+    {"fmalloc_vector_length_impl", (DL_FUNC)&fmalloc_vector_length_impl, 1},
+    {"fmalloc_vector_payload_ptr_impl", (DL_FUNC)&fmalloc_vector_payload_ptr_impl, 1},
     {"fmalloc_runtime_of_vector_impl", (DL_FUNC)&fmalloc_runtime_of_vector_impl, 1},
     {"fmalloc_set_class_in_place_impl", (DL_FUNC)&fmalloc_set_class_in_place_impl, 2},
     {"fmalloc_runtime_info_impl", (DL_FUNC)&fmalloc_runtime_info_impl, 1},
     {"fmalloc_set_dims_in_place_impl", (DL_FUNC)&fmalloc_set_dims_in_place_impl, 3},
     {"destroy_fmalloc_vector_impl", (DL_FUNC)&destroy_fmalloc_vector_impl, 2},
     {"cleanup_fmalloc_impl", (DL_FUNC)&cleanup_fmalloc_impl, 1},
+    {"rfm_ops_dispatch", (DL_FUNC)&rfm_ops_dispatch, 4},
+    {"rfm_can_handle_ops_pair", (DL_FUNC)&rfm_can_handle_ops_pair, 3},
     {nullptr, nullptr, 0}
 };
 
