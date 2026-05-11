@@ -109,7 +109,7 @@ static fm_vector *allocate_fm_vector(fm_runtime *runtime, SEXPTYPE type, R_xlen_
             runtime_closed = true;
         } else {
             if (bytes >= 1024 * 1024) {
-                Rprintf("Large allocation: %.2f MB requested\n", (double)bytes / (1024.0 * 1024.0));
+                if (rfmalloc_verbose_output()) Rprintf("Large allocation: %.2f MB requested\n", (double)bytes / (1024.0 * 1024.0));
             }
             std::lock_guard<std::mutex> allocator_lock(fmalloc_allocator_mutex);
             fmalloc_set_target(runtime->info);
@@ -164,7 +164,7 @@ static fm_vector *allocate_fm_vector(fm_runtime *runtime, SEXPTYPE type, R_xlen_
 
     vec->data = mem;
     if (bytes >= 1024 * 1024) {
-        Rprintf("SUCCESS: fmalloc allocated %zu bytes\n", bytes);
+        if (rfmalloc_verbose_output()) Rprintf("SUCCESS: fmalloc allocated %zu bytes\n", bytes);
     }
     return vec;
 }

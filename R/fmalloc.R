@@ -17,8 +17,8 @@
         value < 0 || value != floor(value)) {
         stop(sprintf("%s must be a non-negative integer value", arg_name))
     }
-    if (value > .Machine$integer.max) {
-        stop(sprintf("%s exceeds supported dimension size", arg_name))
+    if (value > 2^52) {
+        stop(sprintf("%s exceeds supported vector size", arg_name))
     }
     as.double(value)
 }

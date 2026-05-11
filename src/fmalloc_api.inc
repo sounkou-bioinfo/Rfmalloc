@@ -117,14 +117,14 @@ SEXP create_fmalloc_vector_impl(SEXP runtime_xptr, SEXP template_vec, SEXP lengt
     }
 
     if (length >= 1000) {
-        Rprintf("Creating fmalloc ALTREP vector: type=%s, length=%ld\n", type_label(vec_type), (long)length);
+        if (rfmalloc_verbose_output()) Rprintf("Creating fmalloc ALTREP vector: type=%s, length=%ld\n", type_label(vec_type), (long)length);
     }
 
     fm_vector *vec = allocate_fm_vector(runtime, vec_type, (R_xlen_t)length, true, zero_initialize);
     SEXP result = PROTECT(fmalloc_new_altrep(vec));
 
     if (length >= 1000) {
-        Rprintf("Successfully created fmalloc ALTREP vector\n");
+        if (rfmalloc_verbose_output()) Rprintf("Successfully created fmalloc ALTREP vector\n");
     }
 
     UNPROTECT(1);
@@ -328,7 +328,7 @@ SEXP cleanup_fmalloc_impl(SEXP runtime_xptr)
 {
     if (Rf_isNull(runtime_xptr)) {
         if (default_runtime_xptr == R_NilValue) {
-            Rprintf("cleanup_fmalloc called but fmalloc not initialized\n");
+            if (rfmalloc_verbose_output()) Rprintf("cleanup_fmalloc called but fmalloc not initialized\n");
             return R_NilValue;
         }
         runtime_xptr = default_runtime_xptr;
@@ -341,9 +341,9 @@ SEXP cleanup_fmalloc_impl(SEXP runtime_xptr)
         return R_NilValue;
     }
 
-    Rprintf("Cleaning up fmalloc...\n");
+    if (rfmalloc_verbose_output()) Rprintf("Cleaning up fmalloc...\n");
     request_runtime_close(runtime_xptr, true);
-    Rprintf("fmalloc cleaned up\n");
+    if (rfmalloc_verbose_output()) Rprintf("fmalloc cleaned up\n");
     return R_NilValue;
 }
 

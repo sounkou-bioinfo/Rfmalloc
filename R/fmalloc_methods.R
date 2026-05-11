@@ -135,7 +135,7 @@ rowSums <- function(x, na.rm = FALSE, dims = 1L) {
     result_type <- if (is.complex(x_stripped)) "complex" else "numeric"
     runtime <- .fmalloc_runtime_for_vector(x_stripped)
     result <- create_fmalloc_vector(type = result_type, length = result_len, runtime = runtime)
-    .fmalloc_matrix_margin_sums(x_stripped, margin = 1L, na.rm = na.rm, out = result)
+    result <- .fmalloc_matrix_margin_sums(x_stripped, margin = 1L, na.rm = na.rm, out = result)
     .fmalloc_apply_class(result, type = result_type, shape = "vector")
 }
 
@@ -163,7 +163,7 @@ colSums <- function(x, na.rm = FALSE, dims = 1L) {
     result_type <- if (is.complex(x_stripped)) "complex" else "numeric"
     runtime <- .fmalloc_runtime_for_vector(x_stripped)
     result <- create_fmalloc_vector(type = result_type, length = result_len, runtime = runtime)
-    .fmalloc_matrix_margin_sums(x_stripped, margin = 2L, na.rm = na.rm, out = result)
+    result <- .fmalloc_matrix_margin_sums(x_stripped, margin = 2L, na.rm = na.rm, out = result)
     .fmalloc_apply_class(result, type = result_type, shape = "vector")
 }
 
@@ -192,7 +192,7 @@ rowMeans <- function(x, na.rm = FALSE, dims = 1L) {
     result_type <- if (is.complex(x_stripped)) "complex" else "numeric"
     runtime <- .fmalloc_runtime_for_vector(x_stripped)
     result <- create_fmalloc_vector(type = result_type, length = result_len, runtime = runtime)
-    .fmalloc_matrix_margin_means(x_stripped, margin = 1L, na.rm = na.rm, out = result)
+    result <- .fmalloc_matrix_margin_means(x_stripped, margin = 1L, na.rm = na.rm, out = result)
     .fmalloc_apply_class(result, type = result_type, shape = "vector")
 }
 
@@ -221,7 +221,7 @@ colMeans <- function(x, na.rm = FALSE, dims = 1L) {
     result_type <- if (is.complex(x_stripped)) "complex" else "numeric"
     runtime <- .fmalloc_runtime_for_vector(x_stripped)
     result <- create_fmalloc_vector(type = result_type, length = result_len, runtime = runtime)
-    .fmalloc_matrix_margin_means(x_stripped, margin = 2L, na.rm = na.rm, out = result)
+    result <- .fmalloc_matrix_margin_means(x_stripped, margin = 2L, na.rm = na.rm, out = result)
     .fmalloc_apply_class(result, type = result_type, shape = "vector")
 }
 

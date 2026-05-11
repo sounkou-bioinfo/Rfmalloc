@@ -1,3 +1,9 @@
+static bool rfmalloc_verbose_output(void)
+{
+    SEXP opt = Rf_GetOption1(Rf_install("Rfmalloc.verbose"));
+    return TYPEOF(opt) == LGLSXP && LOGICAL(opt)[0] == TRUE;
+}
+
 static SEXP fmalloc_runtime_tag = R_NilValue;
 static SEXP fmalloc_vector_tag = R_NilValue;
 static std::mutex fmalloc_allocator_mutex;
@@ -217,7 +223,7 @@ static size_t parse_requested_size(SEXP size_gb_sexp)
             return 0;
         }
         requested_size = (size_t)(size_gb * 1024.0 * 1024.0 * 1024.0);
-        Rprintf("Requested file size: %.2f GB (%zu bytes)\n", size_gb, requested_size);
+        if (rfmalloc_verbose_output()) Rprintf("Requested file size: %.2f GB (%zu bytes)\n", size_gb, requested_size);
     }
     return requested_size;
 }
@@ -231,7 +237,7 @@ static void ensure_backing_file(const char *filepath, size_t requested_size)
         size_t min_size = FMALLOC_MIN_CHUNK + FMALLOC_OFF;
         if (requested_size < min_size) {
             requested_size = min_size;
-            Rprintf("Adjusting size to minimum required: %zu bytes\n", requested_size);
+            if (rfmalloc_verbose_output()) Rprintf("Adjusting size to minimum required: %zu bytes\n", requested_size);
         }
 
         int fd = open(filepath, O_RDWR | O_CREAT, 0666);
@@ -240,7 +246,7 @@ static void ensure_backing_file(const char *filepath, size_t requested_size)
             return;
         }
 
-        Rprintf("Creating file with size: %zu bytes (%.2f GB)\n",
+        if (rfmalloc_verbose_output()) Rprintf("Creating file with size: %zu bytes (%.2f GB)\n",
                 requested_size, requested_size / (1024.0 * 1024.0 * 1024.0));
 
         if (ftruncate(fd, requested_size) != 0) {
@@ -250,7 +256,7 @@ static void ensure_backing_file(const char *filepath, size_t requested_size)
         }
         close(fd);
     } else {
-        Rprintf("Using existing file: %s (size: %lld bytes)\n",
+        if (rfmalloc_verbose_output()) Rprintf("Using existing file: %s (size: %lld bytes)\n",
                 filepath, (long long)st.st_size);
     }
 }
@@ -368,7 +374,6 @@ static fm_runtime *open_runtime_native(const char *filepath, size_t requested_si
     }
 
     if (fm_runtime *runtime = find_registered_runtime(filepath)) {
-        std::lock_guard<std::mutex> runtime_lock(runtime->mutex);
         if (runtime->mode != mode) {
             Rf_error("fmalloc runtime for %s is already open with mode %s", filepath,
                      runtime->mode == FM_MODE_PERSISTENT ? "persistent" : "scratch");
@@ -377,16 +382,20 @@ static fm_runtime *open_runtime_native(const char *filepath, size_t requested_si
         if (!runtime->info) {
             return nullptr;
         }
-        if (runtime->close_pending || runtime->close_requested) {
-            runtime->close_pending = false;
-            runtime->close_requested = false;
+
+        {
+            std::lock_guard<std::mutex> runtime_lock(runtime->mutex);
+            if (runtime->close_pending || runtime->close_requested) {
+                runtime->close_pending = false;
+                runtime->close_requested = false;
+            }
         }
 
         if (initialized_out) {
             *initialized_out = false;
         }
 
-        Rprintf("fmalloc initialized with existing runtime: %s (init: false, mode: %s)\n",
+        if (rfmalloc_verbose_output()) Rprintf("fmalloc initialized with existing runtime: %s (init: false, mode: %s)\n",
                 filepath, mode == FM_MODE_PERSISTENT ? "persistent" : "scratch");
 
         return runtime;
@@ -428,12 +437,12 @@ static fm_runtime *open_runtime_native(const char *filepath, size_t requested_si
     register_runtime_handle(runtime->filepath.c_str(), runtime);
 
     if (runtime->filepath != filepath) {
-        Rprintf("fmalloc initialized with file: %s (requested: %s, init: %s, mode: %s)\n",
+        if (rfmalloc_verbose_output()) Rprintf("fmalloc initialized with file: %s (requested: %s, init: %s, mode: %s)\n",
                 runtime->filepath.c_str(), filepath,
                 init_flag ? "true" : "false",
                 mode == FM_MODE_PERSISTENT ? "persistent" : "scratch");
     } else {
-        Rprintf("fmalloc initialized with file: %s (init: %s, mode: %s)\n",
+        if (rfmalloc_verbose_output()) Rprintf("fmalloc initialized with file: %s (init: %s, mode: %s)\n",
                 filepath,
                 init_flag ? "true" : "false",
                 mode == FM_MODE_PERSISTENT ? "persistent" : "scratch");

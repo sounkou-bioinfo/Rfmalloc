@@ -48,6 +48,12 @@ message("Testing fmalloc ALTREP vector types and duplication...")
         z[1] <- replacements[[type]]
         expect_equal(x[4], values[[type]][4])
         expect_equal(z[1], replacements[[type]])
+
+        # [[ should return scalar values directly without creating a fmalloc object
+        scalar <- x[[1]]
+        expect_false(inherits(scalar, "fmalloc"))
+        expect_equal(length(scalar), 1L)
+        expect_equal(scalar, x[1])
     }
 
     lst <- create_fmalloc_vector("list", 3, runtime = rt)
@@ -175,6 +181,10 @@ message("Testing fmalloc ALTREP vector types and duplication...")
     expect_equal(x[c(1.5, 3L)], as.integer(1:4)[c(1.5, 3L)])
     expect_equal(x[as.numeric(c(1, 3))], as.integer(1:4)[as.numeric(c(1, 3))])
     expect_error(x[c(2L, -2L)])
+    expect_error(x[[0]], "attempt to select less than one element in get1index")
+    expect_error(x[[0L]], "integerOneIndex")
+    expect_error(x[[5L]], "subscript out of bounds")
+    expect_error(x[[5]], "subscript out of bounds")
 })()
 
 message("fmalloc ALTREP vector type tests completed!")

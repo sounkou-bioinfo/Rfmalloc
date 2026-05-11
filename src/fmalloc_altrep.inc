@@ -2,6 +2,9 @@
 // ALTREP methods
 //==============================================================================
 
+static bool fmalloc_call_is_bracket2(SEXP call);
+static SEXP fmalloc_altvec_single_bracket2_extract(SEXP x, fm_vector *src, R_xlen_t src_i);
+
 static R_xlen_t fmalloc_altrep_length(SEXP x)
 {
     return vector_from_altrep(x)->len;
@@ -9,19 +12,13 @@ static R_xlen_t fmalloc_altrep_length(SEXP x)
 
 static void *fmalloc_altrep_dataptr(SEXP x, Rboolean writeable)
 {
-    fm_vector *vec = vector_from_altrep(x);
-    vec->dataptr_exposed = true;
-    if (writeable == TRUE) {
-        vec->maybe_dirty = true;
-    }
-    return vector_data_or_dummy(vec);
+    (void)writeable;
+    return vector_data_or_dummy(vector_from_altrep(x));
 }
 
 static const void *fmalloc_altrep_dataptr_or_null(SEXP x)
 {
-    fm_vector *vec = vector_from_altrep(x);
-    vec->dataptr_exposed = true;
-    return vector_data_or_dummy(vec);
+    return vector_data_or_dummy(vector_from_altrep(x));
 }
 
 static Rboolean fmalloc_altrep_inspect(SEXP x, int pre, int deep, int pvec,
@@ -624,18 +621,49 @@ static void copy_subset_element(fm_vector *dst, R_xlen_t dst_i, fm_vector *src, 
     }
 }
 
+static bool index_has_negative(SEXP indx)
+{
+    R_xlen_t n = XLENGTH(indx);
+    if (TYPEOF(indx) == INTSXP) {
+        for (R_xlen_t i = 0; i < n; i++) {
+            int v = INTEGER(indx)[i];
+            if (v != NA_INTEGER && v < 0) return true;
+        }
+    }
+    if (TYPEOF(indx) == REALSXP) {
+        for (R_xlen_t i = 0; i < n; i++) {
+            double v = REAL(indx)[i];
+            if (R_FINITE(v) && (v < 0 || floor(v) != v)) return true;
+        }
+    }
+    return false;
+}
+
 static SEXP fmalloc_altvec_extract_subset(SEXP x, SEXP indx, SEXP call)
 {
-    (void)call;
     if (TYPEOF(indx) != INTSXP && TYPEOF(indx) != REALSXP) {
         return nullptr;
+    }
+
+    if (index_has_negative(indx)) {
+        return nullptr;
+    }
+
+    fm_vector *src = vector_from_altrep(x);
+    const bool is_bracket2 = fmalloc_call_is_bracket2(call);
+
+    if (is_bracket2 && XLENGTH(indx) == 1L) {
+        R_xlen_t src_i = 0;
+        if (!subset_index_to_offset(indx, 0, src->len, &src_i)) {
+            Rf_error("subscript out of bounds");
+        }
+        return fmalloc_altvec_single_bracket2_extract(x, src, src_i);
     }
 
     if (TYPEOF(indx) == REALSXP || !subset_index_fast_compatible(indx)) {
         return nullptr;
     }
 
-    fm_vector *src = vector_from_altrep(x);
     R_xlen_t n = XLENGTH(indx);
     fm_vector *dst = allocate_fm_vector(src->runtime, src->type, n, false, false);
     SEXP ans = PROTECT(fmalloc_new_altrep(dst));
@@ -756,6 +784,33 @@ static SEXP fmalloc_altlist_elt(SEXP x, R_xlen_t i)
 static void fmalloc_altlist_set_elt(SEXP x, R_xlen_t i, SEXP value)
 {
     set_pointer_element(vector_from_altrep(x), i, value);
+}
+
+static bool fmalloc_call_is_bracket2(SEXP call)
+{
+    return call != R_NilValue && TYPEOF(call) == LANGSXP && CAR(call) == R_Bracket2Symbol;
+}
+
+static SEXP fmalloc_altvec_single_bracket2_extract(SEXP x, fm_vector *src, R_xlen_t src_i)
+{
+    switch (src->type) {
+    case LGLSXP:
+        return Rf_ScalarLogical(static_cast<int *>(vector_data_or_dummy(src))[src_i]);
+    case INTSXP:
+        return Rf_ScalarInteger(static_cast<int *>(vector_data_or_dummy(src))[src_i]);
+    case REALSXP:
+        return Rf_ScalarReal(static_cast<double *>(vector_data_or_dummy(src))[src_i]);
+    case RAWSXP:
+        return Rf_ScalarRaw(static_cast<Rbyte *>(vector_data_or_dummy(src))[src_i]);
+    case CPLXSXP:
+        return Rf_ScalarComplex(static_cast<Rcomplex *>(vector_data_or_dummy(src))[src_i]);
+    case STRSXP:
+        return string_elt_from_vec(src, src_i);
+    case VECSXP:
+        return VECTOR_ELT(pointer_refs_from_altrep(x), src_i);
+    default:
+        return Rf_ScalarLogical(NA_LOGICAL);
+    }
 }
 
 #define REGISTER_COMMON_ALTREP_METHODS(cls)                                      \
