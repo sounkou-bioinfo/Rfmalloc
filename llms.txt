@@ -58,8 +58,7 @@ mapped-file recovery diagnostics.
 
 ## Installation
 
-``` r
-
+``` R
 # install.packages("devtools")
 devtools::install_github("sounkou-bioinfo/Rfmalloc")
 ```
@@ -82,8 +81,7 @@ Calls to
 [`create_fmalloc_vector()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/create_fmalloc_vector.md)
 can then omit the `runtime` argument:
 
-``` r
-
+``` R
 library(Rfmalloc)
 local({
   alloc_file <- tempfile(fileext = ".bin")
@@ -119,10 +117,6 @@ local({
     list_first = v_lst[[1]][]
   )
 })
-#> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e2dd3bd95.bin (init: true, mode: persistent)
-#> Cleaning up fmalloc...
-#> fmalloc cleaned up
 #> $integer
 #> [1] 1 2 3
 #> 
@@ -146,9 +140,7 @@ For multiple backing files or explicit lifetime management, prefer
 runtime handles returned by
 [`open_fmalloc()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/open_fmalloc.md):
 
-``` r
-
-
+``` R
 local({
   handle_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(handle_file)
@@ -161,10 +153,6 @@ local({
   v[1:3] <- 10:12
   v[1:3]
 })
-#> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e16294b06.bin (init: true, mode: persistent)
-#> Cleaning up fmalloc...
-#> fmalloc cleaned up
 #> [1] 10 11 12
 ```
 
@@ -173,8 +161,7 @@ local({
 This example is executed when building the README and uses a 1B-length
 fmalloc payload.
 
-``` r
-
+``` R
 local({
   large_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(large_file, size_gb = 10)
@@ -207,23 +194,6 @@ local({
 
   # sum(big_sum) is not used here: Summary(S) generics return scalars.
 })
-#> Requested file size: 10.00 GB (10737418240 bytes)
-#> Creating file with size: 10737418240 bytes (10.00 GB)
-#> fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e7ab0f30e.bin (init: true, mode: persistent)
-#> Creating fmalloc ALTREP vector: type=integer, length=10000000
-#> Large allocation: 38.15 MB requested
-#> SUCCESS: fmalloc allocated 40000000 bytes
-#> Successfully created fmalloc ALTREP vector
-#> Creating fmalloc ALTREP vector: type=integer, length=10000000
-#> Large allocation: 38.15 MB requested
-#> SUCCESS: fmalloc allocated 40000000 bytes
-#> Successfully created fmalloc ALTREP vector
-#> Creating fmalloc ALTREP vector: type=integer, length=10000000
-#> Large allocation: 38.15 MB requested
-#> SUCCESS: fmalloc allocated 40000000 bytes
-#> Successfully created fmalloc ALTREP vector
-#> Cleaning up fmalloc...
-#> fmalloc cleaned up
 #> $a_head
 #> [1] 1 2 3 4 5
 #> 
@@ -243,6 +213,151 @@ local({
 #> [1] 3
 ```
 
+## Arithmetic and comparison operations
+
+Elementwise `Ops` (`+`, `-`, `*`, `/`, `^`, `%%`, `%/%`, `==`, `!=`,
+`<`, `>`, `<=`, `>=`, `&`, `|`, `!`, unary `-` and `+`) on fmalloc
+vectors are implemented as native C/C++ kernels. Results stay in the
+same fmalloc runtime for large vectors.
+
+``` R
+local({
+  ops_file <- tempfile(fileext = ".bin")
+  rt <- open_fmalloc(ops_file, mode = "scratch", size_gb = 0.1)
+  on.exit({
+    cleanup_fmalloc(rt)
+    unlink(ops_file)
+  }, add = TRUE)
+
+  x <- create_fmalloc_vector("integer", 5, runtime = rt)
+  y <- create_fmalloc_vector("integer", 5, runtime = rt)
+  x[] <- c(10L, 20L, 30L, NA_integer_, 50L)
+  y[] <- 1:5
+
+  list(
+    add = x + y,
+    sub = x - y,
+    mul = x * y,
+    div = x / y,
+    idiv = x %/% y,
+    mod = x %% y,
+    pow = x ^ 2L,
+    cmp_eq = x == y,
+    cmp_lt = x < 20L,
+    unary_neg = -x,
+    unary_not = !(x > 20L)
+  )
+})
+#> $add
+#> [1] 11 22 33 NA 55
+#> attr(,"class")
+#> [1] "fmalloc_vector" "fmalloc"        "integer"       
+#> 
+#> $sub
+#> [1]  9 18 27 NA 45
+#> attr(,"class")
+#> [1] "fmalloc_vector" "fmalloc"        "integer"       
+#> 
+#> $mul
+#> [1]  10  40  90  NA 250
+#> attr(,"class")
+#> [1] "fmalloc_vector" "fmalloc"        "integer"       
+#> 
+#> $div
+#> [1] 10 10 10 NA 10
+#> attr(,"class")
+#> [1] "fmalloc_vector" "fmalloc"        "numeric"       
+#> 
+#> $idiv
+#> [1] 10 10 10 NA 10
+#> attr(,"class")
+#> [1] "fmalloc_vector" "fmalloc"        "integer"       
+#> 
+#> $mod
+#> [1]  0  0  0 NA  0
+#> attr(,"class")
+#> [1] "fmalloc_vector" "fmalloc"        "integer"       
+#> 
+#> $pow
+#> [1]  100  400  900   NA 2500
+#> attr(,"class")
+#> [1] "fmalloc_vector" "fmalloc"        "numeric"       
+#> 
+#> $cmp_eq
+#> [1] FALSE FALSE FALSE    NA FALSE
+#> attr(,"class")
+#> [1] "fmalloc_vector" "fmalloc"        "logical"       
+#> 
+#> $cmp_lt
+#> [1]  TRUE FALSE FALSE    NA FALSE
+#> attr(,"class")
+#> [1] "fmalloc_vector" "fmalloc"        "logical"       
+#> 
+#> $unary_neg
+#> [1] -10 -20 -30  NA -50
+#> attr(,"class")
+#> [1] "fmalloc_vector" "fmalloc"        "integer"       
+#> 
+#> $unary_not
+#> [1]  TRUE  TRUE FALSE    NA FALSE
+#> attr(,"class")
+#> [1] "fmalloc_vector" "fmalloc"        "logical"
+```
+
+Mixed fmalloc + base vector and scalar recycling work:
+
+``` R
+local({
+  mix_file <- tempfile(fileext = ".bin")
+  rt <- open_fmalloc(mix_file, mode = "scratch", size_gb = 0.1)
+  on.exit({
+    cleanup_fmalloc(rt)
+    unlink(mix_file)
+  }, add = TRUE)
+
+  x <- create_fmalloc_vector("numeric", 4, runtime = rt)
+  x[] <- c(1.5, 2.5, 3.5, 4.5)
+
+  list(
+    fm_plus_scalar = x + 10,
+    scalar_plus_fm = 10 + x,
+    fm_plus_base   = x + c(100, 200, 300, 400),
+    base_plus_fm   = c(1, 2, 3, 4) + x,
+    recycling_ok   = x + c(10, 20),
+    logical_op     = (x > 2) & (x < 5)
+  )
+})
+#> $fm_plus_scalar
+#> [1] 11.5 12.5 13.5 14.5
+#> attr(,"class")
+#> [1] "fmalloc_vector" "fmalloc"        "numeric"       
+#> 
+#> $scalar_plus_fm
+#> [1] 11.5 12.5 13.5 14.5
+#> attr(,"class")
+#> [1] "fmalloc_vector" "fmalloc"        "numeric"       
+#> 
+#> $fm_plus_base
+#> [1] 101.5 202.5 303.5 404.5
+#> attr(,"class")
+#> [1] "fmalloc_vector" "fmalloc"        "numeric"       
+#> 
+#> $base_plus_fm
+#> [1] 2.5 4.5 6.5 8.5
+#> attr(,"class")
+#> [1] "fmalloc_vector" "fmalloc"        "numeric"       
+#> 
+#> $recycling_ok
+#> [1] 11.5 22.5 13.5 24.5
+#> attr(,"class")
+#> [1] "fmalloc_vector" "fmalloc"        "numeric"       
+#> 
+#> $logical_op
+#> [1] FALSE  TRUE  TRUE  TRUE
+#> attr(,"class")
+#> [1] "fmalloc_vector" "fmalloc"        "logical"
+```
+
 ## Explicit destruction and parent safety
 
 [`destroy_fmalloc_vector()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/destroy_fmalloc_vector.md)
@@ -252,9 +367,7 @@ The helper enforces parent-reference safety: a vector cannot be
 destroyed while it is still stored as a child of any fmalloc list. When
 needed, drop parent links first.
 
-``` r
-
-
+``` R
 local({
   destroy_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(destroy_file, mode = "persistent")
@@ -279,10 +392,6 @@ local({
     destroy_succeeded_after_unset = destroy_ok
   )
 })
-#> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e63021961.bin (init: true, mode: persistent)
-#> Cleaning up fmalloc...
-#> fmalloc cleaned up
 #> $destroy_rejected_with_parent
 #> [1] TRUE
 #> 
@@ -299,9 +408,7 @@ memory and mark the catalog entry as non-recoverable.
 This is scoped to the targeted vector(s): if one object is
 unsafe-destroyed, other objects in the same runtime remain recoverable.
 
-``` r
-
-
+``` R
 local({
   selective_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(selective_file, mode = "persistent")
@@ -328,12 +435,6 @@ local({
     drop_recover_fails = inherits(drop_recover_error, "try-error")
   )
 })
-#> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e5607876b.bin (init: true, mode: persistent)
-#> fmalloc initialized with existing runtime: /tmp/RtmpisoH8d/file210c9e5607876b.bin (init: false, mode: persistent)
-#> fmalloc initialized with existing runtime: /tmp/RtmpisoH8d/file210c9e5607876b.bin (init: false, mode: persistent)
-#> Cleaning up fmalloc...
-#> fmalloc cleaned up
 #> $keep_recovered_ok
 #> [1] TRUE
 #> 
@@ -356,9 +457,7 @@ accept `mode = "persistent"` or `mode = "scratch"`. The default is
   Vector finalizers may return payloads to fmalloc, and serialization
   falls back to ordinary R values.
 
-``` r
-
-
+``` R
 local({
   persist_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(persist_file, mode = "persistent")
@@ -372,11 +471,6 @@ local({
   roundtrip <- unserialize(serialize(x, NULL))
   roundtrip[]
 })
-#> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e67226c68.bin (init: true, mode: persistent)
-#> fmalloc initialized with existing runtime: /tmp/RtmpisoH8d/file210c9e67226c68.bin (init: false, mode: persistent)
-#> Cleaning up fmalloc...
-#> fmalloc cleaned up
 #> [1] 1 2 3 4 5
 ```
 
@@ -387,9 +481,7 @@ Rfmalloc’s inspector reports the vector type, length, payload byte
 count, runtime mode, runtime state, payload offset, file UUID, and
 backing-file path.
 
-``` r
-
-
+``` R
 local({
   inspect_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(inspect_file, mode = "persistent")
@@ -402,18 +494,14 @@ local({
   inspect_vec[] <- 1:4
   .Internal(inspect(inspect_vec))
 })
-#> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9ecc035d9.bin (init: true, mode: persistent)
-#> @5be63a022630 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x77fec30023e8 mode=persistent runtime=open offset=9192 uuid=b35d247f64fd976d5ac9128d6f2a9fcb file=/tmp/RtmpisoH8d/file210c9ecc035d9.bin
+#> @5950b878a008 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x70cc108023e8 mode=persistent runtime=open offset=9192 uuid=8769d44072563b1dd0ca2e4acaaa3d7d file=/tmp/Rtmp6IfiFE/file26a8c06787d15b.bin
 #> ATTRIB:
-#>   @5be63a01f7c0 02 LISTSXP g0c0 [REF(1)] 
-#>     TAG: @5be6354a5790 01 SYMSXP g1c0 [MARK,REF(37031),LCK,gp=0x6000] "class" (has value)
-#>     @5be63a227ea8 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)
-#>       @5be63a818358 09 CHARSXP g1c2 [MARK,REF(30),gp=0x60] [ASCII] [cached] "fmalloc_vector"
-#>       @5be63a2a6188 09 CHARSXP g1c1 [MARK,REF(95),gp=0x60] [ASCII] [cached] "fmalloc"
-#>       @5be6354d8748 09 CHARSXP g1c1 [MARK,REF(521),gp=0x61] [ASCII] [cached] "integer"
-#> Cleaning up fmalloc...
-#> fmalloc cleaned up
+#>   @5950b878b118 02 LISTSXP g0c0 [REF(1)] 
+#>     TAG: @5950b53b36a0 01 SYMSXP g1c0 [MARK,REF(37278),LCK,gp=0x6000] "class" (has value)
+#>     @5950b93401d8 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)
+#>       @5950ba778778 09 CHARSXP g0c2 [MARK,REF(52),gp=0x60] [ASCII] [cached] "fmalloc_vector"
+#>       @5950ba1d4b98 09 CHARSXP g0c1 [MARK,REF(137),gp=0x60] [ASCII] [cached] "fmalloc"
+#>       @5950b53e6658 09 CHARSXP g1c1 [MARK,REF(579),gp=0x61] [ASCII] [cached] "integer"
 ```
 
 `inspect()` output is an internal R diagnostic, so exact formatting can
@@ -427,9 +515,7 @@ encodings, and NA flags live in fmalloc storage. R `CHARSXP` values are
 materialized on `STRING_ELT()` access; Rfmalloc does not allocate
 `CHARSXP` objects inside fmalloc.
 
-``` r
-
-
+``` R
 local({
   char_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(char_file, mode = "persistent")
@@ -449,10 +535,6 @@ local({
     from_integer = as.character(from_int)[]
   )
 })
-#> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e76f649f0.bin (init: true, mode: persistent)
-#> Cleaning up fmalloc...
-#> fmalloc cleaned up
 #> $chars
 #> [1] "one"   NA      "three"
 #> 
@@ -465,9 +547,7 @@ local({
 Use constructor helpers for shape-aware allocation, and `as_fmalloc_*()`
 helpers to install shape metadata on existing fmalloc-backed vectors:
 
-``` r
-
-
+``` R
 local({
   ctor_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(ctor_file, mode = "persistent")
@@ -502,10 +582,6 @@ local({
     df_columns = names(df)
   )
 })
-#> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e5bfb983e.bin (init: true, mode: persistent)
-#> Cleaning up fmalloc...
-#> fmalloc cleaned up
 #> $matrix_dims
 #> [1] 2 3
 #> 
@@ -534,9 +610,7 @@ behavior with:
 where `n` is the maximum allowed result length to keep in-memory.
 Results with length greater than `n` stay fmalloc-backed.
 
-``` r
-
-
+``` R
 local({
   reduce_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(reduce_file, mode = "persistent")
@@ -573,10 +647,6 @@ local({
     expected_rowSums = rowSums(base_m)
   )
 })
-#> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e5f5388b6.bin (init: true, mode: persistent)
-#> Cleaning up fmalloc...
-#> fmalloc cleaned up
 #> $default_row_sums_in_memory
 #> [1] FALSE
 #> 
@@ -601,9 +671,7 @@ local({
 Runtime handles make it possible to use more than one backing file in
 one R process.
 
-``` r
-
-
+``` R
 local({
   file_a <- tempfile(fileext = ".bin")
   file_b <- tempfile(fileext = ".bin")
@@ -631,15 +699,6 @@ local({
     vec_a_after_cleanup = after_cleanup
   )
 })
-#> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e50821a29.bin (init: true, mode: persistent)
-#> Requested file size: 0.10 GB (107374182 bytes)
-#> Creating file with size: 107374182 bytes (0.10 GB)
-#> fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e10b097f6.bin (init: true, mode: persistent)
-#> Cleaning up fmalloc...
-#> fmalloc cleaned up
-#> Cleaning up fmalloc...
-#> fmalloc cleaned up
 #> $before_cleanup
 #>   vector value
 #> 1  vec_a   101
@@ -678,9 +737,7 @@ recorded dimensions and file bounds, validates the catalog record and
 generation, and reconstructs an ALTREP vector around the same fmalloc
 allocation.
 
-``` r
-
-
+``` R
 local({
   ser_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(ser_file, mode = "persistent")
@@ -707,12 +764,6 @@ local({
   unlink(ser_file)
   output
 })
-#> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e26d9e2fc.bin (init: true, mode: persistent)
-#> Cleaning up fmalloc...
-#> fmalloc cleaned up
-#> fmalloc initialized with existing runtime: /tmp/RtmpisoH8d/file210c9e26d9e2fc.bin (init: false, mode: persistent)
-#> fmalloc initialized with existing runtime: /tmp/RtmpisoH8d/file210c9e26d9e2fc.bin (init: false, mode: persistent)
 #> $catalog
 #>   record_offset generation      type length
 #> 1          9440          2 character      3
@@ -732,8 +783,7 @@ Use
 to inspect runtime metadata, the live catalog, and a compact summary
 that can help decide when a runtime is a reset candidate:
 
-``` r
-
+``` R
 local({
   diag_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(diag_file, mode = "persistent")
@@ -756,8 +806,6 @@ local({
     compaction_implemented = post$summary$compaction_implemented
   )
 })
-#> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e218ad60a.bin (init: true, mode: persistent)
 #> $mode
 #> [1] "persistent"
 #> 
@@ -780,8 +828,7 @@ local({
 Scratch runtimes use ordinary R serialization instead. Their serialized
 values do not depend on reopening the scratch backing file.
 
-``` r
-
+``` R
 local({
   scratch_file <- tempfile(fileext = ".bin")
   scratch_rt <- open_fmalloc(scratch_file, mode = "scratch")
@@ -794,10 +841,6 @@ local({
   unlink(scratch_file)
   scratch_copy
 })
-#> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e48cef6b.bin (init: true, mode: scratch)
-#> Cleaning up fmalloc...
-#> fmalloc cleaned up
 #> [1] 1 2 3 4
 #> attr(,"class")
 #> [1] "fmalloc_vector" "fmalloc"        "integer"
@@ -825,9 +868,7 @@ object store for recovering vectors by name.
 
 List assignment rejects non-fmalloc payloads at runtime.
 
-``` r
-
-
+``` R
 local({
   reject_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(reject_file, mode = "persistent")
@@ -850,10 +891,6 @@ local({
     rejected_non_fmalloc_payload = inherits(bad_assignment, "try-error")
   )
 })
-#> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e5a9476d6.bin (init: true, mode: persistent)
-#> Cleaning up fmalloc...
-#> fmalloc cleaned up
 #> $same_runtime_child
 #> [1] 1 2
 #> 
@@ -864,9 +901,7 @@ local({
 Nested fmalloc lists recover recursively when serialized and
 unserialized from a persistent backing file.
 
-``` r
-
-
+``` R
 local({
   recover_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(recover_file, mode = "persistent")
@@ -895,11 +930,6 @@ local({
     recovered_labels = recovered[[2]]
   )
 })
-#> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e41b6e33f.bin (init: true, mode: persistent)
-#> Cleaning up fmalloc...
-#> fmalloc cleaned up
-#> fmalloc initialized with existing runtime: /tmp/RtmpisoH8d/file210c9e41b6e33f.bin (init: false, mode: persistent)
 #> $recovered_nested
 #> [1] 1 2
 #> 
@@ -909,9 +939,7 @@ local({
 
 Cross-runtime insertion is also rejected.
 
-``` r
-
-
+``` R
 local({
   cross_file_a <- tempfile(fileext = ".bin")
   cross_file_b <- tempfile(fileext = ".bin")
@@ -934,14 +962,6 @@ local({
 
   list(cross_runtime_rejected = inherits(cross_runtime_error, "try-error"))
 })
-#> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e4e771918.bin (init: true, mode: persistent)
-#> Creating file with size: 33562624 bytes (0.03 GB)
-#> fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e18430899.bin (init: true, mode: persistent)
-#> Cleaning up fmalloc...
-#> fmalloc cleaned up
-#> Cleaning up fmalloc...
-#> fmalloc cleaned up
 #> $cross_runtime_rejected
 #> [1] TRUE
 ```
@@ -965,14 +985,9 @@ benchmark-only fmalloc allocations are not preserved as persistent
 records. Timings are machine- and R-version-specific; use this as a
 template for local measurements.
 
-``` r
-
-
+``` R
 perf_file <- tempfile(fileext = ".bin")
 rt <- open_fmalloc(perf_file, mode = "scratch", size_gb = 0.1)
-#> Requested file size: 0.10 GB (107374182 bytes)
-#> Creating file with size: 107374182 bytes (0.10 GB)
-#> fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e63f064cc.bin (init: true, mode: scratch)
 
 n <- 100000L
 set.seed(1)
@@ -982,15 +997,11 @@ base_int <- integer(n)
 base_int[] <- seq_len(n)
 
 fm_int <- create_fmalloc_vector("integer", n, runtime = rt)
-#> Creating fmalloc ALTREP vector: type=integer, length=100000
-#> Successfully created fmalloc ALTREP vector
 fm_int[] <- base_int
 
 write_env <- new.env(parent = emptyenv())
 write_env$base <- base_int
 write_env$fm <- create_fmalloc_vector("integer", n, runtime = rt)
-#> Creating fmalloc ALTREP vector: type=integer, length=100000
-#> Successfully created fmalloc ALTREP vector
 write_env$fm[] <- base_int
 
 scalar_sum <- function(x, i) {
@@ -1021,21 +1032,19 @@ perf_result <- bench::mark(
 rm(fm_int, write_env)
 invisible(gc())
 cleanup_fmalloc(rt)
-#> Cleaning up fmalloc...
-#> fmalloc cleaned up
 unlink(perf_file)
 perf_result
 #> # A tibble: 8 × 5
 #>   expression               median `itr/sec` mem_alloc `gc/sec`
 #>   <bch:expr>             <bch:tm>     <dbl> <bch:byt>    <dbl>
-#> 1 base_sequential_sum      33.5µs    28933.        0B      0  
-#> 2 fmalloc_sequential_sum   47.2µs    22894.        0B      0  
-#> 3 base_scalar_read         31.9µs    29317.        0B      0  
-#> 4 fmalloc_scalar_read     868.3µs     1133.   24.55KB     59.6
-#> 5 base_subset_copy          2.6µs   288716.    7.86KB      0  
-#> 6 fmalloc_subset_copy      11.6µs    82429.        0B      0  
-#> 7 base_indexed_write      107.4µs    10903.  390.67KB      0  
-#> 8 fmalloc_indexed_write   180.9µs     5791.        0B      0
+#> 1 base_sequential_sum     33.58µs    27491.        0B        0
+#> 2 fmalloc_sequential_sum  47.37µs    21584.        0B        0
+#> 3 base_scalar_read        31.75µs    28740.   24.55KB        0
+#> 4 fmalloc_scalar_read    753.61µs     1327.        0B        0
+#> 5 base_subset_copy         2.63µs   306886.    7.86KB        0
+#> 6 fmalloc_subset_copy     16.04µs    59423.        0B        0
+#> 7 base_indexed_write     105.54µs    12402.  390.67KB        0
+#> 8 fmalloc_indexed_write   180.5µs     5831.        0B        0
 ```
 
 ## Native C API for Other Packages
