@@ -130,7 +130,7 @@
 <span>  <span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d6524dac6c5.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e2dd3bd95.bin (init: true, mode: persistent)</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
 <span><span class="co">#&gt; fmalloc cleaned up</span></span>
 <span><span class="co">#&gt; $integer</span></span>
@@ -166,7 +166,7 @@
 <span>  <span class="va">v</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">3</span><span class="op">]</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d65694c036d.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e16294b06.bin (init: true, mode: persistent)</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
 <span><span class="co">#&gt; fmalloc cleaned up</span></span>
 <span><span class="co">#&gt; [1] 10 11 12</span></span></code></pre></div>
@@ -178,13 +178,13 @@
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="va">large_file</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
-<span>  <span class="va">rt</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/open_fmalloc.html">open_fmalloc</a></span><span class="op">(</span><span class="va">large_file</span>, size_gb <span class="op">=</span> <span class="fl">20</span><span class="op">)</span></span>
+<span>  <span class="va">rt</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/open_fmalloc.html">open_fmalloc</a></span><span class="op">(</span><span class="va">large_file</span>, size_gb <span class="op">=</span> <span class="fl">10</span><span class="op">)</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/on.exit.html" class="external-link">on.exit</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>    <span class="fu"><a href="reference/cleanup_fmalloc.html">cleanup_fmalloc</a></span><span class="op">(</span><span class="va">rt</span><span class="op">)</span></span>
 <span>    <span class="fu"><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink</a></span><span class="op">(</span><span class="va">large_file</span><span class="op">)</span></span>
 <span>  <span class="op">}</span>, add <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
 <span></span>
-<span>  <span class="va">n</span> <span class="op">&lt;-</span> <span class="fl">1000000000L</span></span>
+<span>  <span class="va">n</span> <span class="op">&lt;-</span> <span class="fl">10000000L</span></span>
 <span>  <span class="va">before_alloc</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="fu"><a href="reference/list_fmalloc_allocations.html">list_fmalloc_allocations</a></span><span class="op">(</span><span class="va">rt</span><span class="op">)</span><span class="op">)</span></span>
 <span></span>
 <span>  <span class="va">big_int_a</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/create_fmalloc_vector.html">create_fmalloc_vector</a></span><span class="op">(</span><span class="st">"integer"</span>, <span class="va">n</span>, runtime <span class="op">=</span> <span class="va">rt</span><span class="op">)</span></span>
@@ -208,20 +208,20 @@
 <span></span>
 <span>  <span class="co"># sum(big_sum) is not used here: Summary(S) generics return scalars.</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Requested file size: 20.00 GB (21474836480 bytes)</span></span>
-<span><span class="co">#&gt; Creating file with size: 21474836480 bytes (20.00 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d653ae4f9bb.bin (init: true, mode: persistent)</span></span>
-<span><span class="co">#&gt; Creating fmalloc ALTREP vector: type=integer, length=1000000000</span></span>
-<span><span class="co">#&gt; Large allocation: 3814.70 MB requested</span></span>
-<span><span class="co">#&gt; SUCCESS: fmalloc allocated 4000000000 bytes</span></span>
+<span><span class="co">#&gt; Requested file size: 10.00 GB (10737418240 bytes)</span></span>
+<span><span class="co">#&gt; Creating file with size: 10737418240 bytes (10.00 GB)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e7ab0f30e.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; Creating fmalloc ALTREP vector: type=integer, length=10000000</span></span>
+<span><span class="co">#&gt; Large allocation: 38.15 MB requested</span></span>
+<span><span class="co">#&gt; SUCCESS: fmalloc allocated 40000000 bytes</span></span>
 <span><span class="co">#&gt; Successfully created fmalloc ALTREP vector</span></span>
-<span><span class="co">#&gt; Creating fmalloc ALTREP vector: type=integer, length=1000000000</span></span>
-<span><span class="co">#&gt; Large allocation: 3814.70 MB requested</span></span>
-<span><span class="co">#&gt; SUCCESS: fmalloc allocated 4000000000 bytes</span></span>
+<span><span class="co">#&gt; Creating fmalloc ALTREP vector: type=integer, length=10000000</span></span>
+<span><span class="co">#&gt; Large allocation: 38.15 MB requested</span></span>
+<span><span class="co">#&gt; SUCCESS: fmalloc allocated 40000000 bytes</span></span>
 <span><span class="co">#&gt; Successfully created fmalloc ALTREP vector</span></span>
-<span><span class="co">#&gt; Creating fmalloc ALTREP vector: type=integer, length=1000000000</span></span>
-<span><span class="co">#&gt; Large allocation: 3814.70 MB requested</span></span>
-<span><span class="co">#&gt; SUCCESS: fmalloc allocated 4000000000 bytes</span></span>
+<span><span class="co">#&gt; Creating fmalloc ALTREP vector: type=integer, length=10000000</span></span>
+<span><span class="co">#&gt; Large allocation: 38.15 MB requested</span></span>
+<span><span class="co">#&gt; SUCCESS: fmalloc allocated 40000000 bytes</span></span>
 <span><span class="co">#&gt; Successfully created fmalloc ALTREP vector</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
 <span><span class="co">#&gt; fmalloc cleaned up</span></span>
@@ -235,7 +235,7 @@
 <span><span class="co">#&gt; [1]  7  9 11 13 15</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; $sum_length</span></span>
-<span><span class="co">#&gt; [1] 1000000000</span></span>
+<span><span class="co">#&gt; [1] 10000000</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; $sum_managed</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span>
@@ -274,7 +274,7 @@
 <span>  <span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d656c91470.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e63021961.bin (init: true, mode: persistent)</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
 <span><span class="co">#&gt; fmalloc cleaned up</span></span>
 <span><span class="co">#&gt; $destroy_rejected_with_parent</span></span>
@@ -313,11 +313,9 @@
 <span>  <span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d656ad07d4d.bin (init: true, mode: persistent)</span></span>
-<span><span class="co">#&gt; Using existing file: /tmp/Rtmpu1Phb5/file198d656ad07d4d.bin (size: 33562624 bytes)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d656ad07d4d.bin (init: false, mode: persistent)</span></span>
-<span><span class="co">#&gt; Using existing file: /tmp/Rtmpu1Phb5/file198d656ad07d4d.bin (size: 33562624 bytes)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d656ad07d4d.bin (init: false, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e5607876b.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with existing runtime: /tmp/RtmpisoH8d/file210c9e5607876b.bin (init: false, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with existing runtime: /tmp/RtmpisoH8d/file210c9e5607876b.bin (init: false, mode: persistent)</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
 <span><span class="co">#&gt; fmalloc cleaned up</span></span>
 <span><span class="co">#&gt; $keep_recovered_ok</span></span>
@@ -350,9 +348,8 @@
 <span>  <span class="va">roundtrip</span><span class="op">[</span><span class="op">]</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d656d1adc97.bin (init: true, mode: persistent)</span></span>
-<span><span class="co">#&gt; Using existing file: /tmp/Rtmpu1Phb5/file198d656d1adc97.bin (size: 33562624 bytes)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d656d1adc97.bin (init: false, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e67226c68.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with existing runtime: /tmp/RtmpisoH8d/file210c9e67226c68.bin (init: false, mode: persistent)</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
 <span><span class="co">#&gt; fmalloc cleaned up</span></span>
 <span><span class="co">#&gt; [1] 1 2 3 4 5</span></span></code></pre></div>
@@ -376,15 +373,15 @@
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/Internal.html" class="external-link">.Internal</a></span><span class="op">(</span><span class="fu">inspect</span><span class="op">(</span><span class="va">inspect_vec</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d65ba713ec.bin (init: true, mode: persistent)</span></span>
-<span><span class="co">#&gt; @57103a38f6a0 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x7787bb0023e8 mode=persistent runtime=open offset=9192 uuid=4ab14b7975bbfdd63cdb70aac1218511 file=/tmp/Rtmpu1Phb5/file198d65ba713ec.bin</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9ecc035d9.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; @5be63a022630 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x77fec30023e8 mode=persistent runtime=open offset=9192 uuid=b35d247f64fd976d5ac9128d6f2a9fcb file=/tmp/RtmpisoH8d/file210c9ecc035d9.bin</span></span>
 <span><span class="co">#&gt; ATTRIB:</span></span>
-<span><span class="co">#&gt;   @57103a38c830 02 LISTSXP g0c0 [REF(1)] </span></span>
-<span><span class="co">#&gt;     TAG: @5710363b96c0 01 SYMSXP g1c0 [MARK,REF(36948),LCK,gp=0x6000] "class" (has value)</span></span>
-<span><span class="co">#&gt;     @57103b58cda8 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)</span></span>
-<span><span class="co">#&gt;       @5710374769d8 09 CHARSXP g1c2 [MARK,REF(30),gp=0x60] [ASCII] [cached] "fmalloc_vector"</span></span>
-<span><span class="co">#&gt;       @57103b122cf8 09 CHARSXP g1c1 [MARK,REF(95),gp=0x60] [ASCII] [cached] "fmalloc"</span></span>
-<span><span class="co">#&gt;       @5710363ec678 09 CHARSXP g1c1 [MARK,REF(521),gp=0x61] [ASCII] [cached] "integer"</span></span>
+<span><span class="co">#&gt;   @5be63a01f7c0 02 LISTSXP g0c0 [REF(1)] </span></span>
+<span><span class="co">#&gt;     TAG: @5be6354a5790 01 SYMSXP g1c0 [MARK,REF(37031),LCK,gp=0x6000] "class" (has value)</span></span>
+<span><span class="co">#&gt;     @5be63a227ea8 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)</span></span>
+<span><span class="co">#&gt;       @5be63a818358 09 CHARSXP g1c2 [MARK,REF(30),gp=0x60] [ASCII] [cached] "fmalloc_vector"</span></span>
+<span><span class="co">#&gt;       @5be63a2a6188 09 CHARSXP g1c1 [MARK,REF(95),gp=0x60] [ASCII] [cached] "fmalloc"</span></span>
+<span><span class="co">#&gt;       @5be6354d8748 09 CHARSXP g1c1 [MARK,REF(521),gp=0x61] [ASCII] [cached] "integer"</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
 <span><span class="co">#&gt; fmalloc cleaned up</span></span></code></pre></div>
 <p><code>inspect()</code> output is an internal R diagnostic, so exact formatting can vary between R versions. The <code>fmalloc_altrep ...</code> line comes from Rfmalloc’s ALTREP <code>Inspect</code> method.</p>
@@ -415,7 +412,7 @@
 <span>  <span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d657befa80.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e76f649f0.bin (init: true, mode: persistent)</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
 <span><span class="co">#&gt; fmalloc cleaned up</span></span>
 <span><span class="co">#&gt; $chars</span></span>
@@ -465,7 +462,7 @@
 <span>  <span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d6549be08a2.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e5bfb983e.bin (init: true, mode: persistent)</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
 <span><span class="co">#&gt; fmalloc cleaned up</span></span>
 <span><span class="co">#&gt; $matrix_dims</span></span>
@@ -527,7 +524,7 @@
 <span>  <span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d6528d6ae51.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e5f5388b6.bin (init: true, mode: persistent)</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
 <span><span class="co">#&gt; fmalloc cleaned up</span></span>
 <span><span class="co">#&gt; $default_row_sums_in_memory</span></span>
@@ -582,10 +579,10 @@
 <span>  <span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d656ffe05f1.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e50821a29.bin (init: true, mode: persistent)</span></span>
 <span><span class="co">#&gt; Requested file size: 0.10 GB (107374182 bytes)</span></span>
 <span><span class="co">#&gt; Creating file with size: 107374182 bytes (0.10 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d651343bf73.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e10b097f6.bin (init: true, mode: persistent)</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
 <span><span class="co">#&gt; fmalloc cleaned up</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
@@ -643,13 +640,11 @@
 <span>  <span class="va">output</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d657c8fc2e0.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e26d9e2fc.bin (init: true, mode: persistent)</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
 <span><span class="co">#&gt; fmalloc cleaned up</span></span>
-<span><span class="co">#&gt; Using existing file: /tmp/Rtmpu1Phb5/file198d657c8fc2e0.bin (size: 33562624 bytes)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d657c8fc2e0.bin (init: false, mode: persistent)</span></span>
-<span><span class="co">#&gt; Using existing file: /tmp/Rtmpu1Phb5/file198d657c8fc2e0.bin (size: 33562624 bytes)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d657c8fc2e0.bin (init: false, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with existing runtime: /tmp/RtmpisoH8d/file210c9e26d9e2fc.bin (init: false, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with existing runtime: /tmp/RtmpisoH8d/file210c9e26d9e2fc.bin (init: false, mode: persistent)</span></span>
 <span><span class="co">#&gt; $catalog</span></span>
 <span><span class="co">#&gt;   record_offset generation      type length</span></span>
 <span><span class="co">#&gt; 1          9440          2 character      3</span></span>
@@ -689,7 +684,7 @@
 <span>  <span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d653774bc9b.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e218ad60a.bin (init: true, mode: persistent)</span></span>
 <span><span class="co">#&gt; $mode</span></span>
 <span><span class="co">#&gt; [1] "persistent"</span></span>
 <span><span class="co">#&gt; </span></span>
@@ -722,7 +717,7 @@
 <span>  <span class="va">scratch_copy</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d653e3dd10b.bin (init: true, mode: scratch)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e48cef6b.bin (init: true, mode: scratch)</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
 <span><span class="co">#&gt; fmalloc cleaned up</span></span>
 <span><span class="co">#&gt; [1] 1 2 3 4</span></span>
@@ -761,7 +756,7 @@
 <span>  <span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d65290e4e58.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e5a9476d6.bin (init: true, mode: persistent)</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
 <span><span class="co">#&gt; fmalloc cleaned up</span></span>
 <span><span class="co">#&gt; $same_runtime_child</span></span>
@@ -801,11 +796,10 @@
 <span>  <span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d6516292aef.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e41b6e33f.bin (init: true, mode: persistent)</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
 <span><span class="co">#&gt; fmalloc cleaned up</span></span>
-<span><span class="co">#&gt; Using existing file: /tmp/Rtmpu1Phb5/file198d6516292aef.bin (size: 33562624 bytes)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d6516292aef.bin (init: false, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with existing runtime: /tmp/RtmpisoH8d/file210c9e41b6e33f.bin (init: false, mode: persistent)</span></span>
 <span><span class="co">#&gt; $recovered_nested</span></span>
 <span><span class="co">#&gt; [1] 1 2</span></span>
 <span><span class="co">#&gt; </span></span>
@@ -837,9 +831,9 @@
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>cross_runtime_rejected <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/class.html" class="external-link">inherits</a></span><span class="op">(</span><span class="va">cross_runtime_error</span>, <span class="st">"try-error"</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d6521d03edb.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e4e771918.bin (init: true, mode: persistent)</span></span>
 <span><span class="co">#&gt; Creating file with size: 33562624 bytes (0.03 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d651d94f65e.bin (init: true, mode: persistent)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e18430899.bin (init: true, mode: persistent)</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
 <span><span class="co">#&gt; fmalloc cleaned up</span></span>
 <span><span class="co">#&gt; Cleaning up fmalloc...</span></span>
@@ -866,7 +860,7 @@
 <span><span class="va">rt</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/open_fmalloc.html">open_fmalloc</a></span><span class="op">(</span><span class="va">perf_file</span>, mode <span class="op">=</span> <span class="st">"scratch"</span>, size_gb <span class="op">=</span> <span class="fl">0.1</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Requested file size: 0.10 GB (107374182 bytes)</span></span>
 <span><span class="co">#&gt; Creating file with size: 107374182 bytes (0.10 GB)</span></span>
-<span><span class="co">#&gt; fmalloc initialized with file: /tmp/Rtmpu1Phb5/file198d651e0cc26b.bin (init: true, mode: scratch)</span></span>
+<span><span class="co">#&gt; fmalloc initialized with file: /tmp/RtmpisoH8d/file210c9e63f064cc.bin (init: true, mode: scratch)</span></span>
 <span></span>
 <span><span class="va">n</span> <span class="op">&lt;-</span> <span class="fl">100000L</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
@@ -922,14 +916,14 @@
 <span><span class="co">#&gt; # A tibble: 8 × 5</span></span>
 <span><span class="co">#&gt;   expression               median `itr/sec` mem_alloc `gc/sec`</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt;             &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;    &lt;dbl&gt;</span></span>
-<span><span class="co">#&gt; 1 base_sequential_sum     32.13µs    30264.        0B        0</span></span>
-<span><span class="co">#&gt; 2 fmalloc_sequential_sum  45.29µs    22514.        0B        0</span></span>
-<span><span class="co">#&gt; 3 base_scalar_read        30.65µs    31008.        0B        0</span></span>
-<span><span class="co">#&gt; 4 fmalloc_scalar_read    812.67µs     1231.   24.55KB        0</span></span>
-<span><span class="co">#&gt; 5 base_subset_copy         2.53µs   319785.    7.86KB        0</span></span>
-<span><span class="co">#&gt; 6 fmalloc_subset_copy      7.29µs   129117.        0B        0</span></span>
-<span><span class="co">#&gt; 7 base_indexed_write      92.53µs    12935.  390.67KB        0</span></span>
-<span><span class="co">#&gt; 8 fmalloc_indexed_write  165.55µs     6327.        0B        0</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 base_sequential_sum      33.5µs    28933.        0B      0  </span></span>
+<span><span class="co">#&gt; 2 fmalloc_sequential_sum   47.2µs    22894.        0B      0  </span></span>
+<span><span class="co">#&gt; 3 base_scalar_read         31.9µs    29317.        0B      0  </span></span>
+<span><span class="co">#&gt; 4 fmalloc_scalar_read     868.3µs     1133.   24.55KB     59.6</span></span>
+<span><span class="co">#&gt; 5 base_subset_copy          2.6µs   288716.    7.86KB      0  </span></span>
+<span><span class="co">#&gt; 6 fmalloc_subset_copy      11.6µs    82429.        0B      0  </span></span>
+<span><span class="co">#&gt; 7 base_indexed_write      107.4µs    10903.  390.67KB      0  </span></span>
+<span><span class="co">#&gt; 8 fmalloc_indexed_write   180.9µs     5791.        0B      0</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="native-c-api-for-other-packages">Native C API for Other Packages<a class="anchor" aria-label="anchor" href="#native-c-api-for-other-packages"></a>
