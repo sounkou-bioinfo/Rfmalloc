@@ -75,9 +75,11 @@ operations while returning ordinary R vectors for small results.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
-    <p>For managed execution these methods support only 2D `fmalloc` matrices with
-`dims = 1L`.  If the input is not an exact 2D matrix or `dims != 1L`, the
-methods emit a warning and delegate to the corresponding base R implementation.</p>
+    <p>These implementations keep managed execution for 2D <code>fmalloc</code> matrices with
+<code>dims = 1L</code>.  For unsupported shapes or <code>dims</code> values (for example,
+non-2D arrays or <code>dims != 1L</code>), the methods warn and delegate to the base R
+implementations (<code><a href="https://rdrr.io/r/base/colSums.html" class="external-link">base::rowSums</a></code>, <code><a href="https://rdrr.io/r/base/colSums.html" class="external-link">base::colSums</a></code>, <code><a href="https://rdrr.io/r/base/colSums.html" class="external-link">base::rowMeans</a></code>, and
+<code><a href="https://rdrr.io/r/base/colSums.html" class="external-link">base::colMeans</a></code>).</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

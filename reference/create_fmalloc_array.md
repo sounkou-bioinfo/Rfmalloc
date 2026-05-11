@@ -6,7 +6,13 @@ vector storage and installing array dimensions (and optional dimnames).
 ## Usage
 
 ``` r
-create_fmalloc_array(type = "integer", dim, dimnames = NULL, runtime = NULL)
+create_fmalloc_array(
+  type = "integer",
+  dim,
+  dimnames = NULL,
+  runtime = NULL,
+  zero_initialize = TRUE
+)
 ```
 
 ## Arguments
@@ -32,6 +38,12 @@ create_fmalloc_array(type = "integer", dim, dimnames = NULL, runtime = NULL)
   If not supplied, the default runtime established by
   [`init_fmalloc()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/init_fmalloc.md)
   is used.
+
+- zero_initialize:
+
+  Logical scalar passed through to payload allocation. See
+  [`create_fmalloc_vector()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/create_fmalloc_vector.md)
+  for semantics.
 
 ## Value
 

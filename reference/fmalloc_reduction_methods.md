@@ -38,7 +38,11 @@ vector when result length exceeds
 
 ## Details
 
-For managed execution these methods support only 2D \`fmalloc\` matrices
-with \`dims = 1L\`. If the input is not an exact 2D matrix or \`dims !=
-1L\`, the methods emit a warning and delegate to the corresponding base
-R implementation.
+These implementations keep managed execution for 2D `fmalloc` matrices
+with `dims = 1L`. For unsupported shapes or `dims` values (for example,
+non-2D arrays or `dims != 1L`), the methods warn and delegate to the
+base R implementations
+([`base::rowSums`](https://rdrr.io/r/base/colSums.html),
+[`base::colSums`](https://rdrr.io/r/base/colSums.html),
+[`base::rowMeans`](https://rdrr.io/r/base/colSums.html), and
+[`base::colMeans`](https://rdrr.io/r/base/colSums.html)).

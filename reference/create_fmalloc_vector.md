@@ -9,7 +9,12 @@ R's non-API `Rf_allocVector3()` path.
 ## Usage
 
 ``` r
-create_fmalloc_vector(type = "integer", length, runtime = NULL)
+create_fmalloc_vector(
+  type = "integer",
+  length,
+  runtime = NULL,
+  zero_initialize = TRUE
+)
 ```
 
 ## Arguments
@@ -38,6 +43,12 @@ create_fmalloc_vector(type = "integer", length, runtime = NULL)
   If not supplied, the default runtime established by
   [`init_fmalloc()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/init_fmalloc.md)
   is used.
+
+- zero_initialize:
+
+  Logical scalar. If TRUE (default), newly allocated payload bytes are
+  zero-initialized. Set FALSE to skip initialization for faster large
+  allocations when you will fully initialize values yourself.
 
 ## Value
 

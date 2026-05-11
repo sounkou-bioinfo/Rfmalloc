@@ -11,7 +11,8 @@ create_fmalloc_matrix(
   nrow,
   ncol,
   dimnames = NULL,
-  runtime = NULL
+  runtime = NULL,
+  zero_initialize = TRUE
 )
 ```
 
@@ -42,6 +43,12 @@ create_fmalloc_matrix(
   If not supplied, the default runtime established by
   [`init_fmalloc()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/init_fmalloc.md)
   is used.
+
+- zero_initialize:
+
+  Logical scalar passed through to payload allocation. See
+  [`create_fmalloc_vector()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/create_fmalloc_vector.md)
+  for semantics.
 
 ## Value
 

@@ -96,12 +96,13 @@ with fmalloc payload storage.
     [`rowMeans()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md),
     and
     [`colMeans()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md)
-    fall back to base implementations (with a warning) when the input is
-    not an exact 2D matrix or when `dims != 1L`.
+    when the input is not an exact 2D matrix or `dims != 1L`; these
+    cases now emit a warning and call the corresponding `base::`
+    reducer.
 
-  - Scalar or zero-length outputs from `Summary`, `Math`, or `Math2`
-    (for example `sum(x)` returning a single value) are ordinary R
-    scalars by design.
+  - Scalar or zero-length results from `Summary`, `Math`, and `Math2`
+    generics (for example `sum(x)` returning a single value) are
+    returned as ordinary R scalars by design.
 
 - Full operator- and method-family coverage is still incomplete for all
   R generics. Some advanced families may still materialize ordinary R
