@@ -76,10 +76,17 @@ devtools::install_github("sounkou-bioinfo/Rfmalloc")
 
 ## Basic Usage
 
-The examples use temporary backing files. Several chunks wrap code in `local()`
-only so `on.exit()` can clean those files up while the README is rendered; this
-is not required in normal interactive use. In your own code, keep the runtime
-handle you need and call `cleanup_fmalloc()` when finished.
+The examples use temporary backing files. Each snippet is executed through
+`run_readme_example()` so `on.exit()` cleanup remains local to the snippet while
+the README is rendered; this is not required in normal interactive use. In your
+own code, keep the runtime handle you need and call `cleanup_fmalloc()` when
+finished.
+
+```{r}
+run_readme_example <- function(expr) {
+  expr()
+}
+```
 
 The shortest form uses `init_fmalloc()`, which opens a backing file and stores
 it as the package default runtime. Calls to `create_fmalloc_vector()` can then
@@ -87,7 +94,7 @@ omit the `runtime` argument:
 
 ```{r}
 library(Rfmalloc)
-local({
+run_readme_example(function() {
   alloc_file <- tempfile(fileext = ".bin")
   init_fmalloc(alloc_file)
   on.exit({
@@ -128,7 +135,7 @@ handles returned by `open_fmalloc()`:
 
 ```{r}
 
-local({
+run_readme_example(function() {
   handle_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(handle_file)
   on.exit({
@@ -148,7 +155,7 @@ This example is executed when building the README and uses a 1B-length
 fmalloc payload.
 
 ```{r}
-local({
+run_readme_example(function() {
   large_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(large_file, size_gb = 10)
   on.exit({
@@ -190,7 +197,7 @@ as native C/C++ kernels. Results stay in the same fmalloc runtime for large
 vectors.
 
 ```{r}
-local({
+run_readme_example(function() {
   ops_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(ops_file, mode = "scratch", size_gb = 0.1)
   on.exit({
@@ -222,7 +229,7 @@ local({
 Mixed fmalloc + base vector and scalar recycling work:
 
 ```{r}
-local({
+run_readme_example(function() {
   mix_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(mix_file, mode = "scratch", size_gb = 0.1)
   on.exit({
@@ -254,7 +261,7 @@ first.
 
 ```{r}
 
-local({
+run_readme_example(function() {
   destroy_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(destroy_file, mode = "persistent")
   on.exit({
@@ -290,7 +297,7 @@ other objects in the same runtime remain recoverable.
 
 ```{r}
 
-local({
+run_readme_example(function() {
   selective_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(selective_file, mode = "persistent")
   on.exit({
@@ -332,7 +339,7 @@ local({
 
 ```{r}
 
-local({
+run_readme_example(function() {
   persist_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(persist_file, mode = "persistent")
   on.exit({
@@ -355,7 +362,7 @@ runtime state, payload offset, file UUID, and backing-file path.
 
 ```{r}
 
-local({
+run_readme_example(function() {
   inspect_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(inspect_file, mode = "persistent")
   on.exit({
@@ -382,7 +389,7 @@ objects inside fmalloc.
 
 ```{r}
 
-local({
+run_readme_example(function() {
   char_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(char_file, mode = "persistent")
   on.exit({
@@ -410,7 +417,7 @@ to install shape metadata on existing fmalloc-backed vectors:
 
 ```{r}
 
-local({
+run_readme_example(function() {
   ctor_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(ctor_file, mode = "persistent")
   on.exit({
@@ -459,7 +466,7 @@ length greater than `n` stay fmalloc-backed.
 
 ```{r}
 
-local({
+run_readme_example(function() {
   reduce_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(reduce_file, mode = "persistent")
   old_limit <- getOption("Rfmalloc.reduce_result_length")
@@ -504,7 +511,7 @@ process.
 
 ```{r}
 
-local({
+run_readme_example(function() {
   file_a <- tempfile(fileext = ".bin")
   file_b <- tempfile(fileext = ".bin")
 
@@ -561,7 +568,7 @@ generation, and reconstructs an ALTREP vector around the same fmalloc allocation
 
 ```{r}
 
-local({
+run_readme_example(function() {
   ser_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(ser_file, mode = "persistent")
 
@@ -595,7 +602,7 @@ Use `diagnose_fmalloc_runtime()` to inspect runtime metadata, the live catalog,
 and a compact summary that can help decide when a runtime is a reset candidate:
 
 ```{r}
-local({
+run_readme_example(function() {
   diag_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(diag_file, mode = "persistent")
 
@@ -623,7 +630,7 @@ Scratch runtimes use ordinary R serialization instead. Their serialized values d
 not depend on reopening the scratch backing file.
 
 ```{r}
-local({
+run_readme_example(function() {
   scratch_file <- tempfile(fileext = ".bin")
   scratch_rt <- open_fmalloc(scratch_file, mode = "scratch")
 
@@ -659,7 +666,7 @@ List assignment rejects non-fmalloc payloads at runtime.
 
 ```{r}
 
-local({
+run_readme_example(function() {
   reject_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(reject_file, mode = "persistent")
   on.exit({
@@ -688,7 +695,7 @@ persistent backing file.
 
 ```{r}
 
-local({
+run_readme_example(function() {
   recover_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(recover_file, mode = "persistent")
   on.exit(unlink(recover_file), add = TRUE)
@@ -722,7 +729,7 @@ Cross-runtime insertion is also rejected.
 
 ```{r}
 
-local({
+run_readme_example(function() {
   cross_file_a <- tempfile(fileext = ".bin")
   cross_file_b <- tempfile(fileext = ".bin")
 

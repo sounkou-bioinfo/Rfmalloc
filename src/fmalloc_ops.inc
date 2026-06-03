@@ -108,13 +108,13 @@ static int e_mod_ii(int a, int b) {
 }
 static double e_div_ii(int a, int b) {
     if (a == NA_INTEGER || b == NA_INTEGER) return NA_REAL;
-    return b == 0 ? NA_REAL : (double)a / (double)b;
+    return (double)a / (double)b;
 }
 
 static double e_add_dd(double a, double b) { return a + b; }
 static double e_sub_dd(double a, double b) { return a - b; }
 static double e_mul_dd(double a, double b) { return a * b; }
-static double e_div_dd(double a, double b) { return b == 0.0 ? NA_REAL : a / b; }
+static double e_div_dd(double a, double b) { return a / b; }
 static double e_pow_dd(double a, double b) {
     if (ISNA(a) || ISNA(b)) return NA_REAL;
     return pow(a, b);
@@ -148,10 +148,12 @@ static double e_mul_di(double a, int b) {
     if (ISNA(a) || b == NA_INTEGER) return NA_REAL; return a * (double)b;
 }
 static double e_div_id(int a, double b) {
-    if (a == NA_INTEGER || ISNA(b)) return NA_REAL; return b == 0.0 ? NA_REAL : (double)a / b;
+    if (a == NA_INTEGER) return NA_REAL;
+    return (double)a / b;
 }
 static double e_div_di(double a, int b) {
-    if (ISNA(a) || b == NA_INTEGER) return NA_REAL; return b == 0.0 ? NA_REAL : a / (double)b;
+    if (b == NA_INTEGER) return NA_REAL;
+    return a / (double)b;
 }
 static double e_pow_id(int a, double b) {
     if (a == NA_INTEGER || ISNA(b)) return NA_REAL; return pow((double)a, b);
@@ -218,12 +220,14 @@ static int e_ge_id(int a, double b) { return (a == NA_INTEGER || ISNA(b)) ? NA_I
 static int e_ge_di(double a, int b) { return (ISNA(a) || b == NA_INTEGER) ? NA_INTEGER : (a >= (double)b ? 1 : 0); }
 
 static int e_ll_and(int a, int b) {
+    if ((a != NA_INTEGER && a == 0) || (b != NA_INTEGER && b == 0)) return 0;
     if (a == NA_INTEGER || b == NA_INTEGER) return NA_INTEGER;
-    return (a != 0 && b != 0) ? 1 : 0;
+    return 1;
 }
 static int e_ll_or(int a, int b) {
+    if ((a != NA_INTEGER && a != 0) || (b != NA_INTEGER && b != 0)) return 1;
     if (a == NA_INTEGER || b == NA_INTEGER) return NA_INTEGER;
-    return (a != 0 || b != 0) ? 1 : 0;
+    return 0;
 }
 static int e_ll_eq(int a, int b) {
     if (a == NA_INTEGER || b == NA_INTEGER) return NA_INTEGER;

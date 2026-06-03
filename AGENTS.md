@@ -1,5 +1,9 @@
 # AGENTS for Rfmalloc
 
+## Coding standards
+- write C as a BSD kernel programmer rather than a Java programmer that failed upwards
+- write R as a r-lib programmer rather than a Python programmer that failed upwards
+
 ## What this repo is
 - `Rfmalloc` is an R package providing file-backed ALTREP vector types powered by
   a bundled `fmalloc` allocator runtime.

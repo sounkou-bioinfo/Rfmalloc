@@ -2,6 +2,7 @@
 
 ## 0.1.0 (unreleased)
 
+- Fixed native `Ops` edge semantics to match base R for logical `&`/`|` with `NA` and numeric `/` by zero (`Inf`/`NaN` instead of forcing `NA`), and corrected mixed-type native `Ops` regression tests.
 - Optimized `[[` on fmalloc ALTREP vectors to bypass subset-copy for scalar extraction, removing a major per-element regression hotspot observed in scalar read loops.
 - Added version 2 C API exports for zero-copy native interoperability: `Rfmalloc_is_fmalloc_vector`, `Rfmalloc_vector_type`, `Rfmalloc_vector_length`, and `Rfmalloc_vector_payload_ptr`.
 - Added ALTREP regression tests ensuring scalar `[[` no longer returns wrapped fmalloc vectors and that out-of-bounds `[[` signals the expected bounds error.
