@@ -48,6 +48,14 @@ with fmalloc payload storage.
 
   Matrix products for fmalloc-backed vectors and matrices.
 
+- [`fmalloc_tensor`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_tensor.md):
+
+  Typed and ALP-compressed tensors with panel-streamed products.
+
+- [`fmalloc_matmul_ooc`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_matmul_ooc.md):
+
+  Out-of-core matrix products for matrices larger than RAM.
+
 - [`list_fmalloc_allocations`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/list_fmalloc_allocations.md):
 
   List persistent allocation catalog records.
