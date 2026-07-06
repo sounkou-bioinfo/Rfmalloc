@@ -4,7 +4,7 @@
 \alias{gguf_tensor}
 \title{Read and Dequantize a GGUF Tensor}
 \usage{
-gguf_tensor(x, name, runtime = NULL)
+gguf_tensor(x, name, runtime = NULL, as = c("numeric", "native"))
 }
 \arguments{
 \item{x}{Either a path to a GGUF file, or a \code{"gguf_ctx"} object returned by
@@ -15,11 +15,20 @@ gguf_tensor(x, name, runtime = NULL)
 \item{runtime}{Optional \code{Rfmalloc} runtime handle (see
 \code{\link[Rfmalloc:open_fmalloc]{Rfmalloc::open_fmalloc()}}). If \code{NULL}, \code{Rfmalloc}'s own default-runtime
 resolution is used.}
+
+\item{as}{\code{"numeric"} (default) dequantizes the whole tensor into an
+fmalloc double matrix/array. \code{"native"} instead copies the tensor's raw,
+still-encoded payload into fmalloc storage and returns an
+\code{\link[Rfmalloc:fmalloc_tensor]{Rfmalloc::create_fmalloc_tensor()}} typed tensor: it keeps the GGUF
+storage density (e.g. 4.5 bits/weight for \code{q4_k}) and is decoded in
+bounded panels only when used in matrix products. Native mode requires a
+2-dimensional tensor whose type has a registered Rfmalloc codec.}
 }
 \value{
-An \code{Rfmalloc}-backed ALTREP matrix (if the tensor has 2
-dimensions) or array (otherwise) of doubles, with \code{dim()} equal to the
-tensor's GGUF dimensions in \code{c(dim[0], dim[1], ...)} order.
+For \code{as = "numeric"}, an \code{Rfmalloc}-backed ALTREP matrix (if the
+tensor has 2 dimensions) or array (otherwise) of doubles, with \code{dim()}
+equal to the tensor's GGUF dimensions in \code{c(dim[0], dim[1], ...)} order.
+For \code{as = "native"}, an \code{fmalloc_tensor} with the same dims.
 }
 \description{
 Reads a single named tensor from a GGUF file, dequantizing it if needed,

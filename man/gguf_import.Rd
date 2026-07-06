@@ -4,7 +4,12 @@
 \alias{gguf_import}
 \title{Import GGUF Tensors}
 \usage{
-gguf_import(path_or_ctx, tensors = NULL, runtime = NULL)
+gguf_import(
+  path_or_ctx,
+  tensors = NULL,
+  runtime = NULL,
+  as = c("numeric", "native")
+)
 }
 \arguments{
 \item{path_or_ctx}{Either a path to a GGUF file, or a \code{"gguf_ctx"} object
@@ -17,6 +22,10 @@ returned by \code{\link[=gguf_open]{gguf_open()}}.}
 \code{\link[=gguf_tensor]{gguf_tensor()}} call, so all imported tensors share the same backing
 file. If \code{NULL}, \code{Rfmalloc}'s own default-runtime resolution is used for
 each tensor.}
+
+\item{as}{Passed through to \code{\link[=gguf_tensor]{gguf_tensor()}}: \code{"numeric"} dequantizes to
+fmalloc double matrices/arrays, \code{"native"} keeps the GGUF payload
+encoding and returns typed \code{fmalloc_tensor} objects.}
 }
 \value{
 A named list of \code{Rfmalloc}-backed matrices/arrays, one per
