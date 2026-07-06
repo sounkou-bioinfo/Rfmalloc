@@ -16,7 +16,7 @@ Description: Reads 'GGUF' model files, the file format used by the
     R lists and data frames. A minimal writer is included to create 'GGUF'
     files containing 32-bit floating point tensors, primarily to support
     round-trip testing.
-License: MIT + file LICENSE
+License: GPL (>= 2)
 Encoding: UTF-8
 Imports:
     Rfmalloc
@@ -24,10 +24,14 @@ LinkingTo:
     Rfmalloc
 Suggests:
     tinytest
+Remotes:
+    sounkou-bioinfo/Rfmalloc
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 SystemRequirements: GNU make
-URL: https://github.com/sounkou-bioinfo/Rgguf
+OS_type: unix
+URL: https://github.com/sounkou-bioinfo/Rgguf,
+    https://sounkou-bioinfo.github.io/Rgguf/
 Depends:
     R (>= 4.4.0)
 BugReports: https://github.com/sounkou-bioinfo/Rgguf/issues

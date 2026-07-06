@@ -1,6 +1,5 @@
-# NEWS
+# Rgguf 0.1.0 (unreleased)
 
-## 0.1.0 (unreleased)
 
 - Initial release.
 - Added `gguf_open()` to memory-map a GGUF file (via a vendored copy of

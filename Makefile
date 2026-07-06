@@ -5,7 +5,7 @@
 PKGNAME = `sed -n "s/Package: *\([^ ]*\)/\1/p" DESCRIPTION`
 PKGVERS = `sed -n "s/Version: *\([^ ]*\)/\1/p" DESCRIPTION`
 
-.PHONY: all build check install install2 install_deps rd test clean
+.PHONY: all build check install install2 install_deps rd rdm test clean
 
 all: check
 
@@ -35,3 +35,6 @@ test: install2
 clean:
 	@rm -rf $(PKGNAME)_$(PKGVERS).tar.gz $(PKGNAME).Rcheck
 	@rm -rf src/*.o src/*.so src/*.dSYM
+
+rdm: install2
+	R -e 'rmarkdown::render("README.Rmd", output_format = rmarkdown::md_document(variant = "gfm"), output_file = "README.md", quiet = FALSE, envir = new.env(parent = globalenv()))'

@@ -56,7 +56,9 @@ Verbatim upstream LICENSE text (from the gguf-tools repository root):
     SOFTWARE.
 
 Rgguf package licensing:
-- The Rgguf package's own R and C code is licensed under MIT + file LICENSE,
-  as declared in DESCRIPTION.
-- This notice documents the bundled gguflib/fp16/bf16 components and does not
-  modify the license terms declared for the Rgguf package itself.
+- The Rgguf package's own R and C code is licensed under GPL (>= 2), as
+  declared in DESCRIPTION.
+- The bundled gguflib/fp16/bf16 components remain under their upstream MIT
+  license (reproduced above), which is GPL-compatible; this notice preserves
+  their required copyright and permission statements and does not modify the
+  license terms declared for the Rgguf package itself.

@@ -11,3 +11,8 @@
 ^.*\.Rcheck$
 ^.*\.tar\.gz$
 ^README\.Rmd$
+^_pkgdown\.yml$
+^docs$
+^pkgdown$
+^README\.html$
+^README\.knit\.md$
