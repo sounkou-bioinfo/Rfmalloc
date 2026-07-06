@@ -339,14 +339,21 @@ static void fmalloc_vector_finalizer(SEXP vector_xptr)
 
 static fm_vector *maybe_vector_from_altrep(SEXP x)
 {
-    if (!ALTREP(x)) {
-        return nullptr;
+    /* Attribute assignment on a referenced ALTREP (for example
+     * `class(x) <- NULL` when refcount >= 2 and length >= 64) makes R wrap the
+     * vector in a generic ALTREP wrapper whose data1 is the wrapped vector.
+     * Look through such wrappers so fmalloc vectors stay recognizable. */
+    while (ALTREP(x)) {
+        SEXP data1 = R_altrep_data1(x);
+        if (TYPEOF(data1) == EXTPTRSXP && R_ExternalPtrTag(data1) == fmalloc_vector_tag) {
+            return static_cast<fm_vector *>(R_ExternalPtrAddr(data1));
+        }
+        if (TYPEOF(data1) != TYPEOF(x)) {
+            return nullptr;
+        }
+        x = data1;
     }
-    SEXP vector_xptr = R_altrep_data1(x);
-    if (TYPEOF(vector_xptr) != EXTPTRSXP || R_ExternalPtrTag(vector_xptr) != fmalloc_vector_tag) {
-        return nullptr;
-    }
-    return static_cast<fm_vector *>(R_ExternalPtrAddr(vector_xptr));
+    return nullptr;
 }
 
 static fm_vector *vector_from_altrep(SEXP x)

@@ -173,4 +173,45 @@ message("Testing fmalloc matrix algebra methods...")
     message("  Type promotion and dimnames tests passed")
 })()
 
+(function() {
+    message("  Test 6: large referenced operands survive the ALTREP wrapper path")
+    tmp <- tempfile(fileext = ".bin")
+    rt <- open_fmalloc(tmp, mode = "persistent")
+    on.exit({
+        cleanup_fmalloc(rt)
+        unlink(tmp)
+    }, add = TRUE)
+
+    a <- create_fmalloc_matrix("numeric", nrow = 100, ncol = 50, runtime = rt)
+    b <- create_fmalloc_matrix("numeric", nrow = 50, ncol = 30, runtime = rt)
+    a[] <- as.numeric(seq_len(100 * 50) %% 17)
+    b[] <- as.numeric(seq_len(50 * 30) %% 13)
+
+    ba <- matrix(as.numeric(seq_len(100 * 50) %% 17), nrow = 100, ncol = 50)
+    bb <- matrix(as.numeric(seq_len(50 * 30) %% 13), nrow = 50, ncol = 30)
+
+    # Second references: attribute changes on referenced ALTREPs of length
+    # >= 64 make R substitute a generic wrapper instead of duplicating.
+    keep_a <- a
+    keep_b <- b
+
+    w <- a
+    class(w) <- NULL
+    expect_true(is_fmalloc_vector(w))
+
+    z <- a %*% b
+    expect_true(inherits(z, "fmalloc_matrix"))
+    expect_true(is_fmalloc_vector(z))
+    expect_equal(dim(z), c(100L, 30L))
+    expect_equal(as.vector(z), as.vector(ba %*% bb))
+
+    cp <- crossprod(a)
+    expect_equal(as.vector(cp), as.vector(crossprod(ba)))
+
+    tcp <- tcrossprod(b)
+    expect_equal(as.vector(tcp), as.vector(tcrossprod(bb)))
+
+    message("  ALTREP wrapper regression tests passed")
+})()
+
 message("fmalloc matrix algebra tests completed")

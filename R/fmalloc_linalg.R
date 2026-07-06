@@ -16,9 +16,10 @@
 #' @name fmalloc_linalg
 NULL
 
-.fmalloc_linalg_strip_operand <- function(x, arg_name) {
-    x <- .fmalloc_strip_class(x)
-
+# Validates without stripping the fmalloc class: `class(x) <- NULL` on a
+# referenced ALTREP makes R substitute a generic wrapper object, which loses
+# the fmalloc identity for vectors of length >= 64.
+.fmalloc_linalg_check_operand <- function(x, arg_name) {
     if (!(is.numeric(x) || is.logical(x) || is.complex(x))) {
         stop(sprintf("%s must be a numeric, logical, or complex vector/matrix", arg_name))
     }
@@ -47,8 +48,8 @@ NULL
 
 .fmalloc_matmul <- function(x, y) {
     .fmalloc_linalg_runtime(x, y)
-    x0 <- .fmalloc_linalg_strip_operand(x, "x")
-    y0 <- .fmalloc_linalg_strip_operand(y, "y")
+    x0 <- .fmalloc_linalg_check_operand(x, "x")
+    y0 <- .fmalloc_linalg_check_operand(y, "y")
 
     ans <- .Call("rfm_matrix_ops_dispatch", 0L, x0, y0)
     .fmalloc_apply_class(ans,
@@ -58,8 +59,8 @@ NULL
 
 .fmalloc_crossprod_impl <- function(x, y = NULL) {
     .fmalloc_linalg_runtime(x, y)
-    x0 <- .fmalloc_linalg_strip_operand(x, "x")
-    y0 <- if (is.null(y)) NULL else .fmalloc_linalg_strip_operand(y, "y")
+    x0 <- .fmalloc_linalg_check_operand(x, "x")
+    y0 <- if (is.null(y)) NULL else .fmalloc_linalg_check_operand(y, "y")
 
     ans <- .Call("rfm_matrix_ops_dispatch", 1L, x0, y0)
     .fmalloc_apply_class(ans,
@@ -69,8 +70,8 @@ NULL
 
 .fmalloc_tcrossprod_impl <- function(x, y = NULL) {
     .fmalloc_linalg_runtime(x, y)
-    x0 <- .fmalloc_linalg_strip_operand(x, "x")
-    y0 <- if (is.null(y)) NULL else .fmalloc_linalg_strip_operand(y, "y")
+    x0 <- .fmalloc_linalg_check_operand(x, "x")
+    y0 <- if (is.null(y)) NULL else .fmalloc_linalg_check_operand(y, "y")
 
     ans <- .Call("rfm_matrix_ops_dispatch", 2L, x0, y0)
     .fmalloc_apply_class(ans,

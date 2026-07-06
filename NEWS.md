@@ -33,6 +33,13 @@
 - Added native C kernel implementations for fmalloc-backed linear algebra
   (`%*%`, `crossprod()`, and `tcrossprod()`), returning managed fmalloc matrix
   outputs with base-consistent shape behavior and name propagation.
+- Fixed fmalloc vector recognition for R's generic ALTREP wrappers: attribute
+  changes on referenced fmalloc vectors of length >= 64 (for example the class
+  stripping done by dispatch helpers) made R substitute a wrapper object that
+  native code no longer recognized, breaking `%*%`, `crossprod()`, and
+  `tcrossprod()` for realistically sized matrices. Native lookup now unwraps
+  such wrappers, and the linear algebra methods validate operands without
+  stripping classes.
 - Fixed list child validation to require the same runtime pointer (not only matching UUID) when storing fmalloc elements in fmalloc list containers.
 - Hardened ALTREP subset behavior by only taking the fast native path for strictly
   positive integer indexes; all other index types/values (including `0`, negative,
