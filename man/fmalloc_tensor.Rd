@@ -4,6 +4,7 @@
 \alias{fmalloc_tensor}
 \alias{fmalloc_tensor_codecs}
 \alias{create_fmalloc_tensor}
+\alias{as_fmalloc_tensor}
 \alias{fmalloc_tensor_dtype}
 \alias{fmalloc_tensor_materialize}
 \alias{dim.fmalloc_tensor}
@@ -17,6 +18,8 @@
 fmalloc_tensor_codecs()
 
 create_fmalloc_tensor(payload, dtype, dim)
+
+as_fmalloc_tensor(x, dtype = "alp", runtime = NULL)
 
 fmalloc_tensor_dtype(x)
 
@@ -38,11 +41,15 @@ fmalloc_tensor_materialize(x)
 \item{payload}{An fmalloc raw vector holding the encoded matrix payload in
 column-major order (first dimension fastest).}
 
-\item{dtype}{Codec name, e.g. \code{"f32"}, \code{"f16"}, \code{"bf16"}.}
+\item{dtype}{Codec name, e.g. \code{"f32"}, \code{"f16"}, \code{"bf16"}; for
+\code{as_fmalloc_tensor()}, only \code{"alp"}.}
 
 \item{dim}{Length-2 integer dimensions of the decoded matrix.}
 
 \item{x}{An \code{fmalloc_tensor} object (or, in \code{\%*\%}, a dense operand).}
+
+\item{runtime}{Optional runtime handle from \code{\link[=open_fmalloc]{open_fmalloc()}}; defaults to
+the runtime established by \code{\link[=init_fmalloc]{init_fmalloc()}}.}
 
 \item{...}{Unused.}
 
@@ -65,6 +72,12 @@ full tensor is never materialized at once.
 }
 \details{
 \code{create_fmalloc_tensor()} tags an existing fmalloc raw payload.
+\code{as_fmalloc_tensor()} compresses a double vector/matrix into fmalloc
+storage with the builtin, lossless \code{"alp"} codec (Afroozeh et al.,
+\doi{10.1145/3626717}; scalar core adapted from the MIT-licensed zap
+implementation, see \code{inst/COPYRIGHTS}), storing decimal-scaled doubles as
+bit-packed integers in independently decodable 1024-value chunks with
+exact-value patches and a raw escape hatch for incompressible chunks.
 \code{fmalloc_tensor_materialize()} decodes the whole tensor into an fmalloc
 double matrix. \code{fmalloc_tensor_codecs()} lists registered codec names, and
 \code{fmalloc_tensor_dtype()} returns a tensor's dtype tag.

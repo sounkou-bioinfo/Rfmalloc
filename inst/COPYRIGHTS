@@ -1,0 +1,40 @@
+Rfmalloc bundles or adapts the following third-party code. The package
+itself is licensed GPL (>= 2); the components below remain under their
+upstream licenses, which are GPL-compatible, and their required notices are
+preserved here.
+
+Component: fmalloc allocator runtime (inst/fmalloc/)
+Upstream: https://github.com/yasukata/fmalloc (patched copy)
+See inst/fmalloc for its license and provenance notes.
+
+Component: ALP scalar encode/decode core (src/fmalloc_alp.inc)
+Adapted from: Mike Cheng's C implementation in the zap package,
+  https://github.com/coolbutuseless/zap (src/utils-alp.c), MIT License,
+  Copyright (c) Mike Cheng (mikefc@coolbutuseless.com).
+Algorithm: Afroozeh, Kuffo, Boncz — "ALP: Adaptive Lossless floating-Point
+  Compression" (doi:10.1145/3626717). Reference C++ implementation:
+  https://github.com/cwida/ALP (MIT).
+The adaptation covers the decimal-scaling round-trip test, exponent tables,
+fast rounding, and the encode/decode loops; the chunked payload container,
+per-chunk probing, bit packing, and patch layout are Rfmalloc's own.
+
+MIT License text (applies to the zap-derived portions):
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the
+    "Software"), to deal in the Software without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish,
+    distribute, sublicense, and/or sell copies of the Software, and to
+    permit persons to whom the Software is furnished to do so, subject to
+    the following conditions:
+
+    The above copyright notice and this permission notice shall be included
+    in all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+    OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+    CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+    TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

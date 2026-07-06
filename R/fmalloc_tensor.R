@@ -9,14 +9,23 @@
 #' full tensor is never materialized at once.
 #'
 #' `create_fmalloc_tensor()` tags an existing fmalloc raw payload.
+#' `as_fmalloc_tensor()` compresses a double vector/matrix into fmalloc
+#' storage with the builtin, lossless `"alp"` codec (Afroozeh et al.,
+#' \doi{10.1145/3626717}; scalar core adapted from the MIT-licensed zap
+#' implementation, see `inst/COPYRIGHTS`), storing decimal-scaled doubles as
+#' bit-packed integers in independently decodable 1024-value chunks with
+#' exact-value patches and a raw escape hatch for incompressible chunks.
 #' `fmalloc_tensor_materialize()` decodes the whole tensor into an fmalloc
 #' double matrix. `fmalloc_tensor_codecs()` lists registered codec names, and
 #' `fmalloc_tensor_dtype()` returns a tensor's dtype tag.
 #'
 #' @param payload An fmalloc raw vector holding the encoded matrix payload in
 #'   column-major order (first dimension fastest).
-#' @param dtype Codec name, e.g. `"f32"`, `"f16"`, `"bf16"`.
+#' @param dtype Codec name, e.g. `"f32"`, `"f16"`, `"bf16"`; for
+#'   `as_fmalloc_tensor()`, only `"alp"`.
 #' @param dim Length-2 integer dimensions of the decoded matrix.
+#' @param runtime Optional runtime handle from [open_fmalloc()]; defaults to
+#'   the runtime established by [init_fmalloc()].
 #' @param x An `fmalloc_tensor` object (or, in `%*%`, a dense operand).
 #' @param y The other matrix product operand.
 #' @param ... Unused.
@@ -76,6 +85,32 @@ create_fmalloc_tensor <- function(payload, dtype, dim) {
     attr(payload, "rfm_dims") <- as.integer(dims)
     class(payload) <- "fmalloc_tensor"
     payload
+}
+
+#' @rdname fmalloc_tensor
+#' @export
+as_fmalloc_tensor <- function(x, dtype = "alp", runtime = NULL) {
+    if (!identical(dtype, "alp")) {
+        stop("only dtype = \"alp\" encoding is currently supported")
+    }
+    x0 <- .fmalloc_strip_class(x)
+    if (!is.double(x0)) {
+        stop("x must be a double vector or matrix")
+    }
+    dims <- dim(x0)
+    if (is.null(dims)) {
+        dims <- c(length(x0), 1L)
+    } else if (length(dims) != 2L) {
+        stop("x must be a vector or 2-dimensional matrix")
+    }
+
+    runtime <- .fmalloc_get_runtime(runtime)
+    enc <- .Call("rfm_tensor_alp_encode_impl", x0, runtime)
+    ans <- create_fmalloc_tensor(enc[[1L]], "alp", dims)
+    # Non-finite values round-trip exactly through ALP patches, but they must
+    # keep matrix products off the dgemm path; see .fmalloc_tensor_matmul().
+    attr(ans, "rfm_nonfinite") <- enc[[2L]]
+    ans
 }
 
 #' @rdname fmalloc_tensor
@@ -172,9 +207,10 @@ print.fmalloc_tensor <- function(x, ...) {
         dense_on_right = x_typed
     )
 
-    # dgemm has no NA semantics: non-finite dense operands take the
+    # dgemm has no NA semantics: non-finite values on either side take the
     # materialized path through the regular fmalloc matrix product.
-    if (anyNA(dense) || !all(is.finite(dense))) {
+    if (isTRUE(attr(tensor, "rfm_nonfinite")) ||
+        anyNA(dense) || !all(is.finite(dense))) {
         mat <- fmalloc_tensor_materialize(tensor)
         return(if (x_typed) mat %*% dense else dense %*% mat)
     }

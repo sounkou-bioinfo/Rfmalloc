@@ -33,6 +33,15 @@
 - Added native C kernel implementations for fmalloc-backed linear algebra
   (`%*%`, `crossprod()`, and `tcrossprod()`), returning managed fmalloc matrix
   outputs with base-consistent shape behavior and name propagation.
+- Added a builtin, lossless `"alp"` tensor codec and `as_fmalloc_tensor()`:
+  double vectors/matrices are compressed into fmalloc storage as bit-packed
+  decimal-scaled integers in independently decodable 1024-value chunks
+  (Afroozeh et al., ALP, \doi{10.1145/3626717}; scalar core adapted from the
+  MIT-licensed zap implementation — see `inst/COPYRIGHTS`), with exact-value
+  patches, a raw escape hatch for incompressible chunks, and
+  division-by-exact-power-of-ten decoding so decimal-rounded data
+  round-trips with few patches. Compressed tensors participate in the
+  panel-streamed matrix products like any other typed tensor.
 - Added typed fmalloc tensors: `create_fmalloc_tensor()` tags an fmalloc raw
   payload with a dtype codec (builtin `f64`/`f32`/`f16`/`bf16`; other packages
   register codecs through the new `Rfmalloc_register_tensor_codec` C-callable,
