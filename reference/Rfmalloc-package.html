@@ -134,9 +134,10 @@ cases now emit a warning and call the corresponding
 <li><p>Scalar or zero-length results from <code>Summary</code>, <code>Math</code>, and
 <code>Math2</code> generics (for example <code>sum(x)</code> returning a single
 value) are returned as ordinary R scalars by design.</p></li>
-<li><p>Matrix products are currently computed by managed R loops so
-they preserve fmalloc-backed results before native BLAS
-kernels are added.</p></li>
+<li><p>Matrix products use BLAS <code>dgemm</code> for finite numeric
+operands; operands containing <code>NA</code>/<code>NaN</code>/<code>Inf</code> and
+logical/integer/complex operands are computed by managed
+native loops with base-consistent semantics.</p></li>
 </ul></li>
 <li><p>Full operator- and method-family coverage is still incomplete for all
 R generics. Some advanced families may still materialize ordinary R
@@ -146,10 +147,10 @@ objects in a few edge cases.</p></li>
     <h2 id="future-work">Future Work<a class="anchor" aria-label="anchor" href="#future-work"></a></h2>
 
 
-<p>Future work includes native BLAS/LAPACK-backed matrix kernels, view-based
-subset representations, catalog compaction and reset tooling, metadata storage
-for attributes on persisted elements, robust nested-list reference validation,
-and compaction of recovery metadata.</p>
+<p>Future work includes complex <code>zgemm</code> and further LAPACK-backed kernels,
+view-based subset representations, catalog compaction and reset tooling,
+metadata storage for attributes on persisted elements, robust nested-list
+reference validation, and compaction of recovery metadata.</p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>

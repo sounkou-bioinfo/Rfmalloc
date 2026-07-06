@@ -121,9 +121,10 @@ with fmalloc payload storage.
     generics (for example `sum(x)` returning a single value) are
     returned as ordinary R scalars by design.
 
-  - Matrix products are currently computed by managed R loops so they
-    preserve fmalloc-backed results before native BLAS kernels are
-    added.
+  - Matrix products use BLAS `dgemm` for finite numeric operands;
+    operands containing `NA`/`NaN`/`Inf` and logical/integer/complex
+    operands are computed by managed native loops with base-consistent
+    semantics.
 
 - Full operator- and method-family coverage is still incomplete for all
   R generics. Some advanced families may still materialize ordinary R
@@ -131,7 +132,7 @@ with fmalloc payload storage.
 
 ## Future Work
 
-Future work includes native BLAS/LAPACK-backed matrix kernels,
+Future work includes complex `zgemm` and further LAPACK-backed kernels,
 view-based subset representations, catalog compaction and reset tooling,
 metadata storage for attributes on persisted elements, robust
 nested-list reference validation, and compaction of recovery metadata.
