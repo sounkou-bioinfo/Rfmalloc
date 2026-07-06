@@ -1,4 +1,3 @@
-
 # Rfmalloc
 
 <!-- badges: start -->
@@ -57,32 +56,26 @@ mapped-file recovery diagnostics.
 
 ## Installation
 
-```r
+``` r
 # install.packages("devtools")
 devtools::install_github("sounkou-bioinfo/Rfmalloc")
 ```
 
 ## Basic Usage
 
-The examples use temporary backing files. Each snippet is executed
-through `run_readme_example()` so `on.exit()` cleanup remains local to
-the snippet while the README is rendered; this is not required in normal
-interactive use. In your own code, keep the runtime handle you need and
-call `cleanup_fmalloc()` when finished.
-
-```r
-run_readme_example <- function(expr) {
-  expr()
-}
-```
+The examples use temporary backing files. Each snippet runs inside
+`local()` so its `on.exit()` cleanup stays scoped to the snippet while
+the README is rendered; this is not required in normal interactive use.
+In your own code, keep the runtime handle you need and call
+`cleanup_fmalloc()` when finished.
 
 The shortest form uses `init_fmalloc()`, which opens a backing file and
 stores it as the package default runtime. Calls to
 `create_fmalloc_vector()` can then omit the `runtime` argument:
 
-```r
+``` r
 library(Rfmalloc)
-run_readme_example(function() {
+local({
   alloc_file <- tempfile(fileext = ".bin")
   init_fmalloc(alloc_file)
   on.exit({
@@ -138,9 +131,9 @@ run_readme_example(function() {
 For multiple backing files or explicit lifetime management, prefer
 runtime handles returned by `open_fmalloc()`:
 
-```r
+``` r
 
-run_readme_example(function() {
+local({
   handle_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(handle_file)
   on.exit({
@@ -160,8 +153,8 @@ run_readme_example(function() {
 This example is executed when building the README and uses a 1B-length
 fmalloc payload.
 
-```r
-run_readme_example(function() {
+``` r
+local({
   large_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(large_file, size_gb = 10)
   on.exit({
@@ -219,8 +212,8 @@ Elementwise `Ops` (`+`, `-`, `*`, `/`, `^`, `%%`, `%/%`, `==`, `!=`,
 vectors are implemented as native C/C++ kernels. Results stay in the
 same fmalloc runtime for large vectors.
 
-```r
-run_readme_example(function() {
+``` r
+local({
   ops_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(ops_file, mode = "scratch", size_gb = 0.1)
   on.exit({
@@ -305,8 +298,8 @@ run_readme_example(function() {
 
 Mixed fmalloc + base vector and scalar recycling work:
 
-```r
-run_readme_example(function() {
+``` r
+local({
   mix_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(mix_file, mode = "scratch", size_gb = 0.1)
   on.exit({
@@ -365,9 +358,9 @@ live vector was destroyed. The helper enforces parent-reference safety:
 a vector cannot be destroyed while it is still stored as a child of any
 fmalloc list. When needed, drop parent links first.
 
-```r
+``` r
 
-run_readme_example(function() {
+local({
   destroy_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(destroy_file, mode = "persistent")
   on.exit({
@@ -407,9 +400,9 @@ non-recoverable.
 This is scoped to the targeted vector(s): if one object is
 unsafe-destroyed, other objects in the same runtime remain recoverable.
 
-```r
+``` r
 
-run_readme_example(function() {
+local({
   selective_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(selective_file, mode = "persistent")
   on.exit({
@@ -454,9 +447,9 @@ run_readme_example(function() {
   Vector finalizers may return payloads to fmalloc, and serialization
   falls back to ordinary R values.
 
-```r
+``` r
 
-run_readme_example(function() {
+local({
   persist_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(persist_file, mode = "persistent")
   on.exit({
@@ -479,9 +472,9 @@ Rfmalloc’s inspector reports the vector type, length, payload byte
 count, runtime mode, runtime state, payload offset, file UUID, and
 backing-file path.
 
-```r
+``` r
 
-run_readme_example(function() {
+local({
   inspect_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(inspect_file, mode = "persistent")
   on.exit({
@@ -493,14 +486,14 @@ run_readme_example(function() {
   inspect_vec[] <- 1:4
   .Internal(inspect(inspect_vec))
 })
-#> @5af534d4e988 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x79d27d8023e8 mode=persistent runtime=open offset=9192 uuid=84c544d1c703a24bcbaee9fd14ca58a4 file=/tmp/RtmpObhkhX/file34de7a153c99c9.bin
+#> @558744b01040 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x745e45a023e8 mode=persistent runtime=open offset=9192 uuid=68cb92d80f6d402d3bf719192ca84d29 file=/tmp/RtmpqvLn6G/file4c567640ed21b.bin
 #> ATTRIB:
-#>   @5af534d517f8 02 LISTSXP g0c0 [REF(1)] 
-#>     TAG: @5af52f7b25f0 01 SYMSXP g1c0 [MARK,REF(38001),LCK,gp=0x6000] "class" (has value)
-#>     @5af535a90b08 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)
-#>       @5af535442d08 09 CHARSXP g0c2 [MARK,REF(52),gp=0x60] [ASCII] [cached] "fmalloc_vector"
-#>       @5af534655900 09 CHARSXP g0c1 [MARK,REF(137),gp=0x60] [ASCII] [cached] "fmalloc"
-#>       @5af52f7e55a8 09 CHARSXP g1c1 [MARK,REF(622),gp=0x61] [ASCII] [cached] "integer"
+#>   @558744b03eb0 02 LISTSXP g0c0 [REF(1)] 
+#>     TAG: @55873e330e40 01 SYMSXP g1c0 [MARK,REF(37243),LCK,gp=0x6000] "class" (has value)
+#>     @558744adeba8 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)
+#>       @5587436c02a8 09 CHARSXP g0c2 [REF(52),gp=0x60] [ASCII] [cached] "fmalloc_vector"
+#>       @5587430e14e8 09 CHARSXP g0c1 [REF(169),gp=0x60] [ASCII] [cached] "fmalloc"
+#>       @55873e363df8 09 CHARSXP g1c1 [MARK,REF(579),gp=0x61] [ASCII] [cached] "integer"
 ```
 
 `inspect()` output is an internal R diagnostic, so exact formatting can
@@ -514,9 +507,9 @@ encodings, and NA flags live in fmalloc storage. R `CHARSXP` values are
 materialized on `STRING_ELT()` access; Rfmalloc does not allocate
 `CHARSXP` objects inside fmalloc.
 
-```r
+``` r
 
-run_readme_example(function() {
+local({
   char_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(char_file, mode = "persistent")
   on.exit({
@@ -547,9 +540,9 @@ run_readme_example(function() {
 Use constructor helpers for shape-aware allocation, and `as_fmalloc_*()`
 helpers to install shape metadata on existing fmalloc-backed vectors:
 
-```r
+``` r
 
-run_readme_example(function() {
+local({
   ctor_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(ctor_file, mode = "persistent")
   on.exit({
@@ -608,9 +601,9 @@ with:
 where `n` is the maximum allowed result length to keep in-memory.
 Results with length greater than `n` stay fmalloc-backed.
 
-```r
+``` r
 
-run_readme_example(function() {
+local({
   reduce_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(reduce_file, mode = "persistent")
   old_limit <- getOption("Rfmalloc.reduce_result_length")
@@ -670,9 +663,9 @@ run_readme_example(function() {
 Runtime handles make it possible to use more than one backing file in
 one R process.
 
-```r
+``` r
 
-run_readme_example(function() {
+local({
   file_a <- tempfile(fileext = ".bin")
   file_b <- tempfile(fileext = ".bin")
 
@@ -735,9 +728,9 @@ UUID, checks the recorded dimensions and file bounds, validates the
 catalog record and generation, and reconstructs an ALTREP vector around
 the same fmalloc allocation.
 
-```r
+``` r
 
-run_readme_example(function() {
+local({
   ser_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(ser_file, mode = "persistent")
 
@@ -781,8 +774,8 @@ Use `diagnose_fmalloc_runtime()` to inspect runtime metadata, the live
 catalog, and a compact summary that can help decide when a runtime is a
 reset candidate:
 
-```r
-run_readme_example(function() {
+``` r
+local({
   diag_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(diag_file, mode = "persistent")
 
@@ -826,8 +819,8 @@ run_readme_example(function() {
 Scratch runtimes use ordinary R serialization instead. Their serialized
 values do not depend on reopening the scratch backing file.
 
-```r
-run_readme_example(function() {
+``` r
+local({
   scratch_file <- tempfile(fileext = ".bin")
   scratch_rt <- open_fmalloc(scratch_file, mode = "scratch")
 
@@ -866,9 +859,9 @@ object store for recovering vectors by name.
 
 List assignment rejects non-fmalloc payloads at runtime.
 
-```r
+``` r
 
-run_readme_example(function() {
+local({
   reject_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(reject_file, mode = "persistent")
   on.exit({
@@ -900,9 +893,9 @@ run_readme_example(function() {
 Nested fmalloc lists recover recursively when serialized and
 unserialized from a persistent backing file.
 
-```r
+``` r
 
-run_readme_example(function() {
+local({
   recover_file <- tempfile(fileext = ".bin")
   rt <- open_fmalloc(recover_file, mode = "persistent")
   on.exit(unlink(recover_file), add = TRUE)
@@ -939,9 +932,9 @@ run_readme_example(function() {
 
 Cross-runtime insertion is also rejected.
 
-```r
+``` r
 
-run_readme_example(function() {
+local({
   cross_file_a <- tempfile(fileext = ".bin")
   cross_file_b <- tempfile(fileext = ".bin")
 
@@ -985,7 +978,7 @@ benchmark-only fmalloc allocations are not preserved as persistent
 records. Timings are machine- and R-version-specific; use this as a
 template for local measurements.
 
-```r
+``` r
 
 perf_file <- tempfile(fileext = ".bin")
 rt <- open_fmalloc(perf_file, mode = "scratch", size_gb = 0.1)
@@ -1038,14 +1031,14 @@ perf_result
 #> # A tibble: 8 × 5
 #>   expression               median `itr/sec` mem_alloc `gc/sec`
 #>   <bch:expr>             <bch:tm>     <dbl> <bch:byt>    <dbl>
-#> 1 base_sequential_sum     32.21µs    29069.        0B      0  
-#> 2 fmalloc_sequential_sum  47.58µs    20907.        0B      0  
-#> 3 base_scalar_read         31.7µs    28627.   15.01KB      0  
-#> 4 fmalloc_scalar_read    745.95µs     1319.        0B     69.4
-#> 5 base_subset_copy         2.61µs   318268.    7.86KB      0  
-#> 6 fmalloc_subset_copy      16.1µs    59990.        0B      0  
-#> 7 base_indexed_write     109.23µs    10884.  390.67KB      0  
-#> 8 fmalloc_indexed_write  179.32µs     5889.        0B      0
+#> 1 base_sequential_sum     36.85µs    25326.        0B        0
+#> 2 fmalloc_sequential_sum  38.36µs    23820.        0B        0
+#> 3 base_scalar_read        32.67µs    28076.        0B        0
+#> 4 fmalloc_scalar_read    920.43µs     1079.   24.55KB        0
+#> 5 base_subset_copy         3.02µs   274523.    7.86KB        0
+#> 6 fmalloc_subset_copy     31.48µs    31095.        0B        0
+#> 7 base_indexed_write     113.27µs    11760.  390.67KB        0
+#> 8 fmalloc_indexed_write  199.97µs     5277.        0B        0
 ```
 
 ## Native C API for Other Packages
