@@ -33,6 +33,10 @@
 - Added native C kernel implementations for fmalloc-backed linear algebra
   (`%*%`, `crossprod()`, and `tcrossprod()`), returning managed fmalloc matrix
   outputs with base-consistent shape behavior and name propagation.
+- Matrix products (`%*%`, `crossprod()`, `tcrossprod()`) now call BLAS `dgemm`
+  for finite double operands, falling back to the managed native loops for
+  `NA`/`NaN`/`Inf` values and logical/integer/complex operands (the same split
+  base R's default matrix product uses).
 - Fixed fmalloc vector recognition for R's generic ALTREP wrappers: attribute
   changes on referenced fmalloc vectors of length >= 64 (for example the class
   stripping done by dispatch helpers) made R substitute a wrapper object that

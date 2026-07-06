@@ -25,6 +25,11 @@
 #include <Rinternals.h>
 #include <R_ext/Altrep.h>
 #include <R_ext/Rdynload.h>
+#define USE_FC_LEN_T
+#include <R_ext/BLAS.h>
+#ifndef FCONE
+# define FCONE
+#endif
 
 enum fm_runtime_mode {
     FM_MODE_PERSISTENT = 1,

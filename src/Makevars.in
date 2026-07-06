@@ -5,4 +5,4 @@
 PKG_CPPFLAGS = -I../inst/fmalloc -DHAVE_CONFIG_H
 
 # Linker flags - include pthread and the fmalloc library  
-PKG_LIBS = -L../inst/fmalloc -lfmalloc -lpthread
+PKG_LIBS = -L../inst/fmalloc -lfmalloc -lpthread $(BLAS_LIBS) $(FLIBS)

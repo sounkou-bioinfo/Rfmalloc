@@ -214,4 +214,42 @@ message("Testing fmalloc matrix algebra methods...")
     message("  ALTREP wrapper regression tests passed")
 })()
 
+(function() {
+    message("  Test 7: BLAS path matches base R; NA/NaN/Inf fall back with base semantics")
+    tmp <- tempfile(fileext = ".bin")
+    rt <- open_fmalloc(tmp, mode = "persistent")
+    on.exit({
+        cleanup_fmalloc(rt)
+        unlink(tmp)
+    }, add = TRUE)
+
+    set.seed(7)
+    ba <- matrix(rnorm(200 * 80), nrow = 200, ncol = 80)
+    bb <- matrix(rnorm(80 * 120), nrow = 80, ncol = 120)
+
+    a <- create_fmalloc_matrix("numeric", nrow = 200, ncol = 80, runtime = rt)
+    b <- create_fmalloc_matrix("numeric", nrow = 80, ncol = 120, runtime = rt)
+    a[] <- ba
+    b[] <- bb
+
+    z <- a %*% b
+    expect_true(inherits(z, "fmalloc_matrix"))
+    expect_equal(as.vector(z), as.vector(ba %*% bb))
+    expect_equal(as.vector(crossprod(a)), as.vector(crossprod(ba)))
+    expect_equal(as.vector(tcrossprod(a)), as.vector(tcrossprod(ba)))
+
+    # Non-finite values must take the managed-loop path and match base.
+    ba_na <- ba
+    ba_na[c(1L, 300L, 5000L)] <- c(NA_real_, NaN, Inf)
+    a_na <- create_fmalloc_matrix("numeric", nrow = 200, ncol = 80, runtime = rt)
+    a_na[] <- ba_na
+
+    z_na <- a_na %*% b
+    expect_true(inherits(z_na, "fmalloc_matrix"))
+    expect_equal(as.vector(z_na), as.vector(ba_na %*% bb))
+    expect_equal(as.vector(crossprod(a_na)), as.vector(crossprod(ba_na)))
+
+    message("  BLAS and non-finite fallback tests passed")
+})()
+
 message("fmalloc matrix algebra tests completed")

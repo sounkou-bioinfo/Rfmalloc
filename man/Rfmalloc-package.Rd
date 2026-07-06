@@ -72,9 +72,10 @@ cases now emit a warning and call the corresponding
 \item Scalar or zero-length results from \code{Summary}, \code{Math}, and
 \code{Math2} generics (for example \code{sum(x)} returning a single
 value) are returned as ordinary R scalars by design.
-\item Matrix products are currently computed by managed R loops so
-they preserve fmalloc-backed results before native BLAS
-kernels are added.
+\item Matrix products use BLAS \code{dgemm} for finite numeric
+operands; operands containing \code{NA}/\code{NaN}/\code{Inf} and
+logical/integer/complex operands are computed by managed
+native loops with base-consistent semantics.
 }
 \item Full operator- and method-family coverage is still incomplete for all
 R generics. Some advanced families may still materialize ordinary R
@@ -84,10 +85,10 @@ objects in a few edge cases.
 
 \section{Future Work}{
 
-Future work includes native BLAS/LAPACK-backed matrix kernels, view-based
-subset representations, catalog compaction and reset tooling, metadata storage
-for attributes on persisted elements, robust nested-list reference validation,
-and compaction of recovery metadata.
+Future work includes complex \code{zgemm} and further LAPACK-backed kernels,
+view-based subset representations, catalog compaction and reset tooling,
+metadata storage for attributes on persisted elements, robust nested-list
+reference validation, and compaction of recovery metadata.
 }
 
 \seealso{

@@ -1337,6 +1337,60 @@ static inline void store_matrix_attrs(SEXP ans, R_xlen_t nrow, R_xlen_t ncol,
     UNPROTECT(1);
 }
 
+static bool linalg_range_all_finite(const double *x, R_xlen_t n)
+{
+    for (R_xlen_t i = 0; i < n; i++) {
+        if (!R_FINITE(x[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* BLAS dgemm handles only finite double operands: NA/NaN/Inf propagation is
+ * BLAS-implementation-defined, so those fall back to the managed loops, the
+ * same split base R's default matprod uses. inner_dim == 0 stays on the
+ * loops as well (they write the zeros dgemm would need lda >= 1 for). */
+static bool linalg_blas_eligible(const fm_linalg_plan &plan)
+{
+    if (plan.out_sexptype != REALSXP ||
+        plan.lhs.type != FM_T_REAL || plan.rhs.type != FM_T_REAL) {
+        return false;
+    }
+    if (plan.inner_dim <= 0 ||
+        plan.inner_dim > (R_xlen_t)std::numeric_limits<int>::max()) {
+        return false;
+    }
+
+    const double *lhs_data = static_cast<const double *>(plan.lhs.data);
+    const double *rhs_data = static_cast<const double *>(plan.rhs.data);
+    if (!linalg_range_all_finite(lhs_data, plan.lhs.nrow * plan.lhs.ncol)) {
+        return false;
+    }
+    if (rhs_data != lhs_data &&
+        !linalg_range_all_finite(rhs_data, plan.rhs.nrow * plan.rhs.ncol)) {
+        return false;
+    }
+    return true;
+}
+
+static void run_linalg_blas(fm_linalg_op_id op, const fm_linalg_plan &plan, double *out)
+{
+    const double one = 1.0, zero = 0.0;
+    int m = (int)plan.out_nrow;
+    int n = (int)plan.out_ncol;
+    int k = (int)plan.inner_dim;
+    int lda = (int)plan.lhs.nrow;
+    int ldb = (int)plan.rhs.nrow;
+    const char *transa = (op == FM_LINALG_CROSSPROD) ? "T" : "N";
+    const char *transb = (op == FM_LINALG_TCROSSPROD) ? "T" : "N";
+
+    F77_CALL(dgemm)(transa, transb, &m, &n, &k, &one,
+                    static_cast<const double *>(plan.lhs.data), &lda,
+                    static_cast<const double *>(plan.rhs.data), &ldb,
+                    &zero, out, &m FCONE FCONE);
+}
+
 static inline Rcomplex complex_add(Rcomplex x, Rcomplex y)
 {
     return {x.r + y.r, x.i + y.i};
@@ -1528,7 +1582,9 @@ extern "C" SEXP rfm_matrix_ops_dispatch(SEXP op_code, SEXP lhs, SEXP rhs)
             }
         } else {
             double *out = static_cast<double*>(vector_data_or_dummy(out_vec));
-            if (op == FM_LINALG_MATMUL) {
+            if (linalg_blas_eligible(plan)) {
+                run_linalg_blas(op, plan, out);
+            } else if (op == FM_LINALG_MATMUL) {
                 run_matmul_real(plan, out);
             } else if (op == FM_LINALG_CROSSPROD) {
                 run_crossprod_real(plan, out);
