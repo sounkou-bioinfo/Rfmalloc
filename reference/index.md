@@ -25,6 +25,22 @@
   : Explicitly destroy a fmalloc vector
 - [`diagnose_fmalloc_runtime()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/diagnose_fmalloc_runtime.md)
   : Diagnose fmalloc runtime state
+- [`fmalloc_api_version()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_api.md)
+  [`fmalloc_default_runtime()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_api.md)
+  [`is_fmalloc_runtime()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_api.md)
+  [`is_fmalloc_vector()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_api.md)
+  [`fmalloc_runtime()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_api.md)
+  [`fmalloc_runtime_info()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_api.md)
+  [`fmalloc_vector_info()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_api.md)
+  [`fmalloc_vector_type()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_api.md)
+  [`fmalloc_vector_length()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_api.md)
+  [`fmalloc_vector_payload_ptr()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_api.md)
+  : Public Rfmalloc API helpers
+- [`` `%*%`( ``*`<fmalloc>`*`)`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_linalg.md)
+  [`crossprod(`*`<fmalloc>`*`)`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_linalg.md)
+  [`tcrossprod(`*`<fmalloc>`*`)`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_linalg.md)
+  [`matrixOps(`*`<fmalloc>`*`)`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_linalg.md)
+  : Matrix algebra for fmalloc-backed vectors and matrices
 - [`rowSums()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md)
   [`colSums()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md)
   [`rowMeans()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md)

@@ -78,11 +78,17 @@ complex, character, and list vectors with fmalloc payload storage.</p>
 <dt><code><a href="as_fmalloc_data_frame.html">as_fmalloc_data_frame</a></code></dt>
 <dd><p>Convert fmalloc-backed objects to a data.frame.</p></dd>
 
+<dt><code><a href="fmalloc_linalg.html">fmalloc_linalg</a></code></dt>
+<dd><p>Matrix products for fmalloc-backed vectors and matrices.</p></dd>
+
 <dt><code><a href="list_fmalloc_allocations.html">list_fmalloc_allocations</a></code></dt>
 <dd><p>List persistent allocation catalog records.</p></dd>
 
 <dt><code><a href="diagnose_fmalloc_runtime.html">diagnose_fmalloc_runtime</a></code></dt>
 <dd><p>Summarize persistent allocation catalog state and runtime diagnostics.</p></dd>
+
+<dt><code><a href="fmalloc_api.html">fmalloc_api</a></code></dt>
+<dd><p>Inspect runtimes and vectors through the public R/native API.</p></dd>
 
 <dt><code><a href="cleanup_fmalloc.html">cleanup_fmalloc</a></code></dt>
 <dd><p>Request cleanup of an fmalloc runtime.</p></dd>
@@ -102,20 +108,25 @@ complex, character, and list vectors. List elements are restricted to
 <li><p>Reference serialization for persistent fixed-width atomic and
 character ALTREP vectors.</p></li>
 <li><p>Fmalloc-backed ALTREP subset copies for vector indexing operations.</p></li>
+<li><p>Elementwise arithmetic/comparison/logical <code>Ops</code> and fmalloc-backed
+<code>matrixOps</code> products for <code>%*%</code>, <code><a href="https://rdrr.io/r/base/crossprod.html" class="external-link">crossprod()</a></code>, and <code><a href="https://rdrr.io/r/base/crossprod.html" class="external-link">tcrossprod()</a></code>.</p></li>
 <li><p>An in-file allocation catalog for persistent vectors.</p></li>
 <li><p>A C-callable API and installed header for other packages.</p></li>
 <li><p>Native lifetime tracking so runtime mappings outlive reachable
 vectors allocated from them.</p></li>
 <li><p>Runtime and catalog diagnostics for planning recovery and operational
 cleanup.</p></li>
+<li><p>R-facing API helpers for runtime/vector predicates, metadata, payload
+pointers, and version checks.</p></li>
 </ul></div>
     <div class="section level2">
     <h2 id="known-limitations">Known Limitations<a class="anchor" aria-label="anchor" href="#known-limitations"></a></h2>
 
 
 <ul><li><p>ALTREP-backed dispatch now covers core <code>Ops</code>, <code>Summary</code>, <code>Math</code>,
-<code>Math2</code>, and matrix <code>rowSums</code>/<code>colSums</code>/<code>rowMeans</code>/<code>colMeans</code>
-workflows through S3 methods for common vector/matrix usage.</p></li>
+<code>Math2</code>, matrix <code>rowSums</code>/<code>colSums</code>/<code>rowMeans</code>/<code>colMeans</code>, and initial
+<code>matrixOps</code> workflows through S3 methods for common vector/matrix
+usage.</p></li>
 <li><p>Explicit base-fallback boundaries are:</p><ul><li><p><code><a href="fmalloc_reduction_methods.html">rowSums()</a></code>, <code><a href="fmalloc_reduction_methods.html">colSums()</a></code>, <code><a href="fmalloc_reduction_methods.html">rowMeans()</a></code>, and <code><a href="fmalloc_reduction_methods.html">colMeans()</a></code> when
 the input is not an exact 2D matrix or <code>dims != 1L</code>; these
 cases now emit a warning and call the corresponding
@@ -123,6 +134,9 @@ cases now emit a warning and call the corresponding
 <li><p>Scalar or zero-length results from <code>Summary</code>, <code>Math</code>, and
 <code>Math2</code> generics (for example <code>sum(x)</code> returning a single
 value) are returned as ordinary R scalars by design.</p></li>
+<li><p>Matrix products are currently computed by managed R loops so
+they preserve fmalloc-backed results before native BLAS
+kernels are added.</p></li>
 </ul></li>
 <li><p>Full operator- and method-family coverage is still incomplete for all
 R generics. Some advanced families may still materialize ordinary R
@@ -132,9 +146,10 @@ objects in a few edge cases.</p></li>
     <h2 id="future-work">Future Work<a class="anchor" aria-label="anchor" href="#future-work"></a></h2>
 
 
-<p>Future work includes view-based subset representations, catalog compaction
-and reset tooling, metadata storage for attributes on persisted elements,
-robust nested-list reference validation, and compaction of recovery metadata.</p>
+<p>Future work includes native BLAS/LAPACK-backed matrix kernels, view-based
+subset representations, catalog compaction and reset tooling, metadata storage
+for attributes on persisted elements, robust nested-list reference validation,
+and compaction of recovery metadata.</p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>

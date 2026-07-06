@@ -34,7 +34,8 @@ create_fmalloc_vector(
 
 - length:
 
-  Integer specifying the non-negative length of the vector to create.
+  Non-negative integer-valued length of the vector to create. Supports
+  exact values up to `2^52` in the R interface.
 
 - runtime:
 
