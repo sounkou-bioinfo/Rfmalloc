@@ -66,10 +66,18 @@ gguf_tensors <- function(x) {
 #' @param runtime Optional `Rfmalloc` runtime handle (see
 #'   [Rfmalloc::open_fmalloc()]). If `NULL`, `Rfmalloc`'s own default-runtime
 #'   resolution is used.
+#' @param as `"numeric"` (default) dequantizes the whole tensor into an
+#'   fmalloc double matrix/array. `"native"` instead copies the tensor's raw,
+#'   still-encoded payload into fmalloc storage and returns an
+#'   [Rfmalloc::create_fmalloc_tensor()] typed tensor: it keeps the GGUF
+#'   storage density (e.g. 4.5 bits/weight for `q4_k`) and is decoded in
+#'   bounded panels only when used in matrix products. Native mode requires a
+#'   2-dimensional tensor whose type has a registered Rfmalloc codec.
 #'
-#' @return An `Rfmalloc`-backed ALTREP matrix (if the tensor has 2
-#'   dimensions) or array (otherwise) of doubles, with `dim()` equal to the
-#'   tensor's GGUF dimensions in `c(dim[0], dim[1], ...)` order.
+#' @return For `as = "numeric"`, an `Rfmalloc`-backed ALTREP matrix (if the
+#'   tensor has 2 dimensions) or array (otherwise) of doubles, with `dim()`
+#'   equal to the tensor's GGUF dimensions in `c(dim[0], dim[1], ...)` order.
+#'   For `as = "native"`, an `fmalloc_tensor` with the same dims.
 #'
 #' @examples
 #' tmp <- tempfile(fileext = ".gguf")
@@ -81,10 +89,11 @@ gguf_tensors <- function(x) {
 #' unlink(tmp)
 #'
 #' @export
-gguf_tensor <- function(x, name, runtime = NULL) {
+gguf_tensor <- function(x, name, runtime = NULL, as = c("numeric", "native")) {
     if (!is.character(name) || length(name) != 1L || is.na(name)) {
         stop("name must be a single non-missing character string")
     }
+    as <- match.arg(as)
     h <- .gguf_resolve(x)
     if (h$owned) {
         on.exit(gguf_close(h$ctx), add = TRUE)
@@ -102,6 +111,26 @@ gguf_tensor <- function(x, name, runtime = NULL) {
     }
 
     dims <- as.integer(info$dims)
+
+    if (as == "native") {
+        if (length(dims) != 2L) {
+            stop("as = \"native\" requires a 2-dimensional tensor; '",
+                name, "' has ", length(dims))
+        }
+        if (!(info$type %in% Rfmalloc::fmalloc_tensor_codecs())) {
+            stop(
+                "tensor '", name, "' has type '", info$type,
+                "' with no registered Rfmalloc tensor codec; use as = \"numeric\""
+            )
+        }
+        payload <- Rfmalloc::create_fmalloc_vector("raw",
+            length = as.double(info$nbytes),
+            runtime = runtime, zero_initialize = FALSE
+        )
+        .Call("RC_gguf_tensor_fill_raw", h$ctx, name, payload)
+        return(Rfmalloc::create_fmalloc_tensor(payload, info$type, dims))
+    }
+
     dest <- if (length(dims) == 2L) {
         Rfmalloc::create_fmalloc_matrix("numeric",
             nrow = dims[1], ncol = dims[2],

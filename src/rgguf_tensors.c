@@ -122,17 +122,19 @@ SEXP RC_gguf_tensor_info(SEXP ctx_sexp, SEXP name_sexp)
         INTEGER(dims)[j] = (int) t.dim[j];
     }
 
-    SEXP out = PROTECT(Rf_allocVector(VECSXP, 4));
+    SEXP out = PROTECT(Rf_allocVector(VECSXP, 5));
     SET_VECTOR_ELT(out, 0, dims);
     SET_VECTOR_ELT(out, 1, Rf_ScalarString(Rf_mkChar(gguf_get_tensor_type_name(t.type))));
     SET_VECTOR_ELT(out, 2, Rf_ScalarLogical(rgguf_type_is_supported(t.type)));
     SET_VECTOR_ELT(out, 3, Rf_ScalarReal((double) t.num_weights));
+    SET_VECTOR_ELT(out, 4, Rf_ScalarReal((double) t.bsize));
 
-    SEXP out_names = PROTECT(Rf_allocVector(STRSXP, 4));
+    SEXP out_names = PROTECT(Rf_allocVector(STRSXP, 5));
     SET_STRING_ELT(out_names, 0, Rf_mkChar("dims"));
     SET_STRING_ELT(out_names, 1, Rf_mkChar("type"));
     SET_STRING_ELT(out_names, 2, Rf_mkChar("supported"));
     SET_STRING_ELT(out_names, 3, Rf_mkChar("n_elements"));
+    SET_STRING_ELT(out_names, 4, Rf_mkChar("nbytes"));
     Rf_setAttrib(out, R_NamesSymbol, out_names);
 
     UNPROTECT(3);

@@ -49,6 +49,10 @@ int rgguf_type_is_supported(uint32_t type);
  * first so R can avoid allocating the destination at all). */
 void rgguf_tensor_fill_double(gguf_tensor *tensor, double *dst);
 
+/* Register gguflib's quantized dequantizers as Rfmalloc tensor codecs
+ * (no-op when the installed Rfmalloc predates C API version 4). */
+void rgguf_register_fmalloc_codecs(void);
+
 /* .Call entry points, registered in rgguf_init.c. */
 SEXP RC_gguf_open(SEXP path);
 SEXP RC_gguf_close(SEXP ctx);
@@ -57,7 +61,9 @@ SEXP RC_gguf_tensor_table(SEXP ctx);
 SEXP RC_gguf_tensor_names(SEXP ctx);
 SEXP RC_gguf_tensor_info(SEXP ctx, SEXP name);
 SEXP RC_gguf_tensor_fill(SEXP ctx, SEXP name, SEXP dest);
+SEXP RC_gguf_tensor_fill_raw(SEXP ctx, SEXP name, SEXP dest);
 SEXP RC_gguf_write(SEXP path, SEXP tensor_values, SEXP metadata);
+SEXP RC_gguf_register_codecs(void);
 
 #ifdef __cplusplus
 }

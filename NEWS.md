@@ -1,6 +1,12 @@
 # Rgguf 0.1.0 (unreleased)
 
-
+- Added native typed imports: `gguf_tensor(as = "native")` (and
+  `gguf_import(as = "native")`) copy a 2-d tensor's raw GGUF payload into
+  fmalloc storage at its original density (e.g. 4.5 bits/weight for `q4_k`)
+  and return an `Rfmalloc::fmalloc_tensor`, decoded in bounded panels only
+  inside matrix products. Registers gguflib's `q4_0`/`q4_1`/`q8_0`/`q2_k`/
+  `q4_k`/`q6_k` dequantizers as Rfmalloc tensor codecs (requires Rfmalloc
+  C API version 4).
 - Initial release.
 - Added `gguf_open()` to memory-map a GGUF file (via a vendored copy of
   antirez's `gguflib`) and return a `gguf_ctx` handle with a closing

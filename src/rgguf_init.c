@@ -17,7 +17,9 @@ static const R_CallMethodDef CallEntries[] = {
     {"RC_gguf_tensor_names", (DL_FUNC) &RC_gguf_tensor_names, 1},
     {"RC_gguf_tensor_info", (DL_FUNC) &RC_gguf_tensor_info, 2},
     {"RC_gguf_tensor_fill", (DL_FUNC) &RC_gguf_tensor_fill, 3},
+    {"RC_gguf_tensor_fill_raw", (DL_FUNC) &RC_gguf_tensor_fill_raw, 3},
     {"RC_gguf_write", (DL_FUNC) &RC_gguf_write, 3},
+    {"RC_gguf_register_codecs", (DL_FUNC) &RC_gguf_register_codecs, 0},
     {NULL, NULL, 0}
 };
 
@@ -26,4 +28,7 @@ void R_init_Rgguf(DllInfo *dll)
     Rgguf_ctx_tag = Rf_install("Rgguf.gguf_ctx");
     R_registerRoutines(dll, NULL, CallEntries, NULL, NULL);
     R_useDynamicSymbols(dll, FALSE);
+    /* Codec registration needs Rfmalloc's C-callables, which are only
+     * guaranteed to exist once its namespace is loaded — done from .onLoad,
+     * not here, because DLL load order is not guaranteed at this point. */
 }

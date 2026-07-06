@@ -105,6 +105,50 @@ local({
 #> [1] 0
 ```
 
+## Native typed tensors
+
+`gguf_tensor(as = "native")` skips dequantization at import: the
+tensor’s raw GGUF payload is copied into fmalloc storage at its original
+density (4.5 bits/weight for `q4_k`) and returned as an
+`Rfmalloc::fmalloc_tensor`. Matrix products against dense operands
+decode the payload in bounded, block-aligned panels streamed through
+BLAS `dgemm`, so the full double representation is never materialized.
+Rgguf registers gguflib’s `q4_0`, `q4_1`, `q8_0`, `q2_k`, `q4_k`, and
+`q6_k` dequantizers as Rfmalloc tensor codecs; `f32`, `f16`, `bf16`, and
+`f64` codecs are built into Rfmalloc.
+
+``` r
+local({
+  gguf_file <- tempfile(fileext = ".gguf")
+  alloc_file <- tempfile(fileext = ".bin")
+  rt <- Rfmalloc::open_fmalloc(alloc_file)
+  on.exit({
+    Rfmalloc::cleanup_fmalloc(rt)
+    unlink(c(gguf_file, alloc_file))
+  }, add = TRUE)
+
+  set.seed(7)
+  gguf_write_tensors(gguf_file, list(
+    w = matrix(rnorm(256 * 64), nrow = 256, ncol = 64)
+  ))
+
+  ten <- gguf_tensor(gguf_file, "w", runtime = rt, as = "native")
+  print(ten)
+
+  x <- matrix(rnorm(8 * 256), nrow = 8)
+  y <- x %*% ten # decoded panel-by-panel inside dgemm
+  print(dim(y))
+  print(Rfmalloc::is_fmalloc_vector(y))
+
+  w_f64 <- gguf_tensor(gguf_file, "w", runtime = rt)
+  print(max(abs(y[] - (x %*% w_f64)[])))
+})
+#> <fmalloc_tensor f32 [256 x 64], 65536 payload bytes>
+#> [1]  8 64
+#> [1] TRUE
+#> [1] 0
+```
+
 ## Supported tensor types
 
 `gguf_tensor()`/`gguf_import()` dequantize:

@@ -13,6 +13,9 @@
 #'   [gguf_tensor()] call, so all imported tensors share the same backing
 #'   file. If `NULL`, `Rfmalloc`'s own default-runtime resolution is used for
 #'   each tensor.
+#' @param as Passed through to [gguf_tensor()]: `"numeric"` dequantizes to
+#'   fmalloc double matrices/arrays, `"native"` keeps the GGUF payload
+#'   encoding and returns typed `fmalloc_tensor` objects.
 #'
 #' @return A named list of `Rfmalloc`-backed matrices/arrays, one per
 #'   imported tensor, in the order requested (or file order, if `tensors` is
@@ -31,7 +34,9 @@
 #' unlink(tmp)
 #'
 #' @export
-gguf_import <- function(path_or_ctx, tensors = NULL, runtime = NULL) {
+gguf_import <- function(path_or_ctx, tensors = NULL, runtime = NULL,
+                        as = c("numeric", "native")) {
+    as <- match.arg(as)
     h <- .gguf_resolve(path_or_ctx)
     if (h$owned) {
         on.exit(gguf_close(h$ctx), add = TRUE)
@@ -54,7 +59,7 @@ gguf_import <- function(path_or_ctx, tensors = NULL, runtime = NULL) {
     result <- vector("list", length(names_to_read))
     names(result) <- names_to_read
     for (nm in names_to_read) {
-        result[[nm]] <- gguf_tensor(h$ctx, nm, runtime = runtime)
+        result[[nm]] <- gguf_tensor(h$ctx, nm, runtime = runtime, as = as)
     }
     result
 }
