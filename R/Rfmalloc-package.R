@@ -17,6 +17,8 @@
 #'   \item{\code{\link{as_fmalloc_array}}}{Convert fmalloc vectors to array-shaped objects.}
 #'   \item{\code{\link{as_fmalloc_data_frame}}}{Convert fmalloc-backed objects to a data.frame.}
 #'   \item{\code{\link{fmalloc_linalg}}}{Matrix products for fmalloc-backed vectors and matrices.}
+#'   \item{\code{\link{fmalloc_tensor}}}{Typed and ALP-compressed tensors with panel-streamed products.}
+#'   \item{\code{\link{fmalloc_matmul_ooc}}}{Out-of-core matrix products for matrices larger than RAM.}
 #'   \item{\code{\link{list_fmalloc_allocations}}}{List persistent allocation catalog records.}
 #'   \item{\code{\link{diagnose_fmalloc_runtime}}}{Summarize persistent allocation catalog state and runtime diagnostics.}
 #'   \item{\code{\link{fmalloc_api}}}{Inspect runtimes and vectors through the public R/native API.}

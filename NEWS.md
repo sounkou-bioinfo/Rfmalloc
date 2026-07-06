@@ -42,6 +42,13 @@
   division-by-exact-power-of-ten decoding so decimal-rounded data
   round-trips with few patches. Compressed tensors participate in the
   panel-streamed matrix products like any other typed tensor.
+- Added `fmalloc_matmul_ooc()`, an out-of-core matrix product for fmalloc
+  matrices larger than RAM: `A %*% x` consumes `A` one contiguous column tile
+  at a time through BLAS `dgemm`, then releases each tile's pages with
+  `madvise(MADV_DONTNEED)` (and hints the payload `MADV_SEQUENTIAL`), so the
+  resident set stays bounded by the tile budget. Demonstrated on a 62.6 GB
+  matrix (equal to total RAM): peak resident memory 0.31 GB during the gemv,
+  result exact vs the analytic reference.
 - Added typed fmalloc tensors: `create_fmalloc_tensor()` tags an fmalloc raw
   payload with a dtype codec (builtin `f64`/`f32`/`f16`/`bf16`; other packages
   register codecs through the new `Rfmalloc_register_tensor_codec` C-callable,
