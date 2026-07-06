@@ -16,6 +16,8 @@ fmalloc_tensor_codecs()
 
 create_fmalloc_tensor(payload, dtype, dim)
 
+as_fmalloc_tensor(x, dtype = "alp", runtime = NULL)
+
 fmalloc_tensor_dtype(x)
 
 fmalloc_tensor_materialize(x)
@@ -48,7 +50,8 @@ tcrossprod(x, y = NULL, ...)
 
 - dtype:
 
-  Codec name, e.g. `"f32"`, `"f16"`, `"bf16"`.
+  Codec name, e.g. `"f32"`, `"f16"`, `"bf16"`; for
+  `as_fmalloc_tensor()`, only `"alp"`.
 
 - dim:
 
@@ -57,6 +60,13 @@ tcrossprod(x, y = NULL, ...)
 - x:
 
   An `fmalloc_tensor` object (or, in `%*%`, a dense operand).
+
+- runtime:
+
+  Optional runtime handle from
+  [`open_fmalloc()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/open_fmalloc.md);
+  defaults to the runtime established by
+  [`init_fmalloc()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/init_fmalloc.md).
 
 - ...:
 
@@ -76,6 +86,13 @@ character vector.
 ## Details
 
 `create_fmalloc_tensor()` tags an existing fmalloc raw payload.
+`as_fmalloc_tensor()` compresses a double vector/matrix into fmalloc
+storage with the builtin, lossless `"alp"` codec (Afroozeh et al.,
+[doi:10.1145/3626717](https://doi.org/10.1145/3626717) ; scalar core
+adapted from the MIT-licensed zap implementation, see
+`inst/COPYRIGHTS`), storing decimal-scaled doubles as bit-packed
+integers in independently decodable 1024-value chunks with exact-value
+patches and a raw escape hatch for incompressible chunks.
 `fmalloc_tensor_materialize()` decodes the whole tensor into an fmalloc
 double matrix. `fmalloc_tensor_codecs()` lists registered codec names,
 and `fmalloc_tensor_dtype()` returns a tensor's dtype tag.

@@ -1157,6 +1157,7 @@ GPL (\>= 2)
   : Matrix reduction helpers for fmalloc-backed matrices
 - [`fmalloc_tensor_codecs()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_tensor.md)
   [`create_fmalloc_tensor()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_tensor.md)
+  [`as_fmalloc_tensor()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_tensor.md)
   [`fmalloc_tensor_dtype()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_tensor.md)
   [`fmalloc_tensor_materialize()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_tensor.md)
   [`dim(`*`<fmalloc_tensor>`*`)`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_tensor.md)

@@ -61,6 +61,8 @@ full tensor is never materialized at once.</p>
 <span></span>
 <span><span class="fu">create_fmalloc_tensor</span><span class="op">(</span><span class="va">payload</span>, <span class="va">dtype</span>, <span class="va">dim</span><span class="op">)</span></span>
 <span></span>
+<span><span class="fu">as_fmalloc_tensor</span><span class="op">(</span><span class="va">x</span>, dtype <span class="op">=</span> <span class="st">"alp"</span>, runtime <span class="op">=</span> <span class="cn">NULL</span><span class="op">)</span></span>
+<span></span>
 <span><span class="fu">fmalloc_tensor_dtype</span><span class="op">(</span><span class="va">x</span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu">fmalloc_tensor_materialize</span><span class="op">(</span><span class="va">x</span><span class="op">)</span></span>
@@ -94,7 +96,8 @@ column-major order (first dimension fastest).</p></dd>
 
 
 <dt id="arg-dtype">dtype<a class="anchor" aria-label="anchor" href="#arg-dtype"></a></dt>
-<dd><p>Codec name, e.g. <code>"f32"</code>, <code>"f16"</code>, <code>"bf16"</code>.</p></dd>
+<dd><p>Codec name, e.g. <code>"f32"</code>, <code>"f16"</code>, <code>"bf16"</code>; for
+<code>as_fmalloc_tensor()</code>, only <code>"alp"</code>.</p></dd>
 
 
 <dt id="arg-dim">dim<a class="anchor" aria-label="anchor" href="#arg-dim"></a></dt>
@@ -103,6 +106,11 @@ column-major order (first dimension fastest).</p></dd>
 
 <dt id="arg-x">x<a class="anchor" aria-label="anchor" href="#arg-x"></a></dt>
 <dd><p>An <code>fmalloc_tensor</code> object (or, in <code>%*%</code>, a dense operand).</p></dd>
+
+
+<dt id="arg-runtime">runtime<a class="anchor" aria-label="anchor" href="#arg-runtime"></a></dt>
+<dd><p>Optional runtime handle from <code><a href="open_fmalloc.html">open_fmalloc()</a></code>; defaults to
+the runtime established by <code><a href="init_fmalloc.html">init_fmalloc()</a></code>.</p></dd>
 
 
 <dt id="arg--">...<a class="anchor" aria-label="anchor" href="#arg--"></a></dt>
@@ -123,6 +131,13 @@ character vector.</p>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
     <p><code>create_fmalloc_tensor()</code> tags an existing fmalloc raw payload.
+<code>as_fmalloc_tensor()</code> compresses a double vector/matrix into fmalloc
+storage with the builtin, lossless <code>"alp"</code> codec (Afroozeh et al.,
+<a href="https://doi.org/10.1145/3626717" class="external-link">doi:10.1145/3626717</a>
+; scalar core adapted from the MIT-licensed zap
+implementation, see <code>inst/COPYRIGHTS</code>), storing decimal-scaled doubles as
+bit-packed integers in independently decodable 1024-value chunks with
+exact-value patches and a raw escape hatch for incompressible chunks.
 <code>fmalloc_tensor_materialize()</code> decodes the whole tensor into an fmalloc
 double matrix. <code>fmalloc_tensor_codecs()</code> lists registered codec names, and
 <code>fmalloc_tensor_dtype()</code> returns a tensor's dtype tag.</p>
