@@ -8,29 +8,13 @@
 # Run with:
 #   Rscript inst/smoke_test.R
 #
-# NOTE on a discovered Rfmalloc limitation, not an Rgguf bug:
-# As of Rfmalloc 0.1.0, `%*%`/`crossprod`/`tcrossprod` on fmalloc-backed
-# vectors/matrices with >= 64 elements fail with "fmalloc matrix operation
-# requires an fmalloc runtime" whenever the operand has been passed through
-# at least one R closure call first (which is unavoidable: %*%.fmalloc()
-# itself is a closure, so this is true for essentially every real call, not
-# a rare edge case). Root cause: Rfmalloc's `.fmalloc_strip_class()` runs
-# `class(x) <- NULL` to strip the S3 class before handing operands to its
-# native dispatcher; for a *referenced* ALTREP object (refcount >= 2, which
-# any closure argument has) of length >= 64, R's own attribute-assignment
-# machinery replaces the object with a generic, R-core "wrapper" ALTREP
-# object instead of invoking the class's registered Duplicate method - this
-# is true even for base R's own compact `1:100` ALTREP sequences, so it is
-# general R behavior, not something specific to Rfmalloc's ALTREP class.
-# Rfmalloc's `maybe_vector_from_altrep()` does not unwrap that generic
-# wrapper, so it fails to find the underlying fmalloc vector and its
-# runtime. The vendored native dispatcher itself has no such problem: it
-# ignores R class attributes entirely and reads Rgguf's tensors correctly
-# at any size (verified directly below via .Call("RC_gguf_tensor_fill", ...)
-# results and via a sub-64-element %*% call). This script demonstrates both
-# the literal requested scenario (currently blocked by the Rfmalloc issue
-# above) and a smaller-scale run that stays under the 64-element threshold,
-# to isolate exactly what does and does not work today.
+# NOTE: building this package uncovered an Rfmalloc bug (class stripping via
+# `class(x) <- NULL` made R substitute a generic ALTREP wrapper for referenced
+# operands of length >= 64, which Rfmalloc's native lookup did not recognize,
+# breaking %*%/crossprod/tcrossprod at realistic sizes). It is fixed in
+# Rfmalloc development versions from 2026-07-06 onward; this script requires
+# the fixed Rfmalloc and exercises the full-scale product plus a small-scale
+# run as a sanity baseline.
 
 library(Rgguf)
 

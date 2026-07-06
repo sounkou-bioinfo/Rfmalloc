@@ -72,29 +72,17 @@ Rfmalloc::is_fmalloc_vector(product)
 #> [1] TRUE
 ```
 
-## Known limitation: `%*%`/`crossprod`/`tcrossprod` on large operands
+## Rfmalloc version requirement
 
-`Rfmalloc` 0.1.0 has a limitation, discovered while building this package,
-that affects any fmalloc-backed vector/matrix with 64 or more elements (not
-just ones produced by Rgguf): `%*%.fmalloc()`/`crossprod.fmalloc()`/
-`tcrossprod.fmalloc()` strip the `"fmalloc"` S3 class from their operands
-with `class(x) <- NULL` before dispatching to native code. For a
-*referenced* ALTREP object (any argument passed through a closure call, which
-is unavoidable here) of length >= 64, R's own attribute-assignment machinery
-replaces the object with a generic ALTREP "wrapper" instead of invoking the
-class's registered `Duplicate` method - this reproduces even for base R's
-own compact `1:100` ALTREP sequences, so it is general R behavior, not
-something specific to `Rfmalloc`'s ALTREP class. `Rfmalloc`'s internal
-`maybe_vector_from_altrep()` does not unwrap that generic wrapper, so the
-runtime cannot be found and the call fails with `"fmalloc matrix operation
-requires an fmalloc runtime"`.
-
-This is a dependency-level issue, reproducible with pure `Rfmalloc` code and
-no `Rgguf` involved at all; see `inst/smoke_test.R` for a full write-up and a
-demonstration that the same workflow succeeds end-to-end below that
-threshold. `gguf_tensor()`/`gguf_import()` themselves are unaffected - the
-tensors they return are correctly dequantized and genuinely `Rfmalloc`-backed
-at any size.
+Building this package uncovered an `Rfmalloc` bug affecting any fmalloc-backed
+operand with 64 or more elements: the linear-algebra methods stripped the S3
+class with `class(x) <- NULL`, which for a *referenced* ALTREP object makes R
+substitute a generic wrapper that `Rfmalloc`'s native code did not recognize,
+so `%*%`/`crossprod()`/`tcrossprod()` failed for realistically sized matrices.
+This is fixed in `Rfmalloc` development versions from 2026-07-06 onward (the
+native lookup now unwraps generic ALTREP wrappers, and the methods validate
+operands without stripping classes); install `Rfmalloc` at or past that fix.
+`inst/smoke_test.R` exercises the full pipeline at `100x50 %*% 50x30`.
 
 ## Supported tensor types
 
