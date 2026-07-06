@@ -105,20 +105,6 @@ local({
 #> [1] 0
 ```
 
-## Rfmalloc version requirement
-
-Building this package uncovered an `Rfmalloc` bug affecting any
-fmalloc-backed operand with 64 or more elements: the linear-algebra
-methods stripped the S3 class with `class(x) <- NULL`, which for a
-*referenced* ALTREP object makes R substitute a generic wrapper that
-`Rfmalloc`’s native code did not recognize, so
-`%*%`/`crossprod()`/`tcrossprod()` failed for realistically sized
-matrices. This is fixed in `Rfmalloc` development versions from
-2026-07-06 onward (the native lookup now unwraps generic ALTREP
-wrappers, and the methods validate operands without stripping classes);
-install `Rfmalloc` at or past that fix. `inst/smoke_test.R` exercises
-the full pipeline at `100x50 %*% 50x30`.
-
 ## Supported tensor types
 
 `gguf_tensor()`/`gguf_import()` dequantize:

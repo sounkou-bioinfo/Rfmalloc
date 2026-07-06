@@ -8,13 +8,6 @@
 # Run with:
 #   Rscript inst/smoke_test.R
 #
-# NOTE: building this package uncovered an Rfmalloc bug (class stripping via
-# `class(x) <- NULL` made R substitute a generic ALTREP wrapper for referenced
-# operands of length >= 64, which Rfmalloc's native lookup did not recognize,
-# breaking %*%/crossprod/tcrossprod at realistic sizes). It is fixed in
-# Rfmalloc development versions from 2026-07-06 onward; this script requires
-# the fixed Rfmalloc and exercises the full-scale product plus a small-scale
-# run as a sanity baseline.
 
 library(Rgguf)
 
