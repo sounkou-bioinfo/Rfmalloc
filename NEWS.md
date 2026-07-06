@@ -33,6 +33,13 @@
 - Added native C kernel implementations for fmalloc-backed linear algebra
   (`%*%`, `crossprod()`, and `tcrossprod()`), returning managed fmalloc matrix
   outputs with base-consistent shape behavior and name propagation.
+- Added typed fmalloc tensors: `create_fmalloc_tensor()` tags an fmalloc raw
+  payload with a dtype codec (builtin `f64`/`f32`/`f16`/`bf16`; other packages
+  register codecs through the new `Rfmalloc_register_tensor_codec` C-callable,
+  API version 4) and dims. Matrix products against dense double operands
+  decode the payload in bounded block-aligned column panels streamed through
+  BLAS `dgemm`, so the full double representation is never materialized;
+  `fmalloc_tensor_materialize()` converts to a regular fmalloc matrix.
 - Matrix products (`%*%`, `crossprod()`, `tcrossprod()`) now call BLAS `dgemm`
   for finite double operands, falling back to the managed native loops for
   `NA`/`NaN`/`Inf` values and logical/integer/complex operands (the same split

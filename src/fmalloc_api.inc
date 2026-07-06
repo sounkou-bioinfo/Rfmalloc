@@ -468,7 +468,7 @@ SEXP cleanup_fmalloc_impl(SEXP runtime_xptr)
 
 int Rfmalloc_api_version(void)
 {
-    return 3;
+    return 4;
 }
 
 SEXP fmalloc_api_version_impl(void)
@@ -624,6 +624,7 @@ static void register_c_callables(void)
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_vector_payload_ptr", (DL_FUNC)fmalloc_vector_payload_ptr_impl);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_vector_info", (DL_FUNC)Rfmalloc_vector_info);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_destroy_vector", (DL_FUNC)Rfmalloc_destroy_vector);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_register_tensor_codec", (DL_FUNC)Rfmalloc_register_tensor_codec);
 }
 
 static const R_CallMethodDef CallEntries[] = {
@@ -649,6 +650,10 @@ static const R_CallMethodDef CallEntries[] = {
     {"rfm_ops_dispatch", (DL_FUNC)&rfm_ops_dispatch, 4},
     {"rfm_matrix_ops_dispatch", (DL_FUNC)&rfm_matrix_ops_dispatch, 3},
     {"rfm_can_handle_ops_pair", (DL_FUNC)&rfm_can_handle_ops_pair, 3},
+    {"rfm_tensor_matmul_impl", (DL_FUNC)&rfm_tensor_matmul_impl, 6},
+    {"rfm_tensor_materialize_impl", (DL_FUNC)&rfm_tensor_materialize_impl, 3},
+    {"rfm_tensor_codec_info_impl", (DL_FUNC)&rfm_tensor_codec_info_impl, 1},
+    {"rfm_tensor_codec_list_impl", (DL_FUNC)&rfm_tensor_codec_list_impl, 0},
     {nullptr, nullptr, 0}
 };
 
@@ -657,6 +662,7 @@ void R_init_Rfmalloc(DllInfo *dll)
     fmalloc_runtime_tag = Rf_install("Rfmalloc.runtime");
     fmalloc_vector_tag = Rf_install("Rfmalloc.vector");
     register_fmalloc_altrep_classes(dll);
+    tensor_register_builtin_codecs();
     R_registerRoutines(dll, nullptr, CallEntries, nullptr, nullptr);
     register_c_callables();
     R_useDynamicSymbols(dll, FALSE);

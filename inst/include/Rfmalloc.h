@@ -10,7 +10,7 @@ extern "C" {
 #endif
 
 /*
- * Rfmalloc C-callable API, version 3.
+ * Rfmalloc C-callable API, version 4.
  *
  * These functions are resolved with R_GetCCallable(). Packages should import
  * Rfmalloc at runtime before calling them, for example by listing Rfmalloc in
@@ -40,6 +40,21 @@ typedef SEXP (*Rfmalloc_vector_length_fun)(SEXP vector);
 typedef SEXP (*Rfmalloc_vector_payload_ptr_fun)(SEXP vector);
 typedef SEXP (*Rfmalloc_vector_info_fun)(SEXP vector);
 typedef SEXP (*Rfmalloc_destroy_vector_fun)(SEXP vector, int unsafe);
+
+/*
+ * Tensor codec registration (API version 4). A codec decodes a flat,
+ * block-aligned element range of a typed tensor payload into doubles.
+ * Ranges start on a block boundary and cover a whole number of blocks,
+ * except possibly the final range for a payload; the codec must write
+ * exactly n_elems doubles.
+ */
+typedef int (*Rfmalloc_tensor_decode_fn)(const void *payload,
+                                         R_xlen_t elem_offset,
+                                         R_xlen_t n_elems, double *out);
+typedef int (*Rfmalloc_register_tensor_codec_fun)(const char *name,
+                                                  unsigned int items_per_block,
+                                                  unsigned int bytes_per_block,
+                                                  Rfmalloc_tensor_decode_fn decode);
 
 static inline Rfmalloc_api_version_fun Rfmalloc_api_version_ptr(void)
 {
@@ -124,6 +139,11 @@ static inline Rfmalloc_vector_info_fun Rfmalloc_vector_info_ptr(void)
 static inline Rfmalloc_destroy_vector_fun Rfmalloc_destroy_vector_ptr(void)
 {
     return (Rfmalloc_destroy_vector_fun) R_GetCCallable("Rfmalloc", "Rfmalloc_destroy_vector");
+}
+
+static inline Rfmalloc_register_tensor_codec_fun Rfmalloc_register_tensor_codec_ptr(void)
+{
+    return (Rfmalloc_register_tensor_codec_fun) R_GetCCallable("Rfmalloc", "Rfmalloc_register_tensor_codec");
 }
 
 static inline int Rfmalloc_api_version(void)
@@ -213,6 +233,15 @@ static inline SEXP Rfmalloc_vector_info(SEXP vector)
 static inline SEXP Rfmalloc_destroy_vector(SEXP vector, int unsafe)
 {
     return Rfmalloc_destroy_vector_ptr()(vector, unsafe);
+}
+
+static inline int Rfmalloc_register_tensor_codec(const char *name,
+                                                 unsigned int items_per_block,
+                                                 unsigned int bytes_per_block,
+                                                 Rfmalloc_tensor_decode_fn decode)
+{
+    return Rfmalloc_register_tensor_codec_ptr()(name, items_per_block,
+                                                bytes_per_block, decode);
 }
 
 #ifdef __cplusplus
