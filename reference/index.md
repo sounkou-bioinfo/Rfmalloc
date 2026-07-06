@@ -46,6 +46,17 @@
   [`rowMeans()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md)
   [`colMeans()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md)
   : Matrix reduction helpers for fmalloc-backed matrices
+- [`fmalloc_tensor_codecs()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_tensor.md)
+  [`create_fmalloc_tensor()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_tensor.md)
+  [`fmalloc_tensor_dtype()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_tensor.md)
+  [`fmalloc_tensor_materialize()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_tensor.md)
+  [`dim(`*`<fmalloc_tensor>`*`)`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_tensor.md)
+  [`print(`*`<fmalloc_tensor>`*`)`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_tensor.md)
+  [`` `%*%`( ``*`<fmalloc_tensor>`*`)`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_tensor.md)
+  [`matrixOps(`*`<fmalloc_tensor>`*`)`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_tensor.md)
+  [`crossprod(`*`<fmalloc_tensor>`*`)`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_tensor.md)
+  [`tcrossprod(`*`<fmalloc_tensor>`*`)`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_tensor.md)
+  : Typed fmalloc tensors
 - [`init_fmalloc()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/init_fmalloc.md)
   : Initialize fmalloc
 - [`list_fmalloc_allocations()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/list_fmalloc_allocations.md)
