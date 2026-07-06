@@ -10,7 +10,7 @@ extern "C" {
 #endif
 
 /*
- * Rfmalloc C-callable API, version 2.
+ * Rfmalloc C-callable API, version 3.
  *
  * These functions are resolved with R_GetCCallable(). Packages should import
  * Rfmalloc at runtime before calling them, for example by listing Rfmalloc in
@@ -25,12 +25,21 @@ typedef SEXP (*Rfmalloc_open_runtime_fun)(const char *filepath, double size_gb,
                                           const char *mode);
 typedef SEXP (*Rfmalloc_create_vector_fun)(SEXP runtime, int sexptype,
                                            R_xlen_t length);
+typedef SEXP (*Rfmalloc_create_vector_ex_fun)(SEXP runtime, int sexptype,
+                                              R_xlen_t length,
+                                              int zero_initialize);
 typedef void (*Rfmalloc_cleanup_runtime_fun)(SEXP runtime);
+typedef SEXP (*Rfmalloc_set_default_runtime_fun)(SEXP runtime);
 typedef SEXP (*Rfmalloc_list_allocations_fun)(SEXP runtime);
+typedef SEXP (*Rfmalloc_is_runtime_fun)(SEXP runtime);
 typedef SEXP (*Rfmalloc_is_fmalloc_vector_fun)(SEXP vector);
+typedef SEXP (*Rfmalloc_runtime_of_vector_fun)(SEXP vector);
+typedef SEXP (*Rfmalloc_runtime_info_fun)(SEXP runtime);
 typedef SEXP (*Rfmalloc_vector_type_fun)(SEXP vector);
 typedef SEXP (*Rfmalloc_vector_length_fun)(SEXP vector);
 typedef SEXP (*Rfmalloc_vector_payload_ptr_fun)(SEXP vector);
+typedef SEXP (*Rfmalloc_vector_info_fun)(SEXP vector);
+typedef SEXP (*Rfmalloc_destroy_vector_fun)(SEXP vector, int unsafe);
 
 static inline Rfmalloc_api_version_fun Rfmalloc_api_version_ptr(void)
 {
@@ -52,6 +61,11 @@ static inline Rfmalloc_create_vector_fun Rfmalloc_create_vector_ptr(void)
     return (Rfmalloc_create_vector_fun) R_GetCCallable("Rfmalloc", "Rfmalloc_create_vector");
 }
 
+static inline Rfmalloc_create_vector_ex_fun Rfmalloc_create_vector_ex_ptr(void)
+{
+    return (Rfmalloc_create_vector_ex_fun) R_GetCCallable("Rfmalloc", "Rfmalloc_create_vector_ex");
+}
+
 static inline Rfmalloc_cleanup_runtime_fun Rfmalloc_cleanup_runtime_ptr(void)
 {
     return (Rfmalloc_cleanup_runtime_fun) R_GetCCallable("Rfmalloc", "Rfmalloc_cleanup_runtime");
@@ -62,9 +76,29 @@ static inline Rfmalloc_list_allocations_fun Rfmalloc_list_allocations_ptr(void)
     return (Rfmalloc_list_allocations_fun) R_GetCCallable("Rfmalloc", "Rfmalloc_list_allocations");
 }
 
+static inline Rfmalloc_set_default_runtime_fun Rfmalloc_set_default_runtime_ptr(void)
+{
+    return (Rfmalloc_set_default_runtime_fun) R_GetCCallable("Rfmalloc", "Rfmalloc_set_default_runtime");
+}
+
+static inline Rfmalloc_is_runtime_fun Rfmalloc_is_runtime_ptr(void)
+{
+    return (Rfmalloc_is_runtime_fun) R_GetCCallable("Rfmalloc", "Rfmalloc_is_runtime");
+}
+
 static inline Rfmalloc_is_fmalloc_vector_fun Rfmalloc_is_fmalloc_vector_ptr(void)
 {
     return (Rfmalloc_is_fmalloc_vector_fun) R_GetCCallable("Rfmalloc", "Rfmalloc_is_fmalloc_vector");
+}
+
+static inline Rfmalloc_runtime_of_vector_fun Rfmalloc_runtime_of_vector_ptr(void)
+{
+    return (Rfmalloc_runtime_of_vector_fun) R_GetCCallable("Rfmalloc", "Rfmalloc_runtime_of_vector");
+}
+
+static inline Rfmalloc_runtime_info_fun Rfmalloc_runtime_info_ptr(void)
+{
+    return (Rfmalloc_runtime_info_fun) R_GetCCallable("Rfmalloc", "Rfmalloc_runtime_info");
 }
 
 static inline Rfmalloc_vector_type_fun Rfmalloc_vector_type_ptr(void)
@@ -80,6 +114,16 @@ static inline Rfmalloc_vector_length_fun Rfmalloc_vector_length_ptr(void)
 static inline Rfmalloc_vector_payload_ptr_fun Rfmalloc_vector_payload_ptr_ptr(void)
 {
     return (Rfmalloc_vector_payload_ptr_fun) R_GetCCallable("Rfmalloc", "Rfmalloc_vector_payload_ptr");
+}
+
+static inline Rfmalloc_vector_info_fun Rfmalloc_vector_info_ptr(void)
+{
+    return (Rfmalloc_vector_info_fun) R_GetCCallable("Rfmalloc", "Rfmalloc_vector_info");
+}
+
+static inline Rfmalloc_destroy_vector_fun Rfmalloc_destroy_vector_ptr(void)
+{
+    return (Rfmalloc_destroy_vector_fun) R_GetCCallable("Rfmalloc", "Rfmalloc_destroy_vector");
 }
 
 static inline int Rfmalloc_api_version(void)
@@ -104,9 +148,21 @@ static inline SEXP Rfmalloc_create_vector(SEXP runtime, int sexptype,
     return Rfmalloc_create_vector_ptr()(runtime, sexptype, length);
 }
 
+static inline SEXP Rfmalloc_create_vector_ex(SEXP runtime, int sexptype,
+                                             R_xlen_t length,
+                                             int zero_initialize)
+{
+    return Rfmalloc_create_vector_ex_ptr()(runtime, sexptype, length, zero_initialize);
+}
+
 static inline void Rfmalloc_cleanup_runtime(SEXP runtime)
 {
     Rfmalloc_cleanup_runtime_ptr()(runtime);
+}
+
+static inline SEXP Rfmalloc_set_default_runtime(SEXP runtime)
+{
+    return Rfmalloc_set_default_runtime_ptr()(runtime);
 }
 
 static inline SEXP Rfmalloc_list_allocations(SEXP runtime)
@@ -114,9 +170,24 @@ static inline SEXP Rfmalloc_list_allocations(SEXP runtime)
     return Rfmalloc_list_allocations_ptr()(runtime);
 }
 
+static inline SEXP Rfmalloc_is_runtime(SEXP runtime)
+{
+    return Rfmalloc_is_runtime_ptr()(runtime);
+}
+
 static inline SEXP Rfmalloc_is_fmalloc_vector(SEXP vector)
 {
     return Rfmalloc_is_fmalloc_vector_ptr()(vector);
+}
+
+static inline SEXP Rfmalloc_runtime_of_vector(SEXP vector)
+{
+    return Rfmalloc_runtime_of_vector_ptr()(vector);
+}
+
+static inline SEXP Rfmalloc_runtime_info(SEXP runtime)
+{
+    return Rfmalloc_runtime_info_ptr()(runtime);
 }
 
 static inline SEXP Rfmalloc_vector_type(SEXP vector)
@@ -132,6 +203,16 @@ static inline SEXP Rfmalloc_vector_length(SEXP vector)
 static inline SEXP Rfmalloc_vector_payload_ptr(SEXP vector)
 {
     return Rfmalloc_vector_payload_ptr_ptr()(vector);
+}
+
+static inline SEXP Rfmalloc_vector_info(SEXP vector)
+{
+    return Rfmalloc_vector_info_ptr()(vector);
+}
+
+static inline SEXP Rfmalloc_destroy_vector(SEXP vector, int unsafe)
+{
+    return Rfmalloc_destroy_vector_ptr()(vector, unsafe);
 }
 
 #ifdef __cplusplus

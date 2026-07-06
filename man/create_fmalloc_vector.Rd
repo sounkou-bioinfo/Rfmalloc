@@ -22,8 +22,8 @@ only accept \code{NULL} or fmalloc-backed vectors from the same runtime as
 elements. Persistent list containers are serialized by nested reference
 states when all elements are recoverable from the same runtime.}
 
-\item{length}{Integer specifying the non-negative length of the vector to
-create.}
+\item{length}{Non-negative integer-valued length of the vector to
+create. Supports exact values up to \code{2^52} in the R interface.}
 
 \item{runtime}{Optional runtime handle returned by \code{\link[=open_fmalloc]{open_fmalloc()}}. If not
 supplied, the default runtime established by \code{\link[=init_fmalloc]{init_fmalloc()}} is used.}

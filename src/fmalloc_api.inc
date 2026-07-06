@@ -1,5 +1,49 @@
 extern "C" {
 
+static bool is_open_runtime_xptr(SEXP runtime_xptr)
+{
+    return TYPEOF(runtime_xptr) == EXTPTRSXP &&
+           R_ExternalPtrTag(runtime_xptr) == fmalloc_runtime_tag &&
+           R_ExternalPtrAddr(runtime_xptr) != nullptr;
+}
+
+static bool same_runtime_xptr(SEXP lhs, SEXP rhs)
+{
+    if (!is_open_runtime_xptr(lhs) || !is_open_runtime_xptr(rhs)) {
+        return false;
+    }
+    return lhs == rhs || R_ExternalPtrAddr(lhs) == R_ExternalPtrAddr(rhs);
+}
+
+static void clear_default_runtime_xptr(void)
+{
+    if (default_runtime_xptr != R_NilValue) {
+        R_ReleaseObject(default_runtime_xptr);
+        default_runtime_xptr = R_NilValue;
+    }
+}
+
+static void preserve_default_runtime_xptr(SEXP runtime_xptr)
+{
+    if (Rf_isNull(runtime_xptr)) {
+        clear_default_runtime_xptr();
+        return;
+    }
+
+    fm_runtime *runtime = runtime_from_xptr(runtime_xptr);
+    if (!runtime || !runtime->info) {
+        Rf_error("fmalloc runtime is closed");
+        return;
+    }
+
+    if (default_runtime_xptr == runtime_xptr) {
+        return;
+    }
+    clear_default_runtime_xptr();
+    default_runtime_xptr = runtime_xptr;
+    R_PreserveObject(default_runtime_xptr);
+}
+
 SEXP open_fmalloc_impl(SEXP filepath_sexp, SEXP size_gb_sexp, SEXP mode_sexp)
 {
     if (TYPEOF(filepath_sexp) != STRSXP || LENGTH(filepath_sexp) != 1) {
@@ -40,13 +84,7 @@ SEXP init_fmalloc_impl(SEXP filepath_sexp, SEXP size_gb_sexp, SEXP mode_sexp)
 {
     SEXP runtime_xptr = PROTECT(open_fmalloc_impl(filepath_sexp, size_gb_sexp, mode_sexp));
 
-    if (default_runtime_xptr != R_NilValue) {
-        R_ReleaseObject(default_runtime_xptr);
-        default_runtime_xptr = R_NilValue;
-    }
-    default_runtime_xptr = runtime_xptr;
-    R_PreserveObject(default_runtime_xptr);
-
+    preserve_default_runtime_xptr(runtime_xptr);
     SEXP initialized = Rf_getAttrib(runtime_xptr, Rf_install("initialized"));
     int result = Rf_asLogical(initialized);
     UNPROTECT(1);
@@ -144,6 +182,11 @@ SEXP fmalloc_is_fmalloc_vector_impl(SEXP vector_x)
     return Rf_ScalarLogical(vec != nullptr);
 }
 
+SEXP fmalloc_is_runtime_impl(SEXP runtime_xptr)
+{
+    return Rf_ScalarLogical(is_open_runtime_xptr(runtime_xptr));
+}
+
 SEXP fmalloc_vector_type_impl(SEXP vector_x)
 {
     fm_vector *vec = maybe_vector_from_altrep(vector_x);
@@ -178,6 +221,80 @@ SEXP fmalloc_vector_payload_ptr_impl(SEXP vector_x)
     SEXP ptr = R_MakeExternalPtr(vec->data, Rf_install("Rfmalloc.payload"), vector_x);
     R_SetExternalPtrProtected(ptr, vector_x);
     return ptr;
+}
+
+SEXP fmalloc_vector_info_impl(SEXP vector_x)
+{
+    fm_vector *vec = maybe_vector_from_altrep(vector_x);
+    if (!vec) {
+        Rf_error("x is not an fmalloc ALTREP vector");
+        return R_NilValue;
+    }
+
+    constexpr int n_info = 15;
+    SEXP info = PROTECT(Rf_allocVector(VECSXP, n_info));
+    SEXP names = PROTECT(Rf_allocVector(STRSXP, n_info));
+    const char *name_values[] = {
+        "type", "sexptype", "length", "payload_nbytes", "payload_offset",
+        "catalog_offset", "generation", "runtime_uuid", "runtime_mode",
+        "runtime_filepath", "runtime_open", "parent_refs", "dataptr_exposed",
+        "maybe_dirty", "recoverable"
+    };
+    for (int i = 0; i < n_info; i++) {
+        SET_STRING_ELT(names, i, Rf_mkChar(name_values[i]));
+    }
+    Rf_setAttrib(info, R_NamesSymbol, names);
+
+    fm_runtime *runtime = vec->runtime;
+    bool runtime_open = runtime && runtime->info;
+
+    SET_VECTOR_ELT(info, 0, Rf_mkString(type_label(vec->type)));
+    SET_VECTOR_ELT(info, 1, Rf_ScalarInteger((int)vec->type));
+    SET_VECTOR_ELT(info, 2, Rf_ScalarReal((double)vec->len));
+    SET_VECTOR_ELT(info, 3, Rf_ScalarReal((double)vec->bytes));
+
+    if (runtime_open && vec->data) {
+        SET_VECTOR_ELT(info, 4, Rf_ScalarReal((double)pointer_offset(runtime, vec->data)));
+    } else {
+        SET_VECTOR_ELT(info, 4, Rf_ScalarReal(NA_REAL));
+    }
+    if (vec->catalog_offset != 0) {
+        SET_VECTOR_ELT(info, 5, Rf_ScalarReal((double)vec->catalog_offset));
+    } else {
+        SET_VECTOR_ELT(info, 5, Rf_ScalarReal(NA_REAL));
+    }
+    if (vec->generation != 0) {
+        SET_VECTOR_ELT(info, 6, Rf_ScalarReal((double)vec->generation));
+    } else {
+        SET_VECTOR_ELT(info, 6, Rf_ScalarReal(NA_REAL));
+    }
+
+    if (runtime) {
+        std::string uuid = uuid_string(runtime->file_uuid_hi, runtime->file_uuid_lo);
+        SET_VECTOR_ELT(info, 7, Rf_mkString(uuid.c_str()));
+        SET_VECTOR_ELT(info, 8, Rf_mkString(runtime->mode == FM_MODE_PERSISTENT ? "persistent" : "scratch"));
+        SET_VECTOR_ELT(info, 9, Rf_mkString(runtime->filepath.c_str()));
+    } else {
+        SET_VECTOR_ELT(info, 7, Rf_ScalarString(NA_STRING));
+        SET_VECTOR_ELT(info, 8, Rf_ScalarString(NA_STRING));
+        SET_VECTOR_ELT(info, 9, Rf_ScalarString(NA_STRING));
+    }
+
+    bool recoverable = false;
+    if (runtime_open && vec->catalog_offset != 0) {
+        rfm_catalog_record *record = catalog_record_from_offset(runtime, vec->catalog_offset);
+        recoverable = record && record->state == RFM_CATALOG_STATE_COMMITTED &&
+            (record->flags & RFM_CATALOG_FLAG_RECOVERABLE) != 0;
+    }
+
+    SET_VECTOR_ELT(info, 10, Rf_ScalarLogical(runtime_open));
+    SET_VECTOR_ELT(info, 11, Rf_ScalarReal((double)vec->parent_refs));
+    SET_VECTOR_ELT(info, 12, Rf_ScalarLogical(vec->dataptr_exposed));
+    SET_VECTOR_ELT(info, 13, Rf_ScalarLogical(vec->maybe_dirty));
+    SET_VECTOR_ELT(info, 14, Rf_ScalarLogical(recoverable));
+
+    UNPROTECT(2);
+    return info;
 }
 
 SEXP fmalloc_runtime_of_vector_impl(SEXP vector_x)
@@ -334,6 +451,8 @@ SEXP cleanup_fmalloc_impl(SEXP runtime_xptr)
         runtime_xptr = default_runtime_xptr;
         default_runtime_xptr = R_NilValue;
         R_ReleaseObject(runtime_xptr);
+    } else if (same_runtime_xptr(runtime_xptr, default_runtime_xptr)) {
+        clear_default_runtime_xptr();
     }
 
     if (TYPEOF(runtime_xptr) != EXTPTRSXP || R_ExternalPtrTag(runtime_xptr) != fmalloc_runtime_tag) {
@@ -349,12 +468,36 @@ SEXP cleanup_fmalloc_impl(SEXP runtime_xptr)
 
 int Rfmalloc_api_version(void)
 {
-    return 2;
+    return 3;
+}
+
+SEXP fmalloc_api_version_impl(void)
+{
+    return Rf_ScalarInteger(Rfmalloc_api_version());
 }
 
 SEXP Rfmalloc_default_runtime(void)
 {
+    if (default_runtime_xptr != R_NilValue && !is_open_runtime_xptr(default_runtime_xptr)) {
+        clear_default_runtime_xptr();
+    }
     return default_runtime_xptr;
+}
+
+SEXP fmalloc_default_runtime_impl(void)
+{
+    return Rfmalloc_default_runtime();
+}
+
+SEXP set_default_fmalloc_runtime_impl(SEXP runtime_xptr)
+{
+    if (Rf_isNull(runtime_xptr)) {
+        clear_default_runtime_xptr();
+        return R_NilValue;
+    }
+
+    preserve_default_runtime_xptr(runtime_xptr);
+    return Rfmalloc_default_runtime();
 }
 
 SEXP Rfmalloc_open_runtime(const char *filepath, double size_gb, const char *mode)
@@ -384,7 +527,8 @@ SEXP Rfmalloc_open_runtime(const char *filepath, double size_gb, const char *mod
     return ans;
 }
 
-SEXP Rfmalloc_create_vector(SEXP runtime_xptr, int sexptype, R_xlen_t length)
+SEXP Rfmalloc_create_vector_ex(SEXP runtime_xptr, int sexptype, R_xlen_t length,
+                               int zero_initialize)
 {
     if (length < 0) {
         Rf_error("length must be non-negative");
@@ -398,10 +542,15 @@ SEXP Rfmalloc_create_vector(SEXP runtime_xptr, int sexptype, R_xlen_t length)
     }
 
     fm_runtime *runtime = runtime_from_xptr(runtime_xptr);
-    fm_vector *vec = allocate_fm_vector(runtime, type, length, true, true);
+    fm_vector *vec = allocate_fm_vector(runtime, type, length, true, zero_initialize != 0);
     SEXP ans = PROTECT(fmalloc_new_altrep(vec));
     UNPROTECT(1);
     return ans;
+}
+
+SEXP Rfmalloc_create_vector(SEXP runtime_xptr, int sexptype, R_xlen_t length)
+{
+    return Rfmalloc_create_vector_ex(runtime_xptr, sexptype, length, 1);
 }
 
 void Rfmalloc_cleanup_runtime(SEXP runtime_xptr)
@@ -423,6 +572,39 @@ SEXP Rfmalloc_list_allocations(SEXP runtime_xptr)
     return make_catalog_data_frame(records);
 }
 
+SEXP Rfmalloc_set_default_runtime(SEXP runtime_xptr)
+{
+    return set_default_fmalloc_runtime_impl(runtime_xptr);
+}
+
+SEXP Rfmalloc_is_runtime(SEXP runtime_xptr)
+{
+    return fmalloc_is_runtime_impl(runtime_xptr);
+}
+
+SEXP Rfmalloc_runtime_of_vector(SEXP vector_x)
+{
+    return fmalloc_runtime_of_vector_impl(vector_x);
+}
+
+SEXP Rfmalloc_runtime_info(SEXP runtime_xptr)
+{
+    return fmalloc_runtime_info_impl(runtime_xptr);
+}
+
+SEXP Rfmalloc_vector_info(SEXP vector_x)
+{
+    return fmalloc_vector_info_impl(vector_x);
+}
+
+SEXP Rfmalloc_destroy_vector(SEXP vector_x, int unsafe)
+{
+    SEXP unsafe_sexp = PROTECT(Rf_ScalarLogical(unsafe != 0));
+    SEXP ans = PROTECT(destroy_fmalloc_vector_impl(vector_x, unsafe_sexp));
+    UNPROTECT(2);
+    return ans;
+}
+
 static void register_c_callables(void)
 {
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_api_version", (DL_FUNC)Rfmalloc_api_version);
@@ -430,22 +612,34 @@ static void register_c_callables(void)
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_open_runtime", (DL_FUNC)Rfmalloc_open_runtime);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_create_vector", (DL_FUNC)Rfmalloc_create_vector);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_cleanup_runtime", (DL_FUNC)Rfmalloc_cleanup_runtime);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_set_default_runtime", (DL_FUNC)Rfmalloc_set_default_runtime);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_list_allocations", (DL_FUNC)Rfmalloc_list_allocations);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_create_vector_ex", (DL_FUNC)Rfmalloc_create_vector_ex);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_is_runtime", (DL_FUNC)Rfmalloc_is_runtime);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_is_fmalloc_vector", (DL_FUNC)fmalloc_is_fmalloc_vector_impl);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_runtime_of_vector", (DL_FUNC)Rfmalloc_runtime_of_vector);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_runtime_info", (DL_FUNC)Rfmalloc_runtime_info);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_vector_type", (DL_FUNC)fmalloc_vector_type_impl);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_vector_length", (DL_FUNC)fmalloc_vector_length_impl);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_vector_payload_ptr", (DL_FUNC)fmalloc_vector_payload_ptr_impl);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_vector_info", (DL_FUNC)Rfmalloc_vector_info);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_destroy_vector", (DL_FUNC)Rfmalloc_destroy_vector);
 }
 
 static const R_CallMethodDef CallEntries[] = {
     {"open_fmalloc_impl", (DL_FUNC)&open_fmalloc_impl, 3},
     {"init_fmalloc_impl", (DL_FUNC)&init_fmalloc_impl, 3},
+    {"fmalloc_api_version_impl", (DL_FUNC)&fmalloc_api_version_impl, 0},
+    {"fmalloc_default_runtime_impl", (DL_FUNC)&fmalloc_default_runtime_impl, 0},
+    {"set_default_fmalloc_runtime_impl", (DL_FUNC)&set_default_fmalloc_runtime_impl, 1},
     {"create_fmalloc_vector_impl", (DL_FUNC)&create_fmalloc_vector_impl, 4},
     {"list_fmalloc_allocations_impl", (DL_FUNC)&list_fmalloc_allocations_impl, 1},
+    {"fmalloc_is_runtime_impl", (DL_FUNC)&fmalloc_is_runtime_impl, 1},
     {"fmalloc_is_fmalloc_vector_impl", (DL_FUNC)&fmalloc_is_fmalloc_vector_impl, 1},
     {"fmalloc_vector_type_impl", (DL_FUNC)&fmalloc_vector_type_impl, 1},
     {"fmalloc_vector_length_impl", (DL_FUNC)&fmalloc_vector_length_impl, 1},
     {"fmalloc_vector_payload_ptr_impl", (DL_FUNC)&fmalloc_vector_payload_ptr_impl, 1},
+    {"fmalloc_vector_info_impl", (DL_FUNC)&fmalloc_vector_info_impl, 1},
     {"fmalloc_runtime_of_vector_impl", (DL_FUNC)&fmalloc_runtime_of_vector_impl, 1},
     {"fmalloc_set_class_in_place_impl", (DL_FUNC)&fmalloc_set_class_in_place_impl, 2},
     {"fmalloc_runtime_info_impl", (DL_FUNC)&fmalloc_runtime_info_impl, 1},
@@ -453,6 +647,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"destroy_fmalloc_vector_impl", (DL_FUNC)&destroy_fmalloc_vector_impl, 2},
     {"cleanup_fmalloc_impl", (DL_FUNC)&cleanup_fmalloc_impl, 1},
     {"rfm_ops_dispatch", (DL_FUNC)&rfm_ops_dispatch, 4},
+    {"rfm_matrix_ops_dispatch", (DL_FUNC)&rfm_matrix_ops_dispatch, 3},
     {"rfm_can_handle_ops_pair", (DL_FUNC)&rfm_can_handle_ops_pair, 3},
     {nullptr, nullptr, 0}
 };
@@ -470,10 +665,7 @@ void R_init_Rfmalloc(DllInfo *dll)
 void R_unload_Rfmalloc(DllInfo *dll)
 {
     (void)dll;
-    if (default_runtime_xptr != R_NilValue) {
-        R_ReleaseObject(default_runtime_xptr);
-        default_runtime_xptr = R_NilValue;
-    }
+    clear_default_runtime_xptr();
 }
 
 } // extern "C"

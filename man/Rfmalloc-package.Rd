@@ -23,8 +23,10 @@ complex, character, and list vectors with fmalloc payload storage.
 \item{\code{\link{as_fmalloc_matrix}}}{Convert fmalloc vectors to matrix-shaped objects.}
 \item{\code{\link{as_fmalloc_array}}}{Convert fmalloc vectors to array-shaped objects.}
 \item{\code{\link{as_fmalloc_data_frame}}}{Convert fmalloc-backed objects to a data.frame.}
+\item{\code{\link{fmalloc_linalg}}}{Matrix products for fmalloc-backed vectors and matrices.}
 \item{\code{\link{list_fmalloc_allocations}}}{List persistent allocation catalog records.}
 \item{\code{\link{diagnose_fmalloc_runtime}}}{Summarize persistent allocation catalog state and runtime diagnostics.}
+\item{\code{\link{fmalloc_api}}}{Inspect runtimes and vectors through the public R/native API.}
 \item{\code{\link{cleanup_fmalloc}}}{Request cleanup of an fmalloc runtime.}
 }
 }
@@ -41,12 +43,16 @@ complex, character, and list vectors. List elements are restricted to
 \item Reference serialization for persistent fixed-width atomic and
 character ALTREP vectors.
 \item Fmalloc-backed ALTREP subset copies for vector indexing operations.
+\item Elementwise arithmetic/comparison/logical \code{Ops} and fmalloc-backed
+\code{matrixOps} products for \code{\%*\%}, \code{crossprod()}, and \code{tcrossprod()}.
 \item An in-file allocation catalog for persistent vectors.
 \item A C-callable API and installed header for other packages.
 \item Native lifetime tracking so runtime mappings outlive reachable
 vectors allocated from them.
 \item Runtime and catalog diagnostics for planning recovery and operational
 cleanup.
+\item R-facing API helpers for runtime/vector predicates, metadata, payload
+pointers, and version checks.
 }
 }
 
@@ -54,8 +60,9 @@ cleanup.
 
 \itemize{
 \item ALTREP-backed dispatch now covers core \code{Ops}, \code{Summary}, \code{Math},
-\code{Math2}, and matrix \code{rowSums}/\code{colSums}/\code{rowMeans}/\code{colMeans}
-workflows through S3 methods for common vector/matrix usage.
+\code{Math2}, matrix \code{rowSums}/\code{colSums}/\code{rowMeans}/\code{colMeans}, and initial
+\code{matrixOps} workflows through S3 methods for common vector/matrix
+usage.
 \item Explicit base-fallback boundaries are:
 \itemize{
 \item \code{rowSums()}, \code{colSums()}, \code{rowMeans()}, and \code{colMeans()} when
@@ -65,6 +72,9 @@ cases now emit a warning and call the corresponding
 \item Scalar or zero-length results from \code{Summary}, \code{Math}, and
 \code{Math2} generics (for example \code{sum(x)} returning a single
 value) are returned as ordinary R scalars by design.
+\item Matrix products are currently computed by managed R loops so
+they preserve fmalloc-backed results before native BLAS
+kernels are added.
 }
 \item Full operator- and method-family coverage is still incomplete for all
 R generics. Some advanced families may still materialize ordinary R
@@ -74,9 +84,10 @@ objects in a few edge cases.
 
 \section{Future Work}{
 
-Future work includes view-based subset representations, catalog compaction
-and reset tooling, metadata storage for attributes on persisted elements,
-robust nested-list reference validation, and compaction of recovery metadata.
+Future work includes native BLAS/LAPACK-backed matrix kernels, view-based
+subset representations, catalog compaction and reset tooling, metadata storage
+for attributes on persisted elements, robust nested-list reference validation,
+and compaction of recovery metadata.
 }
 
 \seealso{

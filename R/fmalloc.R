@@ -5,9 +5,12 @@
 .fmalloc_get_runtime <- function(runtime = NULL) {
     if (is.null(runtime)) {
         runtime <- .fmalloc_state$default_runtime
-    }
-    if (is.null(runtime)) {
-        stop("fmalloc not initialized. Call init_fmalloc() first or pass a runtime from open_fmalloc().")
+        if (!is_fmalloc_runtime(runtime)) {
+            runtime <- .Call("fmalloc_default_runtime_impl")
+        }
+        if (!is_fmalloc_runtime(runtime)) {
+            stop("fmalloc not initialized. Call init_fmalloc() first or pass a runtime from open_fmalloc().")
+        }
     }
     runtime
 }
@@ -216,6 +219,7 @@ init_fmalloc <- function(filepath, size_gb = NULL, mode = c("persistent", "scrat
     }
 
     .fmalloc_state$default_runtime <- rt
+    .Call("set_default_fmalloc_runtime_impl", rt)
     isTRUE(attr(rt, "initialized"))
 }
 

@@ -1049,8 +1049,503 @@ static SEXP execute_plan(fm_op_plan *plan)
 }
 
 //==============================================================================
-// rfm_can_handle_ops_pair — for chooseOpsMethod
+// Native matrix algebra kernels for %*%, crossprod, tcrossprod
 //==============================================================================
+
+enum fm_linalg_op_id {
+    FM_LINALG_MATMUL = 0,
+    FM_LINALG_CROSSPROD = 1,
+    FM_LINALG_TCROSSPROD = 2
+};
+
+struct fm_linalg_operand {
+    fm_type_id type;
+    void *data;
+    fm_runtime *runtime;
+    R_xlen_t len;
+    R_xlen_t nrow;
+    R_xlen_t ncol;
+    bool has_dim;
+};
+
+struct fm_linalg_plan {
+    fm_linalg_operand lhs;
+    fm_linalg_operand rhs;
+    R_xlen_t out_nrow;
+    R_xlen_t out_ncol;
+    R_xlen_t inner_dim;
+    R_xlen_t out_len;
+    fm_runtime *out_runtime;
+    SEXPTYPE out_sexptype;
+};
+
+static inline bool is_linalg_supported_type(fm_type_id type)
+{
+    return type == FM_T_LOGICAL || type == FM_T_INTEGER || type == FM_T_REAL ||
+           type == FM_T_COMPLEX;
+}
+
+static inline bool is_matrix_dim_operand(SEXP dim)
+{
+    return dim != R_NilValue && TYPEOF(dim) == INTSXP && XLENGTH(dim) == 2;
+}
+
+static void extract_matrix_dimnames(SEXP vec, int which, SEXP *value)
+{
+    SEXP dimnames = Rf_getAttrib(vec, R_DimNamesSymbol);
+    if (dimnames == R_NilValue || TYPEOF(dimnames) != VECSXP || XLENGTH(dimnames) <= which) {
+        *value = R_NilValue;
+        return;
+    }
+    *value = VECTOR_ELT(dimnames, which);
+}
+
+static bool fmalloc_init_linalg_operand(SEXP vec, fm_linalg_operand *operand)
+{
+    fm_source source = build_fm_source(vec);
+    if (!is_linalg_supported_type(source.type)) {
+        return false;
+    }
+
+    memset(operand, 0, sizeof(*operand));
+    operand->type = source.type;
+    operand->data = source.data;
+    operand->runtime = source.runtime;
+    operand->len = source.len;
+
+    SEXP dim = Rf_getAttrib(vec, R_DimSymbol);
+    if (is_matrix_dim_operand(dim)) {
+        operand->nrow = (R_xlen_t)INTEGER(dim)[0];
+        operand->ncol = (R_xlen_t)INTEGER(dim)[1];
+        operand->has_dim = true;
+    } else {
+        operand->nrow = source.len;
+        operand->ncol = 1;
+        operand->has_dim = false;
+    }
+
+    return true;
+}
+
+static void build_linalg_op_plan(fm_linalg_op_id op,
+                                const fm_linalg_operand &lhs_in,
+                                const fm_linalg_operand &rhs_in,
+                                fm_linalg_plan *plan)
+{
+    fm_linalg_operand lhs = lhs_in;
+    fm_linalg_operand rhs = rhs_in;
+
+    bool lhs_is_vector = !lhs.has_dim;
+    bool rhs_is_vector = !rhs.has_dim;
+
+    if (lhs.nrow < 0 || lhs.ncol < 0 || rhs.nrow < 0 || rhs.ncol < 0) {
+        Rf_error("non-conformable arguments");
+    }
+
+    if (op == FM_LINALG_MATMUL) {
+        if (lhs_is_vector && rhs_is_vector) {
+            if (lhs.len != rhs.len) {
+                Rf_error("non-conformable arguments");
+            }
+            lhs.nrow = 1;
+            lhs.ncol = lhs.len;
+            rhs.nrow = rhs.len;
+            rhs.ncol = 1;
+        } else if (lhs_is_vector) {
+            if (lhs.len == rhs.nrow) {
+                lhs.nrow = 1;
+                lhs.ncol = lhs.len;
+            } else if (rhs.nrow == 1) {
+                lhs.nrow = lhs.len;
+                lhs.ncol = 1;
+            } else {
+                Rf_error("non-conformable arguments");
+            }
+        } else if (rhs_is_vector) {
+            if (rhs.len == lhs.ncol) {
+                rhs.nrow = rhs.len;
+                rhs.ncol = 1;
+            } else if (lhs.ncol == 1) {
+                rhs.nrow = 1;
+                rhs.ncol = rhs.len;
+            } else {
+                Rf_error("non-conformable arguments");
+            }
+        } else if (lhs.ncol != rhs.nrow) {
+            Rf_error("non-conformable arguments");
+        }
+
+        plan->out_nrow = lhs.nrow;
+        plan->out_ncol = rhs.ncol;
+        plan->inner_dim = lhs.ncol;
+    } else if (op == FM_LINALG_CROSSPROD) {
+        if (lhs.nrow != rhs.nrow) {
+            Rf_error("non-conformable arguments");
+        }
+
+        plan->out_nrow = lhs.ncol;
+        plan->out_ncol = rhs.ncol;
+        plan->inner_dim = lhs.nrow;
+    } else if (op == FM_LINALG_TCROSSPROD) {
+        if (lhs.ncol != rhs.ncol) {
+            Rf_error("non-conformable arguments");
+        }
+
+        plan->out_nrow = lhs.nrow;
+        plan->out_ncol = rhs.nrow;
+        plan->inner_dim = lhs.ncol;
+    }
+
+    if (plan->out_nrow > 0 && plan->out_ncol > 0 &&
+        plan->out_nrow > (std::numeric_limits<R_xlen_t>::max() / plan->out_ncol)) {
+        Rf_error("non-conformable arguments");
+    }
+
+    if (plan->out_nrow < 0 || plan->out_ncol < 0) {
+        Rf_error("non-conformable arguments");
+    }
+
+    if (plan->out_nrow > (R_xlen_t)std::numeric_limits<int>::max() ||
+        plan->out_ncol > (R_xlen_t)std::numeric_limits<int>::max()) {
+        Rf_error("non-conformable arguments");
+    }
+
+    plan->out_len = plan->out_nrow * plan->out_ncol;
+    plan->out_sexptype = (lhs_in.type == FM_T_COMPLEX || rhs_in.type == FM_T_COMPLEX) ? CPLXSXP : REALSXP;
+    plan->out_runtime = lhs_in.runtime ? lhs_in.runtime : rhs_in.runtime;
+
+    if (!plan->out_runtime) {
+        Rf_error("fmalloc matrix operation requires an fmalloc runtime");
+    }
+
+    plan->lhs = lhs;
+    plan->rhs = rhs;
+}
+
+static inline double read_real_operand(const fm_linalg_operand &operand, R_xlen_t row, R_xlen_t col)
+{
+    R_xlen_t idx = row + col * operand.nrow;
+    switch (operand.type) {
+    case FM_T_LOGICAL: {
+        int value = static_cast<int *>(operand.data)[idx];
+        if (value == NA_LOGICAL) {
+            return NA_REAL;
+        }
+        return (double)value;
+    }
+    case FM_T_INTEGER: {
+        int value = static_cast<int *>(operand.data)[idx];
+        if (value == NA_INTEGER) {
+            return NA_REAL;
+        }
+        return (double)value;
+    }
+    case FM_T_REAL:
+        return static_cast<double *>(operand.data)[idx];
+    case FM_T_COMPLEX:
+        Rf_error("invalid real kernel for complex data");
+        return NA_REAL;
+    default:
+        return NA_REAL;
+    }
+}
+
+static inline bool is_na_complex(const Rcomplex &value)
+{
+    return ISNA(value.r) || ISNA(value.i);
+}
+
+static inline Rcomplex read_complex_operand(const fm_linalg_operand &operand, R_xlen_t row, R_xlen_t col)
+{
+    R_xlen_t idx = row + col * operand.nrow;
+
+    if (operand.type == FM_T_COMPLEX) {
+        return static_cast<Rcomplex *>(operand.data)[idx];
+    }
+
+    double real_part;
+    switch (operand.type) {
+    case FM_T_REAL:
+        real_part = static_cast<double *>(operand.data)[idx];
+        break;
+    case FM_T_INTEGER: {
+        int value = static_cast<int *>(operand.data)[idx];
+        if (value == NA_INTEGER) {
+            return {NA_REAL, NA_REAL};
+        }
+        real_part = (double)value;
+        break;
+    }
+    case FM_T_LOGICAL: {
+        int value = static_cast<int *>(operand.data)[idx];
+        if (value == NA_LOGICAL) {
+            return {NA_REAL, NA_REAL};
+        }
+        real_part = (double)value;
+        break;
+    }
+    default:
+        return {NA_REAL, NA_REAL};
+    }
+
+    if (ISNA(real_part)) {
+        return {NA_REAL, NA_REAL};
+    }
+    return {real_part, 0.0};
+}
+
+static inline void set_linalg_op_dimnames(fm_linalg_op_id op, SEXP lhs, SEXP rhs,
+                                         SEXP *rownames, SEXP *colnames)
+{
+    *rownames = R_NilValue;
+    *colnames = R_NilValue;
+
+    switch (op) {
+    case FM_LINALG_MATMUL:
+        extract_matrix_dimnames(lhs, 0, rownames);
+        extract_matrix_dimnames(rhs, 1, colnames);
+        break;
+    case FM_LINALG_CROSSPROD:
+        extract_matrix_dimnames(lhs, 1, rownames);
+        extract_matrix_dimnames(rhs, 1, colnames);
+        break;
+    case FM_LINALG_TCROSSPROD:
+        extract_matrix_dimnames(lhs, 0, rownames);
+        extract_matrix_dimnames(rhs, 0, colnames);
+        break;
+    default:
+        break;
+    }
+}
+
+static inline void store_matrix_attrs(SEXP ans, R_xlen_t nrow, R_xlen_t ncol,
+                                     SEXP rownames, SEXP colnames)
+{
+    SEXP dim = PROTECT(Rf_allocVector(INTSXP, 2));
+    INTEGER(dim)[0] = (int)nrow;
+    INTEGER(dim)[1] = (int)ncol;
+    Rf_setAttrib(ans, R_DimSymbol, dim);
+
+    if (rownames != R_NilValue || colnames != R_NilValue) {
+        SEXP dimnames = PROTECT(Rf_allocVector(VECSXP, 2));
+        SET_VECTOR_ELT(dimnames, 0, rownames);
+        SET_VECTOR_ELT(dimnames, 1, colnames);
+        Rf_setAttrib(ans, R_DimNamesSymbol, dimnames);
+        UNPROTECT(1);
+    }
+
+    UNPROTECT(1);
+}
+
+static inline Rcomplex complex_add(Rcomplex x, Rcomplex y)
+{
+    return {x.r + y.r, x.i + y.i};
+}
+
+static inline Rcomplex complex_mul(Rcomplex x, Rcomplex y)
+{
+    return {x.r * y.r - x.i * y.i, x.r * y.i + x.i * y.r};
+}
+
+static void run_matmul_real(const fm_linalg_plan &plan, double *out)
+{
+    for (R_xlen_t col = 0; col < plan.out_ncol; col++) {
+        for (R_xlen_t row = 0; row < plan.out_nrow; row++) {
+            double acc = 0.0;
+            for (R_xlen_t k = 0; k < plan.inner_dim; k++) {
+                double lhs_value = read_real_operand(plan.lhs, row, k);
+                double rhs_value = read_real_operand(plan.rhs, k, col);
+                if (ISNA(lhs_value) || ISNA(rhs_value)) {
+                    acc = NA_REAL;
+                    break;
+                }
+                acc += lhs_value * rhs_value;
+            }
+            out[row + col * plan.out_nrow] = acc;
+        }
+        if ((col & 0xFFFFF) == 0) {
+            R_CheckUserInterrupt();
+        }
+    }
+}
+
+static void run_crossprod_real(const fm_linalg_plan &plan, double *out)
+{
+    for (R_xlen_t col = 0; col < plan.out_ncol; col++) {
+        for (R_xlen_t row = 0; row < plan.out_nrow; row++) {
+            double acc = 0.0;
+            for (R_xlen_t k = 0; k < plan.inner_dim; k++) {
+                double lhs_value = read_real_operand(plan.lhs, k, row);
+                double rhs_value = read_real_operand(plan.rhs, k, col);
+                if (ISNA(lhs_value) || ISNA(rhs_value)) {
+                    acc = NA_REAL;
+                    break;
+                }
+                acc += lhs_value * rhs_value;
+            }
+            out[row + col * plan.out_nrow] = acc;
+        }
+        if ((col & 0xFFFFF) == 0) {
+            R_CheckUserInterrupt();
+        }
+    }
+}
+
+static void run_tcrossprod_real(const fm_linalg_plan &plan, double *out)
+{
+    for (R_xlen_t col = 0; col < plan.out_ncol; col++) {
+        for (R_xlen_t row = 0; row < plan.out_nrow; row++) {
+            double acc = 0.0;
+            for (R_xlen_t k = 0; k < plan.inner_dim; k++) {
+                double lhs_value = read_real_operand(plan.lhs, row, k);
+                double rhs_value = read_real_operand(plan.rhs, col, k);
+                if (ISNA(lhs_value) || ISNA(rhs_value)) {
+                    acc = NA_REAL;
+                    break;
+                }
+                acc += lhs_value * rhs_value;
+            }
+            out[row + col * plan.out_nrow] = acc;
+        }
+        if ((col & 0xFFFFF) == 0) {
+            R_CheckUserInterrupt();
+        }
+    }
+}
+
+static void run_matmul_complex(const fm_linalg_plan &plan, Rcomplex *out)
+{
+    for (R_xlen_t col = 0; col < plan.out_ncol; col++) {
+        for (R_xlen_t row = 0; row < plan.out_nrow; row++) {
+            Rcomplex acc = {0.0, 0.0};
+            for (R_xlen_t k = 0; k < plan.inner_dim; k++) {
+                Rcomplex lhs_value = read_complex_operand(plan.lhs, row, k);
+                Rcomplex rhs_value = read_complex_operand(plan.rhs, k, col);
+                if (is_na_complex(lhs_value) || is_na_complex(rhs_value)) {
+                    acc = {NA_REAL, NA_REAL};
+                    break;
+                }
+                acc = complex_add(acc, complex_mul(lhs_value, rhs_value));
+            }
+            out[row + col * plan.out_nrow] = acc;
+        }
+        if ((col & 0xFFFFF) == 0) {
+            R_CheckUserInterrupt();
+        }
+    }
+}
+
+static void run_crossprod_complex(const fm_linalg_plan &plan, Rcomplex *out)
+{
+    for (R_xlen_t col = 0; col < plan.out_ncol; col++) {
+        for (R_xlen_t row = 0; row < plan.out_nrow; row++) {
+            Rcomplex acc = {0.0, 0.0};
+            for (R_xlen_t k = 0; k < plan.inner_dim; k++) {
+                Rcomplex lhs_value = read_complex_operand(plan.lhs, k, row);
+                Rcomplex rhs_value = read_complex_operand(plan.rhs, k, col);
+                if (is_na_complex(lhs_value) || is_na_complex(rhs_value)) {
+                    acc = {NA_REAL, NA_REAL};
+                    break;
+                }
+                acc = complex_add(acc, complex_mul(lhs_value, rhs_value));
+            }
+            out[row + col * plan.out_nrow] = acc;
+        }
+        if ((col & 0xFFFFF) == 0) {
+            R_CheckUserInterrupt();
+        }
+    }
+}
+
+static void run_tcrossprod_complex(const fm_linalg_plan &plan, Rcomplex *out)
+{
+    for (R_xlen_t col = 0; col < plan.out_ncol; col++) {
+        for (R_xlen_t row = 0; row < plan.out_nrow; row++) {
+            Rcomplex acc = {0.0, 0.0};
+            for (R_xlen_t k = 0; k < plan.inner_dim; k++) {
+                Rcomplex lhs_value = read_complex_operand(plan.lhs, row, k);
+                Rcomplex rhs_value = read_complex_operand(plan.rhs, col, k);
+                if (is_na_complex(lhs_value) || is_na_complex(rhs_value)) {
+                    acc = {NA_REAL, NA_REAL};
+                    break;
+                }
+                acc = complex_add(acc, complex_mul(lhs_value, rhs_value));
+            }
+            out[row + col * plan.out_nrow] = acc;
+        }
+        if ((col & 0xFFFFF) == 0) {
+            R_CheckUserInterrupt();
+        }
+    }
+}
+
+extern "C" SEXP rfm_matrix_ops_dispatch(SEXP op_code, SEXP lhs, SEXP rhs)
+{
+    if (TYPEOF(op_code) != INTSXP || LENGTH(op_code) != 1) {
+        Rf_error("Invalid matrix operation code");
+    }
+
+    int op_value = INTEGER(op_code)[0];
+    if (op_value == NA_INTEGER || op_value < 0 || op_value > 2) {
+        Rf_error("Invalid matrix operation code");
+    }
+
+    fm_linalg_op_id op = static_cast<fm_linalg_op_id>(op_value);
+
+    fm_linalg_operand lhs_in;
+    if (!fmalloc_init_linalg_operand(lhs, &lhs_in)) {
+        Rf_error("unsupported fmalloc matrix operation type");
+    }
+
+    fm_linalg_operand rhs_in;
+    bool rhs_is_missing = (rhs == R_NilValue || TYPEOF(rhs) == NILSXP);
+    if (rhs_is_missing) {
+        if (op != FM_LINALG_CROSSPROD && op != FM_LINALG_TCROSSPROD) {
+            Rf_error("non-conformable arguments");
+        }
+        rhs_in = lhs_in;
+    } else if (!fmalloc_init_linalg_operand(rhs, &rhs_in)) {
+        Rf_error("unsupported fmalloc matrix operation type");
+    }
+
+    fm_linalg_plan plan;
+    memset(&plan, 0, sizeof(plan));
+    build_linalg_op_plan(op, lhs_in, rhs_in, &plan);
+
+    fm_vector *out_vec = allocate_fm_vector(plan.out_runtime, plan.out_sexptype,
+                                           plan.out_len, true, false);
+    SEXP ans = PROTECT(fmalloc_new_altrep(out_vec));
+
+    if (plan.out_len > 0) {
+        if (plan.out_sexptype == CPLXSXP) {
+            Rcomplex *out = static_cast<Rcomplex*>(vector_data_or_dummy(out_vec));
+            if (op == FM_LINALG_MATMUL) {
+                run_matmul_complex(plan, out);
+            } else if (op == FM_LINALG_CROSSPROD) {
+                run_crossprod_complex(plan, out);
+            } else {
+                run_tcrossprod_complex(plan, out);
+            }
+        } else {
+            double *out = static_cast<double*>(vector_data_or_dummy(out_vec));
+            if (op == FM_LINALG_MATMUL) {
+                run_matmul_real(plan, out);
+            } else if (op == FM_LINALG_CROSSPROD) {
+                run_crossprod_real(plan, out);
+            } else {
+                run_tcrossprod_real(plan, out);
+            }
+        }
+    }
+
+    SEXP rownames = R_NilValue;
+    SEXP colnames = R_NilValue;
+    set_linalg_op_dimnames(op, lhs, rhs_is_missing ? lhs : rhs, &rownames, &colnames);
+    store_matrix_attrs(ans, plan.out_nrow, plan.out_ncol, rownames, colnames);
+
+    UNPROTECT(1);
+    return ans;
+}
 
 extern "C" SEXP rfm_can_handle_ops_pair(SEXP x, SEXP y, SEXP generic_sexp)
 {

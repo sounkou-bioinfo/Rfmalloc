@@ -24,6 +24,15 @@
   semantics and persistent unsafe reclaim mode.
 - Added explicit reference-count failure behavior when destroying a vector that is
   still referenced by another fmalloc list.
+- Added initial public R and C-callable API surface for runtime/vector
+  introspection: `fmalloc_api_version()`, `fmalloc_default_runtime()`,
+  `is_fmalloc_runtime()`, `is_fmalloc_vector()`, `fmalloc_runtime()`,
+  `fmalloc_runtime_info()`, `fmalloc_vector_info()`, `fmalloc_vector_type()`,
+  `fmalloc_vector_length()`, and `fmalloc_vector_payload_ptr()`, with runtime
+  default synchronization for C-callable access.
+- Added native C kernel implementations for fmalloc-backed linear algebra
+  (`%*%`, `crossprod()`, and `tcrossprod()`), returning managed fmalloc matrix
+  outputs with base-consistent shape behavior and name propagation.
 - Fixed list child validation to require the same runtime pointer (not only matching UUID) when storing fmalloc elements in fmalloc list containers.
 - Hardened ALTREP subset behavior by only taking the fast native path for strictly
   positive integer indexes; all other index types/values (including `0`, negative,
