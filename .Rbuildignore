@@ -1,0 +1,13 @@
+^\.github$
+^\.vscode$
+^\.git$
+^\.gitignore$
+^Makefile$
+^src/.*\.o$
+^src/.*\.so$
+^src/symbols\.rds$
+^\.Rcheck$
+^\.\.?Rcheck$
+^.*\.Rcheck$
+^.*\.tar\.gz$
+^README\.Rmd$

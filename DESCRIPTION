@@ -1,0 +1,33 @@
+Package: Rgguf
+Title: Read 'GGUF' Model Files into 'Rfmalloc'-Backed Arrays
+Version: 0.1.0
+Authors@R: c(
+    person(given = "Sounkou Mahamane", family = "Toure", email = "sounkoutoure@gmail.com", role = c("aut", "cre")),
+    person(given = "Salvatore", family = "Sanfilippo", role = "cph", comment = "gguf-tools/gguflib"),
+    person(given = "Georgi", family = "Gerganov", role = "cph", comment = "GGUF format enums/structures adapted from ggml")
+    )
+Description: Reads 'GGUF' model files, the file format used by the
+    'llama.cpp' project (<https://github.com/ggerganov/llama.cpp>) to store
+    large language model tensors and metadata, and exposes their tensors
+    directly as 'Rfmalloc'-backed, file-backed ALTREP matrices and arrays.
+    Quantized tensor types supported by the vendored 'gguflib' parser
+    (<https://github.com/antirez/gguf-tools>) are dequantized on demand.
+    Metadata key-value pairs and the tensor directory are exposed as ordinary
+    R lists and data frames. A minimal writer is included to create 'GGUF'
+    files containing 32-bit floating point tensors, primarily to support
+    round-trip testing.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Imports:
+    Rfmalloc
+LinkingTo:
+    Rfmalloc
+Suggests:
+    tinytest
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+SystemRequirements: GNU make
+URL: https://github.com/sounkou-bioinfo/Rgguf
+Depends:
+    R (>= 4.4.0)
+BugReports: https://github.com/sounkou-bioinfo/Rgguf/issues
