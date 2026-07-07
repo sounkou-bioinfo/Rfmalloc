@@ -50,6 +50,7 @@
   : Matrix algebra for fmalloc-backed vectors and matrices
 - [`fmalloc_matmul_ooc()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_matmul_ooc.md)
   [`fmalloc_crossprod_ooc()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_matmul_ooc.md)
+  [`fmalloc_tcrossprod_ooc()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_matmul_ooc.md)
   : Out-of-core matrix product for fmalloc matrices larger than RAM
 - [`rowSums()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md)
   [`colSums()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md)
