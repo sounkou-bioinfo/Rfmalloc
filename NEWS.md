@@ -18,6 +18,14 @@
   into a caller-provided `float*`/`double*` buffer), and type/size
   introspection (`Rggml_type_size`, `Rggml_row_size`, `Rggml_blck_size`,
   `Rggml_nbytes`, `Rggml_nelements`, `Rggml_type_name`).
+- Enabled GGML's **BLAS backend** (`Rggml_backend_blas_init`,
+  `Rggml_backend_blas_set_n_threads`): dense F32 `mul_mat` offloads to
+  whatever BLAS the R build links against, since BLAS is universal in R.
+  GGML's backend calls the C `cblas_sgemm`, which R does not guarantee, so
+  Rggml bridges it with a small portable shim (`inst/ggml/cblas.h` +
+  `rggml_cblas.c`) forwarding to Fortran `sgemm_` via `F77_NAME()`, linking
+  `$(BLAS_LIBS) $(FLIBS)`. The BLAS backend is a drop-in `backend` for the
+  existing `Rggml_compute_mul_mat`/`Rggml_backend_graph_compute` path.
 - Added `ggml_version()`, returning the vendored GGML library's own runtime
   version string.
 - Verified and documented the `ggml_mul_mat()` convention: loading two R
@@ -29,7 +37,8 @@
   ggml-managed and the zero-copy (externally-owned buffer) tensor creation
   paths, exercised via the registered C-callables (not the internal
   implementation functions directly).
-- CPU-only: no SIMD compiler flags, no OpenMP, no Vulkan/CUDA/Metal/etc
-  backends, no hand-written x86 SIMD kernel files - GGML's portable
-  architecture-generic reference kernels only, for CRAN-facing build
-  portability. See README.md for what a future Vulkan backend would need.
+- CPU kernels are architecture-generic (no `-march` SIMD flags, no OpenMP,
+  no hand-written x86 SIMD kernel files) for CRAN-facing build portability,
+  plus the BLAS backend above for dense products. No Vulkan/CUDA/Metal GPU
+  backends. Runtime-SIMD-dispatched quantized kernels
+  (`GGML_CPU_ALL_VARIANTS`) and a Vulkan backend are planned; see README.md.

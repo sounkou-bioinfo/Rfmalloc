@@ -13,11 +13,11 @@
 #include "rggml_api.h"
 
 SEXP RC_rggml_version(void);
-SEXP RC_rggml_test_mul_mat(SEXP A_sexp, SEXP B_sexp, SEXP zero_copy_sexp);
+SEXP RC_rggml_test_mul_mat(SEXP A_sexp, SEXP B_sexp, SEXP zero_copy_sexp, SEXP use_blas_sexp);
 
 static const R_CallMethodDef CallEntries[] = {
     {"RC_rggml_version",       (DL_FUNC) &RC_rggml_version,       0},
-    {"RC_rggml_test_mul_mat",  (DL_FUNC) &RC_rggml_test_mul_mat,  3},
+    {"RC_rggml_test_mul_mat",  (DL_FUNC) &RC_rggml_test_mul_mat,  4},
     {NULL, NULL, 0}
 };
 
@@ -41,6 +41,8 @@ static void register_c_callables(DllInfo *dll)
     R_RegisterCCallable("Rggml", "Rggml_backend_cpu_init",       (DL_FUNC) Rggml_backend_cpu_init);
     R_RegisterCCallable("Rggml", "Rggml_backend_free",           (DL_FUNC) Rggml_backend_free);
     R_RegisterCCallable("Rggml", "Rggml_backend_graph_compute",  (DL_FUNC) Rggml_backend_graph_compute);
+    R_RegisterCCallable("Rggml", "Rggml_backend_blas_init",      (DL_FUNC) Rggml_backend_blas_init);
+    R_RegisterCCallable("Rggml", "Rggml_backend_blas_set_n_threads", (DL_FUNC) Rggml_backend_blas_set_n_threads);
 
     R_RegisterCCallable("Rggml", "Rggml_new_graph",              (DL_FUNC) Rggml_new_graph);
     R_RegisterCCallable("Rggml", "Rggml_build_forward_expand",   (DL_FUNC) Rggml_build_forward_expand);

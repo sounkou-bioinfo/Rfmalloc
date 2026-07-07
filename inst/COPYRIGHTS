@@ -45,6 +45,12 @@ packages):
   Backend plumbing:
     ggml-backend.cpp, ggml-backend-reg.cpp, ggml-backend-meta.cpp,
       ggml-backend-impl.h, ggml-threading.cpp, ggml-threading.h
+  BLAS backend:
+    ggml-blas.cpp (inst/ggml/) and ggml-blas.h (inst/include/) - unlike
+      the rest, these were copied directly from ggml-org/ggml (ggmlR is
+      CPU-only and does not vendor the BLAS backend). Still MIT. GGML's
+      BLAS backend offloads dense F32 mul_mat to a system BLAS; Rggml
+      points it at R's own BLAS (see "CBLAS -> Fortran BLAS shim" below).
   Quantization (tensor-level quantize/dequantize):
     ggml-quants-legacy.c, ggml-quants-iq.c, ggml-quants-new.c,
       ggml-quants-validate.c, ggml-quants.h, ggml-quants-helpers.h,
@@ -65,11 +71,14 @@ packages):
   LinkingTo packages via Rggml.h:
     ggml.h, ggml-alloc.h, ggml-backend.h, ggml-cpu.h
 
-Rggml builds this as a CPU-only, architecture-generic (GGML_CPU_GENERIC)
-configuration: no SIMD compiler flags, no OpenMP, and none of GGML's other
-backends (CUDA/Metal/SYCL/BLAS/RPC/CANN/...) or the hand-written x86 SIMD
-kernel files (ggml-cpu/arch/x86/*) are vendored or compiled. See README.md
-for what a future Vulkan backend addition would need.
+Rggml builds the CPU kernels in an architecture-generic (GGML_CPU_GENERIC)
+configuration: no SIMD compiler flags, no OpenMP, and none of the
+hand-written x86 SIMD kernel files (ggml-cpu/arch/x86/*). GGML's BLAS
+backend (GGML_USE_BLAS, ggml-blas.cpp) IS built: dense F32 mul_mat
+offloads to R's own BLAS through the shim described below. GGML's GPU and
+other backends (CUDA/Metal/SYCL/Vulkan/RPC/CANN/...) are not vendored or
+compiled. See README.md for what a future Vulkan backend addition would
+need, and for the planned runtime-SIMD-dispatched quantized kernels.
 
 Deliberately NOT vendored (present in ggmlR but out of scope for Rggml):
   - src/ggml-vulkan/ (the entire Vulkan backend and its shader sources)
@@ -98,14 +107,26 @@ CRAN policy (no direct writes to the console, no calls that can terminate
 the R session). This mechanism is ggmlR's own original contribution (not
 part of upstream GGML) and is MIT licensed along with the rest of ggmlR.
 
+CBLAS -> Fortran BLAS shim
+---------------------------
+GGML's BLAS backend (ggml-blas.cpp) calls the C CBLAS interface
+(cblas_sgemm), which R does not guarantee: R links against a BLAS that
+exposes the Fortran interface (sgemm_), not necessarily CBLAS. Rather than
+add a system CBLAS dependency, inst/ggml/cblas.h and inst/ggml/rggml_cblas.c
+provide a minimal cblas_sgemm() that forwards to Fortran sgemm_ via R's
+F77_NAME() convention (the final Rggml.so links $(BLAS_LIBS) $(FLIBS)).
+These two files are Rggml's own original code, not derived from GGML or
+ggmlR, and are GPL (>= 2) like the rest of Rggml.
+
 Licensing
 ----------
 - GGML itself (Georgi Gerganov and contributors): MIT.
 - ggmlR (Yuri Baramykov), including its CRAN-compliance I/O shim and its
   splitting of ggml.c/ops.cpp into multiple translation units: MIT.
 - Rggml's own code (src/rggml_api.c, src/rggml_api.h, src/rggml_init.c,
-  src/rggml_test.c, inst/include/Rggml.h, all R/ code): GPL (>= 2), as
-  declared in DESCRIPTION.
+  src/rggml_test.c, inst/include/Rggml.h, inst/ggml/cblas.h,
+  inst/ggml/rggml_cblas.c, all R/ code): GPL (>= 2), as declared in
+  DESCRIPTION.
 
 The vendored MIT-licensed components remain under their upstream license,
 which is GPL-compatible; this notice preserves their required copyright

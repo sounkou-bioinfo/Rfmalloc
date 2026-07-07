@@ -6,12 +6,14 @@
 # into Rggml.so. Downstream packages never see this Makefile: they consume
 # the installed headers in inst/include/ and the registered C-callables.
 #
-# This is a CPU-only, architecture-generic build: no SIMD compiler flags, no
-# OpenMP, no Vulkan/CUDA/Metal/etc backends, no x86 hand-written SIMD kernel
-# files. GGML_CPU_GENERIC forces the portable scalar/C reference kernels
-# (see ggml-cpu/arch-fallback.h) so this compiles the same way regardless of
-# the build machine's CPU - the right default for a CRAN-facing package.
-# A faster, arch-specific build is a possible future addition (see README).
+# CPU kernels are architecture-generic: GGML_CPU_GENERIC forces the portable
+# scalar/C reference path (see ggml-cpu/arch-fallback.h) - no -march SIMD
+# flags, no OpenMP, no x86 hand-written SIMD kernel files, no GPU backends -
+# so this compiles the same way regardless of the build machine's CPU.
+# EXCEPTION: dense products use the BLAS backend (GGML_USE_BLAS, ggml-blas.cpp),
+# offloading F32 mul_mat to R's own BLAS via the cblas->Fortran shim below.
+# Runtime-SIMD-dispatched quantized kernels (GGML_CPU_ALL_VARIANTS) are the
+# next planned addition for the dequant-dot path (see README).
 
 AR     ?= ar
 RANLIB ?= ranlib
@@ -29,7 +31,10 @@ INCLUDES = -I. -Iggml-cpu -I../include
 # expands to __assert_rtn, which R CMD check flags (compiled code must not call
 # process-terminating entry points). GGML's own GGML_ASSERT is separately
 # redirected via rggml_compat.h, so this only removes libc assert().
-DEFS = -DGGML_USE_CPU -DGGML_CPU_GENERIC -DGGML_R_PACKAGE -D_GNU_SOURCE -DNDEBUG \
+# -DGGML_USE_BLAS enables GGML's BLAS backend (ggml-blas.cpp). Its cblas_sgemm
+# calls are satisfied by our portable shim (cblas.h + rggml_cblas.c) forwarding
+# to R's Fortran sgemm_; the final Rggml.so links $(BLAS_LIBS) $(FLIBS).
+DEFS = -DGGML_USE_CPU -DGGML_CPU_GENERIC -DGGML_USE_BLAS -DGGML_R_PACKAGE -D_GNU_SOURCE -DNDEBUG \
        -DGGML_VERSION='"0.9.5"' -DGGML_COMMIT='"vendored-unknown"' \
        -include rggml_compat.h
 
@@ -44,9 +49,10 @@ C_SOURCES = \
 CXX_SOURCES = \
   ggml-backend.cpp ggml-backend-reg.cpp ggml-backend-meta.cpp ggml-threading.cpp \
   ggml-cpu/ggml-cpu.cpp ggml-cpu/traits.cpp ggml-cpu/vec.cpp ggml-cpu/repack.cpp \
-  ggml-cpu/binary-ops.cpp ggml-cpu/unary-ops.cpp ggml-cpu/ops-private.cpp
+  ggml-cpu/binary-ops.cpp ggml-cpu/unary-ops.cpp ggml-cpu/ops-private.cpp \
+  ggml-blas.cpp
 
-OBJECTS = $(C_SOURCES:.c=.o) $(CXX_SOURCES:.cpp=.o) rggml_io.o
+OBJECTS = $(C_SOURCES:.c=.o) $(CXX_SOURCES:.cpp=.o) rggml_io.o rggml_cblas.o
 
 .PHONY: all clean
 
@@ -63,6 +69,12 @@ $(STATICLIB): $(OBJECTS)
 # would otherwise be mangled by the `#define printf ...` redirection).
 rggml_io.o: rggml_io.c
 	$(CC) $(ALL_CFLAGS) $(R_INCLUDE_FLAGS) -DR_GGML_IO_IMPL -c $< -o $@
+
+# rggml_cblas.c implements cblas_sgemm() over Fortran sgemm_. It needs R's
+# headers (F77_NAME from <R_ext/RS.h>) but must NOT get the rggml_compat.h
+# redirections, so it is built with a plain flag set (INCLUDES gives it cblas.h).
+rggml_cblas.o: rggml_cblas.c
+	$(CC) $(CPPFLAGS) $(INCLUDES) $(R_INCLUDE_FLAGS) $(CFLAGS) -c $< -o $@
 
 %.o: %.c
 	$(CC) $(ALL_CFLAGS) -c $< -o $@

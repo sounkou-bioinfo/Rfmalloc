@@ -79,6 +79,18 @@ typedef ggml_backend_t (*Rggml_backend_cpu_init_fun)(void);
 typedef void (*Rggml_backend_free_fun)(ggml_backend_t backend);
 typedef int (*Rggml_backend_graph_compute_fun)(ggml_backend_t backend, struct ggml_cgraph *cgraph);
 
+/* -- BLAS backend ---------------------------------------------------------- */
+/*
+ * GGML's BLAS backend offloads dense F32 (and F16/quantized, after an internal
+ * to-float conversion) mul_mat to whatever BLAS the R build links against
+ * (reference libRblas, OpenBLAS, MKL, Accelerate, ...). It computes on host
+ * memory, so a backend from Rggml_backend_blas_init() is a drop-in `backend`
+ * for Rggml_compute_mul_mat()/Rggml_backend_graph_compute() on mul_mat graphs.
+ * Returns NULL if the BLAS backend is unavailable. Free with Rggml_backend_free().
+ */
+typedef ggml_backend_t (*Rggml_backend_blas_init_fun)(void);
+typedef void (*Rggml_backend_blas_set_n_threads_fun)(ggml_backend_t backend_blas, int n_threads);
+
 /* -- graph building ---------------------------------------------------------- */
 
 typedef struct ggml_cgraph *(*Rggml_new_graph_fun)(struct ggml_context *ctx, size_t size);
@@ -178,6 +190,16 @@ static inline Rggml_backend_free_fun Rggml_backend_free_ptr(void)
 static inline Rggml_backend_graph_compute_fun Rggml_backend_graph_compute_ptr(void)
 {
     return (Rggml_backend_graph_compute_fun) R_GetCCallable("Rggml", "Rggml_backend_graph_compute");
+}
+
+static inline Rggml_backend_blas_init_fun Rggml_backend_blas_init_ptr(void)
+{
+    return (Rggml_backend_blas_init_fun) R_GetCCallable("Rggml", "Rggml_backend_blas_init");
+}
+
+static inline Rggml_backend_blas_set_n_threads_fun Rggml_backend_blas_set_n_threads_ptr(void)
+{
+    return (Rggml_backend_blas_set_n_threads_fun) R_GetCCallable("Rggml", "Rggml_backend_blas_set_n_threads");
 }
 
 static inline Rggml_new_graph_fun Rggml_new_graph_ptr(void)

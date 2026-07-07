@@ -14,8 +14,9 @@ Description: Vendors the CPU backend of the 'GGML' tensor library
     it has no high-level R modeling API of its own. Other R packages link to
     it ('LinkingTo') to build and compute 'GGML' tensor graphs (including
     quantized types such as Q4_K) from their own C or C++ code without
-    re-vendoring 'GGML'. Only the CPU backend is built; 'Vulkan' GPU support
-    is a possible future addition.
+    re-vendoring 'GGML'. The CPU and BLAS backends are built (dense products
+    offload to R's own BLAS); GPU ('Vulkan') support is a possible future
+    addition.
 License: GPL (>= 2)
 Encoding: UTF-8
 SystemRequirements: GNU make, C++17

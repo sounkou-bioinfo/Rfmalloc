@@ -20,6 +20,7 @@
 #include <ggml-alloc.h>
 #include <ggml-backend.h>
 #include <ggml-cpu.h>
+#include <ggml-blas.h>
 
 #include "rggml_api.h"
 
@@ -114,6 +115,16 @@ int Rggml_backend_graph_compute(ggml_backend_t backend, struct ggml_cgraph *cgra
 {
     if (!backend || !cgraph) return (int)GGML_STATUS_FAILED;
     return (int)ggml_backend_graph_compute(backend, cgraph);
+}
+
+ggml_backend_t Rggml_backend_blas_init(void)
+{
+    return ggml_backend_blas_init();
+}
+
+void Rggml_backend_blas_set_n_threads(ggml_backend_t backend_blas, int n_threads)
+{
+    if (backend_blas) ggml_backend_blas_set_n_threads(backend_blas, n_threads);
 }
 
 struct ggml_cgraph *Rggml_new_graph(struct ggml_context *ctx, size_t size)

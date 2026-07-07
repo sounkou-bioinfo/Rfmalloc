@@ -50,6 +50,7 @@ Other contributors:
 \itemize{
   \item Georgi Gerganov (Author of the GGML library) [copyright holder]
   \item The ggml.ai / llama.cpp contributors (GGML CPU backend contributors) [copyright holder]
+  \item Yuri Baramykov (ggmlR: source of the vendored GGML copy and its R/CRAN-compliance I/O shim, adapted here) [contributor]
 }
 
 }

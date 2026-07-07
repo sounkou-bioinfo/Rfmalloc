@@ -14,7 +14,7 @@
 #include <ggml.h>
 #include <ggml-backend.h>
 
-#define RGGML_API_VERSION 1
+#define RGGML_API_VERSION 2
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,6 +39,9 @@ size_t Rggml_tensor_nb(const struct ggml_tensor *tensor, int dim);
 ggml_backend_t Rggml_backend_cpu_init(void);
 void Rggml_backend_free(ggml_backend_t backend);
 int Rggml_backend_graph_compute(ggml_backend_t backend, struct ggml_cgraph *cgraph);
+
+ggml_backend_t Rggml_backend_blas_init(void);
+void Rggml_backend_blas_set_n_threads(ggml_backend_t backend_blas, int n_threads);
 
 struct ggml_cgraph *Rggml_new_graph(struct ggml_context *ctx, size_t size);
 void Rggml_build_forward_expand(struct ggml_cgraph *cgraph, struct ggml_tensor *tensor);

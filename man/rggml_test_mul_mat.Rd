@@ -4,7 +4,7 @@
 \alias{rggml_test_mul_mat}
 \title{(internal) Run a 'GGML' matmul through the registered C-callables}
 \usage{
-rggml_test_mul_mat(A, B, zero_copy = FALSE)
+rggml_test_mul_mat(A, B, zero_copy = FALSE, backend = c("cpu", "blas"))
 }
 \arguments{
 \item{A, B}{Numeric matrices with the same number of rows.}
@@ -12,11 +12,16 @@ rggml_test_mul_mat(A, B, zero_copy = FALSE)
 \item{zero_copy}{Logical; if \code{TRUE}, the tensors wrap externally
 owned buffers (the mmap-style zero-copy path) instead of
 'GGML'-managed ones.}
+
+\item{backend}{Which registered backend computes the product:
+\code{"cpu"} (default) uses \code{ggml_backend_cpu_init()};
+\code{"blas"} uses \code{ggml_backend_blas_init()}, which offloads the
+dense F32 product to whatever BLAS the R build links against.}
 }
 \value{
 A numeric matrix, dim \code{c(ncol(A), ncol(B))}, equal to
 \code{crossprod(A, B)} (i.e. \code{t(A) \%*\% B}) computed via
-\code{ggml_mul_mat()} on the CPU backend.
+\code{ggml_mul_mat()} on the chosen backend.
 }
 \description{
 Not exported; exists so the tinytest suite can exercise the full

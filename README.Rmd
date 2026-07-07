@@ -36,13 +36,24 @@ A CPU-only, architecture-generic subset of GGML (~5,100 lines across
 ~35 vendored `.c`/`.cpp`/`.h` files, see `inst/COPYRIGHTS` for the exact
 file list and provenance): tensor/context/graph core, the backend
 abstraction, tensor-level quantize/dequantize (including K-quants such as
-`Q4_K`), and the CPU backend's compute kernels. Built with
-`-DGGML_CPU_GENERIC`: no SIMD compiler flags, no OpenMP, no hand-written
-x86 SIMD kernel files, no Vulkan/CUDA/Metal/BLAS/etc backends. This is a
-deliberate portability choice for a CRAN-facing package — correctness and
-buildability everywhere over raw speed. GGML's own architecture-generic
-reference kernels still do the compute; they are just the scalar/portable
-code path rather than the AVX2/AVX-512/NEON-tuned one.
+`Q4_K`), the CPU backend's compute kernels, and the **BLAS backend**.
+
+The CPU kernels are built with `-DGGML_CPU_GENERIC` (the portable
+scalar/reference path — no `-march` SIMD flags, no OpenMP, no hand-written
+x86 SIMD kernel files, no Vulkan/CUDA/Metal GPU backends). But dense
+matrix products do **not** run scalar: GGML's BLAS backend
+(`-DGGML_USE_BLAS`) offloads F32 `mul_mat` to whatever BLAS the R build
+links against (reference `libRblas`, OpenBLAS, MKL, Accelerate, ...) —
+BLAS is universal in R, so this needs no extra system dependency. GGML's
+BLAS backend is written against the C `cblas_sgemm` interface, which R
+does *not* guarantee (R guarantees only the Fortran `sgemm_`); Rggml
+bridges the gap with a small portable shim (`inst/ggml/cblas.h` +
+`rggml_cblas.c`) that forwards `cblas_sgemm` to Fortran `sgemm_` via R's
+`F77_NAME()` convention, linking `$(BLAS_LIBS) $(FLIBS)`.
+
+Runtime-SIMD-dispatched quantized kernels (the ggml `GGML_CPU_ALL_VARIANTS`
+path, à la [RsimdDispatch](https://github.com/sounkou-bioinfo/RsimdDispatch))
+are the next planned step for the dequant-dot path that BLAS cannot cover.
 
 The GGML sources were vendored via an existing R package,
 [`ggmlR`](https://github.com/Zabis13/ggmlR), which already carries the
@@ -87,6 +98,10 @@ size_t   Rggml_tensor_nb(const struct ggml_tensor *tensor, int dim);
 ggml_backend_t Rggml_backend_cpu_init(void);
 void            Rggml_backend_free(ggml_backend_t backend);
 int             Rggml_backend_graph_compute(ggml_backend_t backend, struct ggml_cgraph *cgraph);
+
+/* BLAS backend (dense F32 mul_mat via R's BLAS; drop-in `backend` above) */
+ggml_backend_t Rggml_backend_blas_init(void);
+void            Rggml_backend_blas_set_n_threads(ggml_backend_t backend_blas, int n_threads);
 
 /* graph building */
 struct ggml_cgraph *Rggml_new_graph(struct ggml_context *ctx, size_t size);

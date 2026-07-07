@@ -37,7 +37,7 @@ SEXP RC_rggml_version(void)
  * (ne[0], ne[1]), the result (dim (A_ne1, B_ne1)) equals crossprod(A, B),
  * i.e. t(A) %*% B.
  */
-SEXP RC_rggml_test_mul_mat(SEXP A_sexp, SEXP B_sexp, SEXP zero_copy_sexp)
+SEXP RC_rggml_test_mul_mat(SEXP A_sexp, SEXP B_sexp, SEXP zero_copy_sexp, SEXP use_blas_sexp)
 {
     if (TYPEOF(A_sexp) != REALSXP || TYPEOF(B_sexp) != REALSXP) {
         Rf_error("A and B must be numeric matrices");
@@ -55,12 +55,14 @@ SEXP RC_rggml_test_mul_mat(SEXP A_sexp, SEXP B_sexp, SEXP zero_copy_sexp)
         Rf_error("nrow(A) must equal nrow(B)");
     }
     int zero_copy = Rf_asLogical(zero_copy_sexp);
+    int use_blas  = Rf_asLogical(use_blas_sexp);
 
     Rggml_context_create_fun    ctx_create      = Rggml_context_create_ptr();
     Rggml_context_free_fun      ctx_free        = Rggml_context_free_ptr();
     Rggml_new_tensor_fun        new_tensor      = Rggml_new_tensor_ptr();
     Rggml_tensor_data_fun       tensor_data     = Rggml_tensor_data_ptr();
     Rggml_backend_cpu_init_fun  backend_init    = Rggml_backend_cpu_init_ptr();
+    Rggml_backend_blas_init_fun blas_init       = Rggml_backend_blas_init_ptr();
     Rggml_backend_free_fun      backend_free    = Rggml_backend_free_ptr();
     Rggml_compute_mul_mat_fun   compute_mul_mat = Rggml_compute_mul_mat_ptr();
     Rggml_tensor_overhead_fun   tensor_overhead = Rggml_tensor_overhead_ptr();
@@ -71,7 +73,12 @@ SEXP RC_rggml_test_mul_mat(SEXP A_sexp, SEXP B_sexp, SEXP zero_copy_sexp)
         Rf_error("one or more Rggml C-callables were not found via R_GetCCallable()");
     }
 
-    size_t mem_size = (size_t)4 * tensor_overhead() + graph_overhead(8) + 8192;
+    /* In the no_alloc = 0 path the two input tensors' *data* also lives in the
+     * context pool, so size it to include their bytes (plus per-tensor alignment
+     * slack); the zero_copy path keeps tensor data in external buffers. */
+    size_t data_bytes = zero_copy ? 0
+        : ((size_t)kA * (size_t)nA + (size_t)kB * (size_t)nB) * sizeof(float);
+    size_t mem_size = (size_t)4 * tensor_overhead() + graph_overhead(8) + data_bytes + 8192;
     struct ggml_context *ctx = ctx_create(mem_size, zero_copy ? 1 : 0);
     if (!ctx) Rf_error("Rggml_context_create (ggml_init) failed");
 
@@ -118,11 +125,11 @@ SEXP RC_rggml_test_mul_mat(SEXP A_sexp, SEXP B_sexp, SEXP zero_copy_sexp)
         Rf_error("Rggml_new_tensor failed");
     }
 
-    ggml_backend_t backend = backend_init();
+    ggml_backend_t backend = use_blas ? (blas_init ? blas_init() : NULL) : backend_init();
     if (!backend) {
         free(ext_A); free(ext_B);
         ctx_free(ctx);
-        Rf_error("Rggml_backend_cpu_init failed");
+        Rf_error(use_blas ? "Rggml_backend_blas_init failed" : "Rggml_backend_cpu_init failed");
     }
 
     SEXP result = PROTECT(Rf_allocMatrix(REALSXP, (int) nA, (int) nB));

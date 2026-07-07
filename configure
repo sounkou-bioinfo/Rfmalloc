@@ -94,7 +94,10 @@ cat > src/Makevars << 'EOF'
 # etc. from ggml-backend*.cpp).
 
 PKG_CPPFLAGS = -I../inst/include
-PKG_LIBS = -L../inst/ggml -lggml -lpthread -ldl -lm
+# $(BLAS_LIBS) $(FLIBS) resolve the Fortran sgemm_ that our cblas shim
+# (inst/ggml/rggml_cblas.c) forwards GGML's BLAS backend to. -lggml precedes
+# them so its unresolved sgemm_ pulls from R's BLAS.
+PKG_LIBS = -L../inst/ggml -lggml $(BLAS_LIBS) $(FLIBS) -lpthread -ldl -lm
 
 CXX_STD = CXX17
 EOF
