@@ -97,7 +97,7 @@ message("Testing the ALP compressed tensor codec...")
 
     expect_error(as_fmalloc_tensor(1:5, runtime = rt), "must be a double")
     expect_error(as_fmalloc_tensor(v, dtype = "f32", runtime = rt),
-        "only dtype")
+        "dtype must be")
 })()
 
 message("ALP codec tests completed")

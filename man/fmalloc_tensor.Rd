@@ -73,7 +73,9 @@ full tensor is never materialized at once.
 \details{
 \code{create_fmalloc_tensor()} tags an existing fmalloc raw payload.
 \code{as_fmalloc_tensor()} compresses a double vector/matrix into fmalloc
-storage with the builtin, lossless \code{"alp"} codec (Afroozeh et al.,
+storage with \code{dtype = "sparse"} (stores only the nonzeros of each chunk, for
+mostly-zero data such as single-cell counts) or the builtin, lossless
+\code{"alp"} codec (Afroozeh et al.,
 \doi{10.1145/3626717}; scalar core adapted from the MIT-licensed zap
 implementation, see \code{inst/COPYRIGHTS}), storing decimal-scaled doubles as
 bit-packed integers in independently decodable 1024-value chunks with

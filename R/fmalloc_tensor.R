@@ -10,7 +10,9 @@
 #'
 #' `create_fmalloc_tensor()` tags an existing fmalloc raw payload.
 #' `as_fmalloc_tensor()` compresses a double vector/matrix into fmalloc
-#' storage with the builtin, lossless `"alp"` codec (Afroozeh et al.,
+#' storage with `dtype = "sparse"` (stores only the nonzeros of each chunk, for
+#' mostly-zero data such as single-cell counts) or the builtin, lossless
+#' `"alp"` codec (Afroozeh et al.,
 #' \doi{10.1145/3626717}; scalar core adapted from the MIT-licensed zap
 #' implementation, see `inst/COPYRIGHTS`), storing decimal-scaled doubles as
 #' bit-packed integers in independently decodable 1024-value chunks with
@@ -96,9 +98,12 @@ create_fmalloc_tensor <- function(payload, dtype, dim) {
 #' @rdname fmalloc_tensor
 #' @export
 as_fmalloc_tensor <- function(x, dtype = "alp", runtime = NULL) {
-    if (!identical(dtype, "alp")) {
-        stop("only dtype = \"alp\" encoding is currently supported")
-    }
+    encoder <- switch(dtype,
+        alp = "rfm_tensor_alp_encode_impl",
+        sparse = "rfm_tensor_sparse_encode_impl",
+        stop("dtype must be \"alp\" (lossless float compression) or ",
+             "\"sparse\" (mostly-zero data)")
+    )
     x0 <- .fmalloc_strip_class(x)
     if (!is.double(x0)) {
         stop("x must be a double vector or matrix")
@@ -111,10 +116,10 @@ as_fmalloc_tensor <- function(x, dtype = "alp", runtime = NULL) {
     }
 
     runtime <- .fmalloc_get_runtime(runtime)
-    enc <- .Call("rfm_tensor_alp_encode_impl", x0, runtime)
-    ans <- create_fmalloc_tensor(enc[[1L]], "alp", dims)
-    # Non-finite values round-trip exactly through ALP patches, but they must
-    # keep matrix products off the dgemm path; see .fmalloc_tensor_matmul().
+    enc <- .Call(encoder, x0, runtime)
+    ans <- create_fmalloc_tensor(enc[[1L]], dtype, dims)
+    # Non-finite values round-trip exactly, but must keep matrix products off
+    # the dgemm path; see .fmalloc_tensor_matmul().
     attr(ans, "rfm_nonfinite") <- enc[[2L]]
     ans
 }

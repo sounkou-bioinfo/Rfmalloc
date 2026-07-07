@@ -7,5 +7,6 @@
 #include "fmalloc_ooc.inc"
 #include "fmalloc_tensor.inc"
 #include "fmalloc_alp.inc"
+#include "fmalloc_sparse.inc"
 #include "fmalloc_insitu.inc"
 #include "fmalloc_api.inc"

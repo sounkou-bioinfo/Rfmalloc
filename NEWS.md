@@ -33,6 +33,12 @@
 - Added native C kernel implementations for fmalloc-backed linear algebra
   (`%*%`, `crossprod()`, and `tcrossprod()`), returning managed fmalloc matrix
   outputs with base-consistent shape behavior and name propagation.
+- Added a builtin `"sparse"` tensor codec for mostly-zero data (e.g.
+  single-cell counts): `as_fmalloc_tensor(x, dtype = "sparse")` stores only the
+  nonzeros of each 1024-element chunk, losslessly, and the resulting tensor
+  participates in the panel-streamed matrix products like any other codec. At
+  ~10% density it compresses ~6x versus dense `f64` while `%*%`/`crossprod`
+  stay exact — the storage layer for out-of-core single-cell/genomics matrices.
 - Added a builtin, lossless `"alp"` tensor codec and `as_fmalloc_tensor()`:
   double vectors/matrices are compressed into fmalloc storage as bit-packed
   decimal-scaled integers in independently decodable 1024-value chunks

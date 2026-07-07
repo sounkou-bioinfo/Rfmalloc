@@ -664,6 +664,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"rfm_fill_in_place_impl", (DL_FUNC)&rfm_fill_in_place_impl, 2},
     {"rfm_inplace_op_impl", (DL_FUNC)&rfm_inplace_op_impl, 3},
     {"rfm_tensor_alp_encode_impl", (DL_FUNC)&rfm_tensor_alp_encode_impl, 2},
+    {"rfm_tensor_sparse_encode_impl", (DL_FUNC)&rfm_tensor_sparse_encode_impl, 2},
     {nullptr, nullptr, 0}
 };
 
@@ -674,6 +675,7 @@ void R_init_Rfmalloc(DllInfo *dll)
     register_fmalloc_altrep_classes(dll);
     tensor_register_builtin_codecs();
     tensor_register_alp_codec();
+    tensor_register_sparse_codec();
     R_registerRoutines(dll, nullptr, CallEntries, nullptr, nullptr);
     register_c_callables();
     R_useDynamicSymbols(dll, FALSE);
