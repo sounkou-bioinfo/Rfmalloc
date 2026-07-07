@@ -227,6 +227,118 @@ int Rggml_dequantize(enum ggml_type type, const void *src, float *dst, int64_t n
     return 0;
 }
 
+/*
+ * Graph ops (API version 5). Thin wrappers over the ggml ops a transformer
+ * forward pass composes: embedding lookup, RMSNorm, elementwise, activation,
+ * RoPE, masked softmax, and the shape ops. Scalar parameters cross the
+ * C-callable boundary as double and are narrowed here. All return NULL on
+ * NULL inputs so downstream builders can chain and check once.
+ */
+struct ggml_tensor *Rggml_get_rows(struct ggml_context *ctx, struct ggml_tensor *a,
+                                    struct ggml_tensor *b)
+{
+    if (!ctx || !a || !b) return NULL;
+    return ggml_get_rows(ctx, a, b);
+}
+
+struct ggml_tensor *Rggml_rms_norm(struct ggml_context *ctx, struct ggml_tensor *a,
+                                    double eps)
+{
+    if (!ctx || !a) return NULL;
+    return ggml_rms_norm(ctx, a, (float) eps);
+}
+
+struct ggml_tensor *Rggml_mul(struct ggml_context *ctx, struct ggml_tensor *a,
+                               struct ggml_tensor *b)
+{
+    if (!ctx || !a || !b) return NULL;
+    return ggml_mul(ctx, a, b);
+}
+
+struct ggml_tensor *Rggml_add(struct ggml_context *ctx, struct ggml_tensor *a,
+                               struct ggml_tensor *b)
+{
+    if (!ctx || !a || !b) return NULL;
+    return ggml_add(ctx, a, b);
+}
+
+struct ggml_tensor *Rggml_silu(struct ggml_context *ctx, struct ggml_tensor *a)
+{
+    if (!ctx || !a) return NULL;
+    return ggml_silu(ctx, a);
+}
+
+struct ggml_tensor *Rggml_scale(struct ggml_context *ctx, struct ggml_tensor *a,
+                                 double s)
+{
+    if (!ctx || !a) return NULL;
+    return ggml_scale(ctx, a, (float) s);
+}
+
+struct ggml_tensor *Rggml_soft_max(struct ggml_context *ctx, struct ggml_tensor *a)
+{
+    if (!ctx || !a) return NULL;
+    return ggml_soft_max(ctx, a);
+}
+
+struct ggml_tensor *Rggml_diag_mask_inf(struct ggml_context *ctx, struct ggml_tensor *a,
+                                         int n_past)
+{
+    if (!ctx || !a) return NULL;
+    return ggml_diag_mask_inf(ctx, a, n_past);
+}
+
+/*
+ * RoPE with the parameters that vary between model families exposed and the
+ * YaRN extension left off (ext_factor = 0, so beta_fast/beta_slow are inert;
+ * attn_factor = 1, freq_scale = 1, n_ctx_orig = 0 - llama.cpp's defaults for
+ * non-scaled contexts). `pos` is an I32 tensor of positions; `mode` is
+ * GGML_ROPE_TYPE_NORMAL (0) or GGML_ROPE_TYPE_NEOX (2).
+ */
+struct ggml_tensor *Rggml_rope(struct ggml_context *ctx, struct ggml_tensor *a,
+                                struct ggml_tensor *pos, int n_dims, int mode,
+                                double freq_base)
+{
+    if (!ctx || !a || !pos) return NULL;
+    return ggml_rope_ext(ctx, a, pos, NULL, n_dims, mode, /*n_ctx_orig=*/0,
+                         (float) freq_base, /*freq_scale=*/1.0f,
+                         /*ext_factor=*/0.0f, /*attn_factor=*/1.0f,
+                         /*beta_fast=*/32.0f, /*beta_slow=*/1.0f);
+}
+
+struct ggml_tensor *Rggml_reshape_2d(struct ggml_context *ctx, struct ggml_tensor *a,
+                                      int64_t ne0, int64_t ne1)
+{
+    if (!ctx || !a) return NULL;
+    return ggml_reshape_2d(ctx, a, ne0, ne1);
+}
+
+struct ggml_tensor *Rggml_reshape_3d(struct ggml_context *ctx, struct ggml_tensor *a,
+                                      int64_t ne0, int64_t ne1, int64_t ne2)
+{
+    if (!ctx || !a) return NULL;
+    return ggml_reshape_3d(ctx, a, ne0, ne1, ne2);
+}
+
+struct ggml_tensor *Rggml_permute(struct ggml_context *ctx, struct ggml_tensor *a,
+                                   int axis0, int axis1, int axis2, int axis3)
+{
+    if (!ctx || !a) return NULL;
+    return ggml_permute(ctx, a, axis0, axis1, axis2, axis3);
+}
+
+struct ggml_tensor *Rggml_cont(struct ggml_context *ctx, struct ggml_tensor *a)
+{
+    if (!ctx || !a) return NULL;
+    return ggml_cont(ctx, a);
+}
+
+struct ggml_tensor *Rggml_transpose(struct ggml_context *ctx, struct ggml_tensor *a)
+{
+    if (!ctx || !a) return NULL;
+    return ggml_transpose(ctx, a);
+}
+
 size_t Rggml_type_size(enum ggml_type type)
 {
     return ggml_type_size(type);

@@ -1,5 +1,20 @@
 # Rllm 0.1.0 (unreleased)
 
+- Added the **llama-architecture forward pass**: `rllm_gguf_model()` loads a
+  GGUF model's hyperparameters and weights (2-d tensors imported natively -
+  still `q4_k`/`f32`/... encoded - into fmalloc-backed, memory-mapped
+  storage), and `rllm_forward()` assembles the GGML compute graph (RMSNorm,
+  RoPE, causal self-attention with grouped-query support, SwiGLU) from
+  Rggml's graph-op C-callables over those weights zero-copy, computing the
+  logits for every position of a token batch on the GGML CPU backend.
+  Quantized weights are contracted through the SIMD-dispatched quantized
+  kernels without ever being decoded to double. No KV cache yet (whole-batch
+  causal attention: a prompt-scoring entry point, not incremental
+  generation). Verified against a pure-R reference implementation of the
+  same arithmetic on a synthetic GGUF model written at test time - logits
+  agree to float accumulation error (< 1e-4 relative) for both multi-head
+  and grouped-query configurations, plus causality probes
+  (`test_llama_forward.R`).
 - Initial release. Rllm is the composition layer of the Rfmalloc ecosystem,
   wiring together Rfmalloc (file-backed storage), Rgguf (GGUF weights as
   fmalloc tensors) and Rggml (vendored GGML compute with runtime-SIMD-dispatched

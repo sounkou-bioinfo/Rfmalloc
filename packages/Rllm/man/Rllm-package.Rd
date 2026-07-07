@@ -23,8 +23,8 @@ it with \code{\link[=rllm_use_ggml]{rllm_use_ggml()}}. Build quantized tensors w
 \seealso{
 Useful links:
 \itemize{
-  \item \url{https://github.com/sounkou-bioinfo/Rllm}
-  \item Report bugs at \url{https://github.com/sounkou-bioinfo/Rllm/issues}
+  \item \url{https://github.com/sounkou-bioinfo/Rfmalloc}
+  \item Report bugs at \url{https://github.com/sounkou-bioinfo/Rfmalloc/issues}
 }
 
 }

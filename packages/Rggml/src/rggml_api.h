@@ -14,7 +14,7 @@
 #include <ggml.h>
 #include <ggml-backend.h>
 
-#define RGGML_API_VERSION 4
+#define RGGML_API_VERSION 5
 
 #ifdef __cplusplus
 extern "C" {
@@ -54,6 +54,33 @@ int Rggml_compute_mul_mat(struct ggml_context *ctx, ggml_backend_t backend,
 size_t Rggml_quantize(enum ggml_type type, const float *src, void *dst,
                       int64_t nrows, int64_t n_per_row);
 int Rggml_dequantize(enum ggml_type type, const void *src, float *dst, int64_t n);
+
+/* graph ops (API version 5) */
+struct ggml_tensor *Rggml_get_rows(struct ggml_context *ctx, struct ggml_tensor *a,
+                                    struct ggml_tensor *b);
+struct ggml_tensor *Rggml_rms_norm(struct ggml_context *ctx, struct ggml_tensor *a,
+                                    double eps);
+struct ggml_tensor *Rggml_mul(struct ggml_context *ctx, struct ggml_tensor *a,
+                               struct ggml_tensor *b);
+struct ggml_tensor *Rggml_add(struct ggml_context *ctx, struct ggml_tensor *a,
+                               struct ggml_tensor *b);
+struct ggml_tensor *Rggml_silu(struct ggml_context *ctx, struct ggml_tensor *a);
+struct ggml_tensor *Rggml_scale(struct ggml_context *ctx, struct ggml_tensor *a,
+                                 double s);
+struct ggml_tensor *Rggml_soft_max(struct ggml_context *ctx, struct ggml_tensor *a);
+struct ggml_tensor *Rggml_diag_mask_inf(struct ggml_context *ctx, struct ggml_tensor *a,
+                                         int n_past);
+struct ggml_tensor *Rggml_rope(struct ggml_context *ctx, struct ggml_tensor *a,
+                                struct ggml_tensor *pos, int n_dims, int mode,
+                                double freq_base);
+struct ggml_tensor *Rggml_reshape_2d(struct ggml_context *ctx, struct ggml_tensor *a,
+                                      int64_t ne0, int64_t ne1);
+struct ggml_tensor *Rggml_reshape_3d(struct ggml_context *ctx, struct ggml_tensor *a,
+                                      int64_t ne0, int64_t ne1, int64_t ne2);
+struct ggml_tensor *Rggml_permute(struct ggml_context *ctx, struct ggml_tensor *a,
+                                   int axis0, int axis1, int axis2, int axis3);
+struct ggml_tensor *Rggml_cont(struct ggml_context *ctx, struct ggml_tensor *a);
+struct ggml_tensor *Rggml_transpose(struct ggml_context *ctx, struct ggml_tensor *a);
 
 size_t Rggml_type_size(enum ggml_type type);
 size_t Rggml_row_size(enum ggml_type type, int64_t ne);

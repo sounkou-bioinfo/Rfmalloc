@@ -59,6 +59,21 @@ static void register_c_callables(DllInfo *dll)
     R_RegisterCCallable("Rggml", "Rggml_quantize",              (DL_FUNC) Rggml_quantize);
     R_RegisterCCallable("Rggml", "Rggml_dequantize",            (DL_FUNC) Rggml_dequantize);
 
+    R_RegisterCCallable("Rggml", "Rggml_get_rows",              (DL_FUNC) Rggml_get_rows);
+    R_RegisterCCallable("Rggml", "Rggml_rms_norm",              (DL_FUNC) Rggml_rms_norm);
+    R_RegisterCCallable("Rggml", "Rggml_mul",                   (DL_FUNC) Rggml_mul);
+    R_RegisterCCallable("Rggml", "Rggml_add",                   (DL_FUNC) Rggml_add);
+    R_RegisterCCallable("Rggml", "Rggml_silu",                  (DL_FUNC) Rggml_silu);
+    R_RegisterCCallable("Rggml", "Rggml_scale",                 (DL_FUNC) Rggml_scale);
+    R_RegisterCCallable("Rggml", "Rggml_soft_max",              (DL_FUNC) Rggml_soft_max);
+    R_RegisterCCallable("Rggml", "Rggml_diag_mask_inf",         (DL_FUNC) Rggml_diag_mask_inf);
+    R_RegisterCCallable("Rggml", "Rggml_rope",                  (DL_FUNC) Rggml_rope);
+    R_RegisterCCallable("Rggml", "Rggml_reshape_2d",            (DL_FUNC) Rggml_reshape_2d);
+    R_RegisterCCallable("Rggml", "Rggml_reshape_3d",            (DL_FUNC) Rggml_reshape_3d);
+    R_RegisterCCallable("Rggml", "Rggml_permute",               (DL_FUNC) Rggml_permute);
+    R_RegisterCCallable("Rggml", "Rggml_cont",                  (DL_FUNC) Rggml_cont);
+    R_RegisterCCallable("Rggml", "Rggml_transpose",             (DL_FUNC) Rggml_transpose);
+
     R_RegisterCCallable("Rggml", "Rggml_type_size",              (DL_FUNC) Rggml_type_size);
     R_RegisterCCallable("Rggml", "Rggml_row_size",               (DL_FUNC) Rggml_row_size);
     R_RegisterCCallable("Rggml", "Rggml_blck_size",              (DL_FUNC) Rggml_blck_size);

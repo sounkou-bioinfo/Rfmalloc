@@ -1,5 +1,13 @@
 # Rggml 0.1.0 (unreleased)
 
+- Added the transformer **graph-op C-callables** (API version 5): the ops a
+  forward pass composes - `Rggml_get_rows`, `Rggml_rms_norm`, `Rggml_mul`,
+  `Rggml_add`, `Rggml_silu`, `Rggml_scale`, `Rggml_soft_max`,
+  `Rggml_diag_mask_inf`, `Rggml_rope` (wrapping `ggml_rope_ext` with YaRN
+  off), and the shape ops `Rggml_reshape_2d`/`_3d`, `Rggml_permute`,
+  `Rggml_cont`, `Rggml_transpose`. Downstream packages can now assemble and
+  compute full transformer graphs (see Rllm's llama forward pass) without
+  linking GGML.
 - Added quantization C-callables (API version 4): `Rggml_quantize` wraps
   `ggml_quantize_chunk()` so downstream packages can encode f32 rows into any
   GGUF block format (the output is byte-compatible with GGUF tensor payloads),

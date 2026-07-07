@@ -27,8 +27,9 @@
 
 /* GGUF/Rfmalloc codec name -> GGML quantized type. Only the types GGML can use
  * as the quantized operand of mul_mat are mapped; anything else is declined so
- * Rfmalloc falls back to its own decode+BLAS path. */
-static int rllm_ggml_type_from_codec(const char *codec, enum ggml_type *out)
+ * Rfmalloc falls back to its own decode+BLAS path. (Non-static: rllm_graph.c
+ * extends it with the float storage types for weight tensors.) */
+int rllm_ggml_type_from_codec(const char *codec, enum ggml_type *out)
 {
     if (!codec) return -1;
     if      (!strcmp(codec, "q4_0")) *out = GGML_TYPE_Q4_0;
