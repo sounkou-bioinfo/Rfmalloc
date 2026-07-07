@@ -12,6 +12,8 @@ exceed physical RAM.
 
 ``` r
 fmalloc_matmul_ooc(A, x, tile_mb = 256)
+
+fmalloc_crossprod_ooc(A, tile_mb = 256)
 ```
 
 ## Arguments
