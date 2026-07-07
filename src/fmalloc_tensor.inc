@@ -347,6 +347,16 @@ extern "C" SEXP rfm_tensor_matmul_impl(SEXP payload, SEXP codec_name, SEXP dims_
     }
     (void)inner;
 
+    // Codec-aware backend: hand the raw compressed payload straight to the
+    // active backend (e.g. a GPU/quantized engine) so it can multiply without
+    // Rfmalloc decoding to f64. If it handles the product, we are done.
+    if (rfm_typed_gemm(src.codec->name, src.payload, src.payload_bytes,
+                       (int)src.nrow, (int)src.ncol, typed_on_left ? 1 : 0,
+                       REAL(dense), (int)dnrow, (int)dncol, out)) {
+        UNPROTECT(1);
+        return ans;
+    }
+
     R_xlen_t panel_cols = tensor_panel_cols(&src, panel_elems);
     std::vector<double> scratch((size_t)src.nrow * (size_t)panel_cols);
     const double one = 1.0, zero = 0.0;

@@ -466,6 +466,16 @@ The default is R's BLAS (itself user-swappable via `update-alternatives`,
 GPU or out-of-core-aware GEMM) through the `Rfmalloc_register_matmul_backend`
 C-callable; selection is Rfmalloc-scoped, so base R's `%*%` is unaffected.
 
+A backend can also register a **codec-aware** hook
+(`Rfmalloc_register_matmul_backend_ex`) that receives a compressed tensor's
+*raw codec payload* and multiplies it by a dense operand without Rfmalloc
+decoding to `f64` first — so a quantized/device engine can multiply the
+compressed data natively (an fmalloc-mmap'd `q4_k` payload is byte-compatible
+with a `ggml` Q4_K tensor). A typed backend may decline a codec, in which case
+Rfmalloc falls back to the panel-decode path. Together the codec and backend
+registries make the stack pluggable at both tiers — how bytes decode and what
+hardware multiplies.
+
 ```{r}
 fmalloc_matmul_backend()   # "blas" by default
 fmalloc_matmul_backends()  # names registered by other packages (none here)

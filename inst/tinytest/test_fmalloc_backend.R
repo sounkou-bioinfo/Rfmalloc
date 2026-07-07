@@ -48,4 +48,40 @@ message("Testing the pluggable matmul backend registry...")
     expect_equal(as.vector((A %*% B)[]), as.vector(ba %*% bb))
 })()
 
+(function() {
+    message("  Test 3: codec-aware typed backend consumes the raw payload")
+    invisible(.Call("rfm_register_test_typed_backend_impl"))
+    expect_true("test_typed_f32" %in% fmalloc_matmul_backends())
+
+    tmp <- tempfile(fileext = ".bin")
+    rt <- open_fmalloc(tmp, mode = "scratch", size_gb = 0.5)
+    on.exit({
+        fmalloc_matmul_backend("blas")
+        cleanup_fmalloc(rt); unlink(tmp)
+    }, add = TRUE)
+
+    # build an f32 typed tensor
+    v <- round(rnorm(200 * 40), 3)
+    bytes <- writeBin(as.numeric(v), raw(), size = 4L, endian = "little")
+    payload <- create_fmalloc_vector("raw", length(bytes), runtime = rt,
+                                     zero_initialize = FALSE)
+    payload[] <- bytes
+    ten <- create_fmalloc_tensor(payload, "f32", c(200L, 40L))
+    mf <- matrix(fmalloc_tensor_materialize(ten)[], 200, 40)  # f32-precision ref
+    b <- matrix(rnorm(40 * 3), 40, 3)
+    d <- matrix(rnorm(5 * 200), 5, 200)
+
+    # select the typed backend: it reads the raw f32 payload and returns 2x
+    fmalloc_matmul_backend("test_typed_f32")
+    expect_equal(as.vector((ten %*% b)[]), 2 * as.vector(mf %*% b))
+    expect_equal(as.vector((d %*% ten)[]), 2 * as.vector(d %*% mf))
+
+    # a codec the typed backend declines (alp) falls back to the exact panel path
+    ta <- as_fmalloc_tensor(matrix(round(runif(2048 * 5, 0, 2), 3), 2048, 5),
+                            dtype = "alp", runtime = rt)
+    mfa <- matrix(fmalloc_tensor_materialize(ta)[], 2048, 5)
+    ba <- matrix(rnorm(5 * 2), 5, 2)
+    expect_equal(as.vector((ta %*% ba)[]), as.vector(mfa %*% ba))  # exact, not 2x
+})()
+
 message("matmul backend tests completed")

@@ -10,7 +10,7 @@ extern "C" {
 #endif
 
 /*
- * Rfmalloc C-callable API, version 5.
+ * Rfmalloc C-callable API, version 6.
  *
  * These functions are resolved with R_GetCCallable(). Packages should import
  * Rfmalloc at runtime before calling them, for example by listing Rfmalloc in
@@ -71,6 +71,26 @@ typedef int (*Rfmalloc_gemm_fn)(const char *transa, const char *transb,
                                 double beta, double *C, int ldc);
 typedef int (*Rfmalloc_register_matmul_backend_fun)(const char *name,
                                                     Rfmalloc_gemm_fn fn);
+
+/*
+ * Codec-aware (typed) backend hook (API version 6). Multiply a compressed
+ * tensor by a dense double operand WITHOUT Rfmalloc decoding it to f64 first:
+ * the backend receives the raw codec payload (byte-identical to how the codec
+ * stored it — e.g. an fmalloc-mmap'd q4_k payload is a valid ggml Q4_K tensor)
+ * and the dims, so a device/quantized engine can do native quantized matmul.
+ * C = T x D when typed_on_left, else C = D x T. Return 0 if handled, non-zero
+ * to decline (Rfmalloc then decodes panels and uses the dense gemm path).
+ * Register with Rfmalloc_register_matmul_backend_ex (either fn may be NULL).
+ */
+typedef int (*Rfmalloc_typed_gemm_fn)(const char *codec,
+                                      const void *payload, size_t payload_bytes,
+                                      int tensor_nrow, int tensor_ncol,
+                                      int typed_on_left,
+                                      const double *dense, int dense_nrow, int dense_ncol,
+                                      double *C);
+typedef int (*Rfmalloc_register_matmul_backend_ex_fun)(const char *name,
+                                                       Rfmalloc_gemm_fn fn,
+                                                       Rfmalloc_typed_gemm_fn typed_fn);
 
 static inline Rfmalloc_api_version_fun Rfmalloc_api_version_ptr(void)
 {
@@ -268,6 +288,18 @@ static inline Rfmalloc_register_matmul_backend_fun Rfmalloc_register_matmul_back
 static inline int Rfmalloc_register_matmul_backend(const char *name, Rfmalloc_gemm_fn fn)
 {
     return Rfmalloc_register_matmul_backend_ptr()(name, fn);
+}
+
+static inline Rfmalloc_register_matmul_backend_ex_fun Rfmalloc_register_matmul_backend_ex_ptr(void)
+{
+    return (Rfmalloc_register_matmul_backend_ex_fun) R_GetCCallable("Rfmalloc", "Rfmalloc_register_matmul_backend_ex");
+}
+
+static inline int Rfmalloc_register_matmul_backend_ex(const char *name,
+                                                      Rfmalloc_gemm_fn fn,
+                                                      Rfmalloc_typed_gemm_fn typed_fn)
+{
+    return Rfmalloc_register_matmul_backend_ex_ptr()(name, fn, typed_fn);
 }
 
 #ifdef __cplusplus

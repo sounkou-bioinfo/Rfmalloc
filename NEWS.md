@@ -60,6 +60,13 @@
   resident set stays bounded by the tile budget. Demonstrated on a 62.6 GB
   matrix (equal to total RAM): peak resident memory 0.31 GB during the gemv,
   result exact vs the analytic reference.
+- Extended the backend registry with a codec-aware *typed* hook (C API v6,
+  `Rfmalloc_register_matmul_backend_ex`): a backend can register a
+  `typed_gemm` that receives a compressed tensor's raw codec payload and dims
+  and multiplies it by a dense operand *without* Rfmalloc decoding to f64 —
+  enabling native quantized/on-device matmul (e.g. an fmalloc-mmap'd `q4_k`
+  payload is byte-compatible with a ggml Q4_K tensor). A typed backend may
+  decline a codec, in which case Rfmalloc falls back to the panel-decode path.
 - Added a pluggable matrix-multiply backend registry: the matrix-product
   kernels (`%*%`, `crossprod()`, `tcrossprod()`, the out-of-core and
   typed-tensor products) dispatch their `dgemm` through a selectable backend.
