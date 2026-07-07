@@ -31,6 +31,15 @@ dynamic string library used only by the gguf-tools command-line utility,
 gguf-tools.c). Rgguf's C code never calls into gguf-tools.c, and gguflib.c
 itself does not include sds.h, so these files are not needed here.
 
+Local modifications to the vendored gguflib.c (beyond R-integration glue):
+- gguf_q4_k_to_float(): fixed a Q4_K dequantization bug present upstream -
+  the high-nibble half of each 64-weight group used the previous sub-block's
+  scale/min instead of its own (GGML's reference dequantize_row_q4_K uses
+  scale index is+0 for the low nibbles and is+1 for the high nibbles). The
+  fix is marked with a comment at the site; a regression test
+  (inst/tinytest/test_gguf_codec_ggml_ref.R) pins all quantized decoders to
+  GGML's reference output.
+
 Verbatim upstream LICENSE text (from the gguf-tools repository root):
 
     MIT License

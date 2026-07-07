@@ -620,35 +620,37 @@ void gguf_q4_k_to_float(void *weights_data, void *dst, uint64_t count, store_flo
         block += 12; // Seek 4-bit weights start.
 
         /* Finally we can extract the 256 weights.
-         * We process two blocks per time, because each
+         * We process two sub-blocks per time, because each
          * 32 bytes have 64 weights stored like this:
-         * First 32 weights of the first block are the higher 4
-         * bits of each byte. Second 32 weights of the second
-         * block are lower 4 bits of each byte. */
+         * The 32 weights of sub-block 'b' are the lower 4 bits
+         * of each byte; the 32 weights of sub-block 'b+1' are the
+         * higher 4 bits of each byte. Each sub-block has its own
+         * scale/min (this matches ggml's dequantize_row_q4_K, which
+         * uses scale is+0 for the low nibbles and is+1 for the high
+         * nibbles - using sub-block b's scale for both halves is the
+         * upstream gguf-tools bug fixed here). */
         for (uint32_t b = 0; b < 8; b += 2) {
-            float scale = scales[b];
-            float min = mins[b];
-            /* First set: higher bits. */
+            /* First set: lower bits, sub-block b. */
             for (uint32_t j = 0; j < 32; j++) {
                 uint8_t w = block[j] & 0xf;
-                float weight = w * scale - min;
+                float weight = w * scales[b] - mins[b];
                 if (store_callback)
                     store_callback(dst,i,weight);
                 else
                     f[i] = weight;
                 if (++i == count) return;
             }
-            /* Second set: lower bits. */
+            /* Second set: higher bits, sub-block b+1. */
             for (uint32_t j = 0; j < 32; j++) {
                 uint8_t w = block[j] >> 4;
-                float weight = w * scale - min;
+                float weight = w * scales[b+1] - mins[b+1];
                 if (store_callback)
                     store_callback(dst,i,weight);
                 else
                     f[i] = weight;
                 if (++i == count) return;
             }
-            block += 32; // Skip the two processed blocks.
+            block += 32; // Skip the two processed sub-blocks.
         }
     }
 }

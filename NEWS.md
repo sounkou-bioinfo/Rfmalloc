@@ -1,5 +1,17 @@
 # Rgguf 0.1.0 (unreleased)
 
+- **Fixed a Q4_K dequantization bug inherited from upstream gguf-tools**: in
+  `gguf_q4_k_to_float()`, the high-nibble half of every 64-weight group (the
+  odd sub-blocks 1, 3, 5, 7 of each super-block) was dequantized with the
+  *previous* sub-block's scale/min, making `q4_k` decodes ~33% wrong in
+  relative Frobenius norm (GGML's reference uses scale `is+0` for the low
+  nibbles and `is+1` for the high nibbles). Since `Q4_K_M` is the most common
+  real-model quantization, this affected `gguf_tensor(as = "numeric")` and
+  `fmalloc_tensor_materialize()` for typical GGUF files. All six registered
+  quantized codecs (`q4_0`, `q4_1`, `q8_0`, `q2_k`, `q4_k`, `q6_k`) now decode
+  **bit-identically** to GGML's own type-traits `to_float` reference, verified
+  by a new regression test (`test_gguf_codec_ggml_ref.R`) against a committed
+  fixture of GGML-quantized payloads and their GGML-decoded expected values.
 - Added native typed imports: `gguf_tensor(as = "native")` (and
   `gguf_import(as = "native")`) copy a 2-d tensor's raw GGUF payload into
   fmalloc storage at its original density (e.g. 4.5 bits/weight for `q4_k`)
