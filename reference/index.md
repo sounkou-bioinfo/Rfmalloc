@@ -39,6 +39,9 @@
 - [`fmalloc_matmul_backend()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_backend.md)
   [`fmalloc_matmul_backends()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_backend.md)
   : Pluggable matrix-multiply backend
+- [`fmalloc_colVars()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_colVars.md)
+  [`fmalloc_rowVars()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_colVars.md)
+  : Column / row variances of an fmalloc matrix
 - [`fmalloc_set()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_insitu.md)
   [`fmalloc_fill()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_insitu.md)
   [`fmalloc_add()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_insitu.md)
@@ -55,6 +58,8 @@
   [`fmalloc_crossprod_ooc()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_matmul_ooc.md)
   [`fmalloc_tcrossprod_ooc()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_matmul_ooc.md)
   : Out-of-core matrix product for fmalloc matrices larger than RAM
+- [`fmalloc_pca()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_pca.md)
+  : Out-of-core PCA / truncated SVD for fmalloc matrices
 - [`rowSums()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md)
   [`colSums()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md)
   [`rowMeans()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md)

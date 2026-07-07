@@ -64,6 +64,11 @@ with fmalloc payload storage.
 
   Select a pluggable matrix-multiply backend (default R's BLAS).
 
+- [`fmalloc_pca`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_pca.md):
+
+  Out-of-core PCA and variance reductions for genomics (single-cell)
+  workflows.
+
 - [`list_fmalloc_allocations`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/list_fmalloc_allocations.md):
 
   List persistent allocation catalog records.
