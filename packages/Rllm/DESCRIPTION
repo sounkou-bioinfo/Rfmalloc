@@ -1,0 +1,38 @@
+Package: Rllm
+Title: Native Quantized Matrix Products and LLM Inference over 'Rfmalloc' Tensors
+Version: 0.1.0
+Authors@R:
+    person(given = "Sounkou Mahamane", family = "Toure",
+           email = "sounkoutoure@gmail.com", role = c("aut", "cre"))
+Description: The composition layer of the 'Rfmalloc' ecosystem: it registers
+    'Rggml' (a vendored 'GGML' build with runtime-SIMD-dispatched quantized
+    kernels) as a codec-aware matrix-multiply backend for 'Rfmalloc', so that
+    products of file-backed, quantized tensors run natively in quantized space
+    (weights stay 'Q4_K'/'Q6_K'/... encoded, activations are quantized on the
+    fly) instead of being decoded to double first. Combined with 'Rgguf', which
+    exposes 'GGUF' model weights as 'Rfmalloc'-backed tensors, this lets a
+    larger-than-memory model's linear layers be multiplied through 'GGML's
+    SIMD-accelerated dot kernels zero-copy from the memory-mapped payload. A
+    transformer forward-pass graph builder over these primitives is planned.
+License: GPL (>= 2)
+Encoding: UTF-8
+Imports:
+    Rfmalloc,
+    Rgguf,
+    Rggml
+LinkingTo:
+    Rfmalloc,
+    Rggml
+Suggests:
+    tinytest
+Remotes:
+    sounkou-bioinfo/Rfmalloc,
+    sounkou-bioinfo/Rgguf,
+    sounkou-bioinfo/Rggml
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+OS_type: unix
+Depends:
+    R (>= 4.4.0)
+URL: https://github.com/sounkou-bioinfo/Rllm
+BugReports: https://github.com/sounkou-bioinfo/Rllm/issues
