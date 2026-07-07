@@ -52,7 +52,19 @@ CXX_SOURCES = \
   ggml-cpu/binary-ops.cpp ggml-cpu/unary-ops.cpp ggml-cpu/ops-private.cpp \
   ggml-blas.cpp
 
-OBJECTS = $(C_SOURCES:.c=.o) $(CXX_SOURCES:.cpp=.o) rggml_io.o rggml_cblas.o
+# SIMD runtime dispatch (RsimdDispatch strategy): cpu_features (CPUID detect)
+# and the dispatcher are always built; per-ISA kernel variants
+# ($(SIMD_EXTRA_OBJECTS), e.g. rggml_q4k_avx2.o) are staged conditionally by
+# ../../configure after it probes toolchain ISA support. SIMD_DISPATCH_DEFS
+# tells the dispatcher which staged variants exist (e.g. -DRGGML_HAVE_AVX2).
+# The ISA flags live here/in configure, never in R's recorded package flags,
+# so R CMD check raises no "non-portable flags" NOTE.
+SIMD_DIR = ../../tools/simd
+SIMD_EXTRA_OBJECTS ?=
+SIMD_DISPATCH_DEFS ?=
+
+OBJECTS = $(C_SOURCES:.c=.o) $(CXX_SOURCES:.cpp=.o) rggml_io.o rggml_cblas.o \
+          cpu_features.o rggml_simd_dispatch.o $(SIMD_EXTRA_OBJECTS)
 
 .PHONY: all clean
 
@@ -75,6 +87,30 @@ rggml_io.o: rggml_io.c
 # redirections, so it is built with a plain flag set (INCLUDES gives it cblas.h).
 rggml_cblas.o: rggml_cblas.c
 	$(CC) $(CPPFLAGS) $(INCLUDES) $(R_INCLUDE_FLAGS) $(CFLAGS) -c $< -o $@
+
+# --- SIMD runtime dispatch (sources under ../../tools/simd) ------------------
+# cpu_features.c: pure CPUID/runtime detection, no GGML or R dependencies.
+cpu_features.o: $(SIMD_DIR)/cpu_features.c
+	$(CC) $(CPPFLAGS) -I$(SIMD_DIR) $(CFLAGS) -c $< -o $@
+
+# The dispatcher owns the canonical ggml_vec_dot_* symbols and forwards to the
+# scalar generic or a staged ISA variant. SIMD_DISPATCH_DEFS (set by configure)
+# is -DRGGML_HAVE_* for each staged variant.
+rggml_simd_dispatch.o: $(SIMD_DIR)/rggml_simd_dispatch.c
+	$(CC) $(CPPFLAGS) -I$(SIMD_DIR) $(SIMD_DISPATCH_DEFS) $(CFLAGS) -c $< -o $@
+
+# AVX2 variant of the q4_K x q8_K dot (needs the GGML includes/defines). Built
+# only when configure staged it; -mavx2 -mfma -O3 auto-vectorizes the loops.
+rggml_q4k_avx2.o: $(SIMD_DIR)/vec_dot_q4_K.c
+	$(CC) $(ALL_CFLAGS) -DRGGML_Q4K_DOT_FN=rggml_vec_dot_q4_K_q8_K_avx2 \
+	    -mavx2 -mfma -O3 -funroll-loops -c $< -o $@
+
+# NEON variant of the q4_K x q8_K dot. NEON is a mandatory baseline on aarch64,
+# so no ISA flag is needed - just -O3 to auto-vectorize better than the -O2
+# GGML_CPU_GENERIC scalar build.
+rggml_q4k_neon.o: $(SIMD_DIR)/vec_dot_q4_K.c
+	$(CC) $(ALL_CFLAGS) -DRGGML_Q4K_DOT_FN=rggml_vec_dot_q4_K_q8_K_neon \
+	    -O3 -funroll-loops -c $< -o $@
 
 %.o: %.c
 	$(CC) $(ALL_CFLAGS) -c $< -o $@

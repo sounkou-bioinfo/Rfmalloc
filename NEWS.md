@@ -18,6 +18,17 @@
   into a caller-provided `float*`/`double*` buffer), and type/size
   introspection (`Rggml_type_size`, `Rggml_row_size`, `Rggml_blck_size`,
   `Rggml_nbytes`, `Rggml_nelements`, `Rggml_type_name`).
+- Added **runtime SIMD dispatch** for GGML's hot quantized vec-dot kernels,
+  starting with `q4_K x q8_K`. `configure` compiles the kernel into
+  ISA-specific variants (`-mavx2 -mfma -O3` on x86 incl. Intel macOS; `-O3`
+  NEON on aarch64 incl. Apple Silicon) staged under `tools/simd/`, and a CPUID
+  dispatcher (`tools/simd/rggml_simd_dispatch.c`, using a vendored copy of
+  RsimdDispatch's `cpu_features`) selects the best at runtime, falling back to
+  GGML's scalar reference. The ISA flags live in `configure`, not in R's
+  recorded package flags, so R CMD check raises no non-portable-flags NOTE; a
+  variant is only called after its ISA is confirmed at runtime (single `.so`,
+  no `dlopen`, unlike GGML's own `GGML_CPU_ALL_VARIANTS`). The AVX2 q4_K dot
+  measures ~6-7x faster than the scalar reference on x86.
 - Enabled GGML's **BLAS backend** (`Rggml_backend_blas_init`,
   `Rggml_backend_blas_set_n_threads`): dense F32 `mul_mat` offloads to
   whatever BLAS the R build links against, since BLAS is universal in R.

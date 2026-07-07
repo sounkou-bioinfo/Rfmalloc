@@ -51,9 +51,22 @@ bridges the gap with a small portable shim (`inst/ggml/cblas.h` +
 `rggml_cblas.c`) that forwards `cblas_sgemm` to Fortran `sgemm_` via R's
 `F77_NAME()` convention, linking `$(BLAS_LIBS) $(FLIBS)`.
 
-Runtime-SIMD-dispatched quantized kernels (the ggml `GGML_CPU_ALL_VARIANTS`
-path, à la [RsimdDispatch](https://github.com/sounkou-bioinfo/RsimdDispatch))
-are the next planned step for the dequant-dot path that BLAS cannot cover.
+And the quantized dequant-dot path that BLAS cannot cover is **not** scalar
+either: the hot `q4_K x q8_K` vec-dot is compiled by `configure` into
+ISA-specific variants — `-mavx2 -mfma -O3` on x86 (including Intel macOS) and
+`-O3` NEON on aarch64 (Apple Silicon, ARM Linux/Graviton, Windows-on-ARM) —
+and a CPUID dispatcher (`tools/simd/`) picks the best at runtime, falling back
+to GGML's scalar reference. This follows the
+[RsimdDispatch](https://github.com/sounkou-bioinfo/RsimdDispatch) strategy:
+the ISA flags live in `configure`, never in R's recorded package flags, so
+R CMD check raises no "non-portable flags" NOTE, and a variant is only ever
+called after its ISA is confirmed at runtime (single `.so`, no `dlopen`). On
+x86 the AVX2 q4_K dot measures ~6–7x faster than the scalar reference. More
+kernels (`q6_K`, `q8_0`) and hand-tuned intrinsics are the next steps.
+
+(GGML's own `GGML_CPU_ALL_VARIANTS` is deliberately *not* used: it requires
+`GGML_BACKEND_DL` + separate per-variant shared libraries loaded via `dlopen`,
+which does not fit a single-`.so` CRAN package.)
 
 The GGML sources were vendored via an existing R package,
 [`ggmlR`](https://github.com/Zabis13/ggmlR), which already carries the

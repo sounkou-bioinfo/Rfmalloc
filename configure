@@ -62,8 +62,39 @@ export CPPFLAGS="$R_CPPFLAGS"
 # with R_GGML_IO_IMPL, which the Makefile pairs with this extra include path.
 export R_INCLUDE_FLAGS
 
+# --- Probe runtime-dispatched SIMD variants (RsimdDispatch strategy) ---------
+# Per-ISA kernels are compiled here with their own ISA flags, NOT through R's
+# recorded package compilation, so R CMD check raises no non-portable-flags
+# NOTE. A variant is only linked (and, after a runtime CPUID check, only ever
+# called) when the toolchain accepts its flags - so e.g. -mavx2 is skipped on
+# arm64/macOS, which then falls back to GGML's scalar reference.
+SIMD_EXTRA_OBJECTS=""
+SIMD_DISPATCH_DEFS=""
+_probe_base=`mktemp 2>/dev/null || echo "/tmp/rggml_probe_$$"`
+_probe_c="${_probe_base}.c"
+printf 'int main(void){return 0;}\n' > "$_probe_c"
+# x86 (incl. Intel macOS, still a CRAN/r-universe target): stage the AVX2
+# variant if the toolchain accepts the flags; a runtime CPUID check gates it.
+if $CC -mavx2 -mfma "$_probe_c" -o "${_probe_c}.out" >/dev/null 2>&1; then
+    echo "SIMD: AVX2 supported - staging AVX2 q4_K kernel variant"
+    SIMD_EXTRA_OBJECTS="$SIMD_EXTRA_OBJECTS rggml_q4k_avx2.o"
+    SIMD_DISPATCH_DEFS="$SIMD_DISPATCH_DEFS -DRGGML_HAVE_AVX2"
+fi
+# aarch64 (Apple Silicon macOS, ARM Linux/Graviton, Windows-on-ARM): NEON is a
+# mandatory baseline, so stage a -O3 NEON variant whenever the target is
+# aarch64 (no ISA flag or CPUID gate is needed for NEON there).
+if $CC -dM -E -x c "$_probe_c" 2>/dev/null | grep -q '__aarch64__\|_M_ARM64'; then
+    echo "SIMD: aarch64 (NEON baseline) - staging NEON q4_K kernel variant"
+    SIMD_EXTRA_OBJECTS="$SIMD_EXTRA_OBJECTS rggml_q4k_neon.o"
+    SIMD_DISPATCH_DEFS="$SIMD_DISPATCH_DEFS -DRGGML_HAVE_NEON"
+fi
+if [ -z "$SIMD_EXTRA_OBJECTS" ]; then
+    echo "SIMD: no staged variant for this toolchain - q4_K uses the scalar reference"
+fi
+rm -f "$_probe_base" "$_probe_c" "${_probe_c}.out"
+
 make clean >/dev/null 2>&1 || true
-if make; then
+if make SIMD_EXTRA_OBJECTS="$SIMD_EXTRA_OBJECTS" SIMD_DISPATCH_DEFS="$SIMD_DISPATCH_DEFS"; then
     echo "libggml.a built successfully"
 else
     echo "Error: failed to build libggml.a"

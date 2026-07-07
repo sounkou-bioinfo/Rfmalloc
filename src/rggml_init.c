@@ -14,10 +14,14 @@
 
 SEXP RC_rggml_version(void);
 SEXP RC_rggml_test_mul_mat(SEXP A_sexp, SEXP B_sexp, SEXP zero_copy_sexp, SEXP use_blas_sexp);
+SEXP RC_rggml_test_q4k_dot(SEXP nblocks_sexp);
+SEXP RC_rggml_bench_q4k_dot(SEXP nblocks_sexp, SEXP iters_sexp);
 
 static const R_CallMethodDef CallEntries[] = {
     {"RC_rggml_version",       (DL_FUNC) &RC_rggml_version,       0},
     {"RC_rggml_test_mul_mat",  (DL_FUNC) &RC_rggml_test_mul_mat,  4},
+    {"RC_rggml_test_q4k_dot",  (DL_FUNC) &RC_rggml_test_q4k_dot,  1},
+    {"RC_rggml_bench_q4k_dot", (DL_FUNC) &RC_rggml_bench_q4k_dot, 2},
     {NULL, NULL, 0}
 };
 

@@ -8,6 +8,8 @@
  */
 
 #include <stdlib.h>
+#include <stdint.h>
+#include <time.h>
 
 #include <R.h>
 #include <Rinternals.h>
@@ -19,6 +21,131 @@ SEXP RC_rggml_version(void)
     Rggml_version_fun version_fn = Rggml_version_ptr();
     if (!version_fn) Rf_error("Rggml_version C-callable not registered");
     return Rf_mkString(version_fn());
+}
+
+/*
+ * RC_rggml_test_q4k_dot(nblocks)
+ *
+ * Exercises the runtime-SIMD-dispatched q4_K x q8_K dot product. Builds
+ * deterministic inputs of length nblocks*256, quantizes them to Q4_K and Q8_K
+ * with GGML's own quantizers, then calls both the canonical (dispatched, i.e.
+ * AVX2/NEON where staged) ggml_vec_dot_q4_K_q8_K and GGML's scalar reference
+ * ggml_vec_dot_q4_K_q8_K_generic on identical bytes. Returns c(dispatched,
+ * scalar); the tinytest asserts they agree, proving the staged ISA variant is
+ * correct. These are GGML-internal symbols (not C-callables); this test file
+ * is part of the package and links libggml.a directly, so it declares them.
+ */
+extern void quantize_row_q8_K(const float *x, void *y, int64_t k);
+extern void ggml_vec_dot_q4_K_q8_K(int n, float *s, size_t bs,
+        const void *vx, size_t bx, const void *vy, size_t by, int nrc);
+extern void ggml_vec_dot_q4_K_q8_K_generic(int n, float *s, size_t bs,
+        const void *vx, size_t bx, const void *vy, size_t by, int nrc);
+
+SEXP RC_rggml_test_q4k_dot(SEXP nblocks_sexp)
+{
+    int nb = Rf_asInteger(nblocks_sexp);
+    if (nb < 1) nb = 1;
+    const int QKK = 256;
+    int n = nb * QKK;
+
+    /* Initializing the CPU backend runs ggml_cpu_init(), which populates the
+     * fp16->fp32 lookup table the q4_K dot uses to read block scales. Without
+     * it those scales read as 0 and the dot is (silently) 0. */
+    Rggml_backend_cpu_init_fun backend_init = Rggml_backend_cpu_init_ptr();
+    Rggml_backend_free_fun     backend_free = Rggml_backend_free_ptr();
+    ggml_backend_t cpu = backend_init ? backend_init() : NULL;
+
+    /* Deterministic pseudo-random inputs (LCG), no RNG-state dependency. */
+    float *x = (float *) R_alloc((size_t) n, sizeof(float));
+    float *y = (float *) R_alloc((size_t) n, sizeof(float));
+    uint32_t st = 0x9e3779b9u;
+    for (int i = 0; i < n; i++) {
+        st = st * 1664525u + 1013904223u;
+        x[i] = (float) ((int32_t) (st >> 8) / 8388608.0 - 1.0);   /* ~[-1,1) */
+        st = st * 1664525u + 1013904223u;
+        y[i] = (float) ((int32_t) (st >> 8) / 8388608.0 - 1.0);
+    }
+
+    size_t xb = ggml_row_size(GGML_TYPE_Q4_K, n);
+    size_t yb = ggml_row_size(GGML_TYPE_Q8_K, n);
+    void *qx = (void *) R_alloc(xb, 1);
+    void *qy = (void *) R_alloc(yb, 1);
+
+    ggml_quantize_chunk(GGML_TYPE_Q4_K, x, qx, 0, 1, n, NULL);
+    quantize_row_q8_K(y, qy, n);
+
+    float s_disp = 0.0f, s_gen = 0.0f;
+    ggml_vec_dot_q4_K_q8_K(n, &s_disp, 0, qx, 0, qy, 0, 1);
+    ggml_vec_dot_q4_K_q8_K_generic(n, &s_gen, 0, qx, 0, qy, 0, 1);
+
+    if (cpu && backend_free) backend_free(cpu);
+
+    SEXP out = PROTECT(Rf_allocVector(REALSXP, 2));
+    REAL(out)[0] = (double) s_disp;
+    REAL(out)[1] = (double) s_gen;
+    UNPROTECT(1);
+    return out;
+}
+
+/*
+ * RC_rggml_bench_q4k_dot(nblocks, iters) - time the dispatched (staged ISA)
+ * q4_K dot against GGML's scalar reference over `iters` repetitions on the
+ * same quantized inputs. Returns c(dispatched_sec, scalar_sec). Not a
+ * regression test (timings are machine-dependent); a helper to report the
+ * SIMD speedup.
+ */
+static double rggml_now_sec(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double) ts.tv_sec + (double) ts.tv_nsec * 1e-9;
+}
+
+SEXP RC_rggml_bench_q4k_dot(SEXP nblocks_sexp, SEXP iters_sexp)
+{
+    int nb = Rf_asInteger(nblocks_sexp);
+    if (nb < 1) nb = 1;
+    int iters = Rf_asInteger(iters_sexp);
+    if (iters < 1) iters = 1;
+    const int QKK = 256;
+    int n = nb * QKK;
+
+    Rggml_backend_cpu_init_fun backend_init = Rggml_backend_cpu_init_ptr();
+    Rggml_backend_free_fun     backend_free = Rggml_backend_free_ptr();
+    ggml_backend_t cpu = backend_init ? backend_init() : NULL;
+
+    float *x = (float *) R_alloc((size_t) n, sizeof(float));
+    float *y = (float *) R_alloc((size_t) n, sizeof(float));
+    uint32_t st = 0x9e3779b9u;
+    for (int i = 0; i < n; i++) {
+        st = st * 1664525u + 1013904223u;
+        x[i] = (float) ((int32_t) (st >> 8) / 8388608.0 - 1.0);
+        st = st * 1664525u + 1013904223u;
+        y[i] = (float) ((int32_t) (st >> 8) / 8388608.0 - 1.0);
+    }
+    void *qx = (void *) R_alloc(ggml_row_size(GGML_TYPE_Q4_K, n), 1);
+    void *qy = (void *) R_alloc(ggml_row_size(GGML_TYPE_Q8_K, n), 1);
+    ggml_quantize_chunk(GGML_TYPE_Q4_K, x, qx, 0, 1, n, NULL);
+    quantize_row_q8_K(y, qy, n);
+
+    volatile float sink = 0.0f;
+    float s;
+    double t0 = rggml_now_sec();
+    for (int it = 0; it < iters; it++) { ggml_vec_dot_q4_K_q8_K(n, &s, 0, qx, 0, qy, 0, 1); sink += s; }
+    double t_disp = rggml_now_sec() - t0;
+
+    t0 = rggml_now_sec();
+    for (int it = 0; it < iters; it++) { ggml_vec_dot_q4_K_q8_K_generic(n, &s, 0, qx, 0, qy, 0, 1); sink += s; }
+    double t_gen = rggml_now_sec() - t0;
+
+    if (cpu && backend_free) backend_free(cpu);
+
+    SEXP out = PROTECT(Rf_allocVector(REALSXP, 2));
+    REAL(out)[0] = t_disp;
+    REAL(out)[1] = t_gen;
+    UNPROTECT(1);
+    (void) sink;
+    return out;
 }
 
 /*

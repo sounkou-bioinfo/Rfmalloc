@@ -118,14 +118,28 @@ F77_NAME() convention (the final Rggml.so links $(BLAS_LIBS) $(FLIBS)).
 These two files are Rggml's own original code, not derived from GGML or
 ggmlR, and are GPL (>= 2) like the rest of Rggml.
 
+Runtime SIMD dispatch (tools/simd/)
+------------------------------------
+tools/simd/cpu_features.c and cpu_features.h are copied from the R package
+'RsimdDispatch' (https://github.com/sounkou-bioinfo/RsimdDispatch, GPL (>= 2),
+by the same author as Rggml). They provide runtime CPUID/ISA detection used by
+Rggml's SIMD dispatcher. tools/simd/rggml_simd_dispatch.c (the dispatcher) and
+tools/simd/vec_dot_q4_K.c (a copy of GGML's ggml_vec_dot_q4_K_q8_K_generic body
+from ggml-cpu/quants.c, compiled by configure with per-ISA flags into staged
+variants) are Rggml's own code, GPL (>= 2). The vec_dot_q4_K.c body is a
+verbatim derivative of GGML (MIT) and is kept in sync with quants.c.
+
 Licensing
 ----------
 - GGML itself (Georgi Gerganov and contributors): MIT.
 - ggmlR (Yuri Baramykov), including its CRAN-compliance I/O shim and its
   splitting of ggml.c/ops.cpp into multiple translation units: MIT.
+- RsimdDispatch (same author), incl. tools/simd/cpu_features.{c,h} copied
+  from it: GPL (>= 2).
 - Rggml's own code (src/rggml_api.c, src/rggml_api.h, src/rggml_init.c,
   src/rggml_test.c, inst/include/Rggml.h, inst/ggml/cblas.h,
-  inst/ggml/rggml_cblas.c, all R/ code): GPL (>= 2), as declared in
+  inst/ggml/rggml_cblas.c, tools/simd/rggml_simd_dispatch.c,
+  tools/simd/vec_dot_q4_K.c, all R/ code): GPL (>= 2), as declared in
   DESCRIPTION.
 
 The vendored MIT-licensed components remain under their upstream license,
