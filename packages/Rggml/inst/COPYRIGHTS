@@ -23,6 +23,20 @@ itself does not preserve the exact upstream ggml-org/ggml commit hash.
 Rggml's own C-callable API version (separate from the GGML library
 version) is tracked by RGGML_API_VERSION in src/rggml_api.h.
 
+Version & update policy
+-----------------------
+The vendored core is GGML v0.9.5; upstream ggml-org/ggml's latest tag is
+v0.9.11 (a small patch gap). GGML is refreshed deliberately, not
+continuously, because ggmlR is unmaintained (a single ggmlR_0.1.0 release)
+and a re-vendor means re-applying the CRAN-compliance shim and re-validating
+the SIMD dispatch, BLAS backend, and all C-callables against a green tree.
+The next refresh is folded into the CUDA-backend work rather than done as a
+standalone bump: the ggml-cuda sources must version-match the core, and the
+result is only testable on real NVIDIA hardware, so bundling the two is both
+cheaper and lower-risk. At that point GGML will be vendored directly from
+ggml-org (or llama.cpp's in-tree ggml) at a pinned recent version, dropping
+the ggmlR indirection while preserving the stdio/abort shim documented below.
+
 ggmlR itself also splits GGML's monolithic ggml.c and ggml-cpu/ops.cpp
 into several smaller translation units compiled together as a single unit
 (ggml-core.c/ggml-context.c/ggml-ops-builders.c/ggml-graph.c/ggml-misc.c,

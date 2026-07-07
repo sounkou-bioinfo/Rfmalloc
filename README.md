@@ -17,8 +17,8 @@ closes over:
 
 - a **codec registry** — how bytes are stored: lossless (`f64` `f32`
   `f16` `bf16` `alp` `sparse`) for scientific data where bit-exactness
-  is non-negotiable, and lossy GGUF quantized blocks (`q4_0` `q4_1`
-  `q8_0` `q2_k` `q4_k` `q6_k`) for model weights at 2–8 bits each;
+  is non-negotiable, and lossy GGUF quantized blocks (`q4_0` … `q6_k`)
+  for model weights at 2–8 bits each;
 - a **matmul backend registry** — how products are computed: R’s BLAS by
   default, [GGML](https://github.com/ggml-org/ggml) natively in
   quantized space, GPU backends next.
@@ -28,44 +28,92 @@ backend may refuse any product, and the substrate falls back to bounded
 decode panels + BLAS. Plugins change how fast you get an answer, never
 whether it is correct.
 
+## Two domains, one substrate
+
+The same file-backed matrices and the same backend registry serve both
+larger-than-RAM **scientific computing** and quantized **LLM inference**
+— the whole point of the abstraction. Both examples below are
+`%*%`/`crossprod` over fmalloc tensors; the only thing that differs is
+which codec and backend the registry dispatches to.
+
+### Genomics: out-of-core PCA (runs at render time)
+
+A cells × genes expression matrix lives in a memory-mapped file, so it
+scales past RAM (products stream in panels). Highly-variable-gene
+selection and PCA never materialize an ordinary R copy, and the linear
+algebra goes through the backend registry:
+
+``` r
+library(Rfmalloc)
+
+rt <- open_fmalloc(tempfile(fileext = ".bin"), size_gb = 1)
+set.seed(1)
+# 3000 cells x 600 genes with 4 latent "cell-type" factors + noise; file-backed
+factors  <- matrix(rnorm(3000 * 4), 3000, 4)          # per-cell factor scores
+loadings <- matrix(rnorm(4 * 600), 4, 600)            # per-gene factor loadings
+X <- create_fmalloc_matrix("numeric", nrow = 3000, ncol = 600, runtime = rt)
+X[] <- 3 * (factors %*% loadings) + matrix(rnorm(3000 * 600), 3000, 600)
+
+vars <- fmalloc_colVars(X)          # per-gene variance, single-pass reduction (no R copy)
+length(which(vars > quantile(vars, 0.9)))   # candidate highly-variable genes
+#> [1] 60
+
+pca <- fmalloc_pca(X, k = 6)        # Gram matrix + scores, dispatched through the backend registry
+round(pca$sdev, 2)                  # 4 factors stand out above the noise floor
+#> [1] 77.74 74.67 72.43 66.61  1.44  1.44
+dim(pca$x)                          # cell scores in the top PC space
+#> [1] 3000    6
+```
+
+### LLM: bytes in, bytes out
+
+A GGUF model’s weights are memory-mapped and stay quantized; the
+transformer runs through GGML’s SIMD kernels with a KV cache, and the
+I/O boundary is raw bytes (the tokenizer is an edge codec built from
+GGUF metadata — text is the caller’s interpretation, `rawToChar()`):
+
+``` r
+library(Rllm)
+model <- rllm_gguf_model("SmolLM2-135M.Q4_K_M.gguf")   # weights mmap'd, still q4_k/q5_0/...
+gen <- rllm_generate(model, charToRaw(
+    "The capital of France is Paris. The capital of Germany is"), n_new = 16L)
+rawToChar(gen$raw)
+#> [1] " Berlin. The capital of Italy is Rome. The capital of Spain is Madrid."
+```
+
+That is a real recorded run (SmolLM2-135M `Q4_K_M`, 30 layers,
+grouped-query attention): ~16 tokens/s CPU decode with the KV cache,
+8.5× over cache-less re-forwards, and — checked against a pure-R
+reference forward — numerically exact to the quantization.
+
+## Compute backends: today and next
+
+Because both PCA and inference dispatch their products through the
+**one** backend registry, a faster backend accelerates both at once,
+with no change to `fmalloc_pca()` or `rllm_generate()`:
+
+- **today** — R’s BLAS for dense products; GGML’s
+  runtime-SIMD-dispatched quantized kernels (AVX2 on x86, NEON on
+  aarch64, CPUID-selected — no non-portable flags) for quantized
+  weights; both out-of-core.
+- **next: CUDA.** GGML’s CUDA backend will be compiled into `Rggml` when
+  `configure` autodetects `nvcc` (the same opt-in pattern as the BLAS
+  backend: no `nvcc` → nothing changes, CRAN/CI unaffected) and
+  registered as a matmul backend. Then `fmalloc_matmul_backend("cuda")`
+  makes the identical `fmalloc_pca(X)` and `rllm_generate(model, …)` run
+  their GEMMs on the GPU. The target is validated at the GGML level: the
+  same SmolLM2 `Q4_K_M` decodes at **~455 tok/s (~28× this CPU stack)**
+  on an RTX 5050 (compute capability 12.0) via upstream GGML CUDA.
+  Vulkan stays on the roadmap for non-NVIDIA GPUs.
+
 ## The packages
 
-| package                                  | role                                                                                                                                                                                 |
-|------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [`packages/Rfmalloc`](packages/Rfmalloc) | the substrate: file-backed ALTREP vectors/matrices/tensors, codec + backend registries, panel matmul, out-of-core eviction, PCA/rowVars for genomics-scale matrices                  |
-| [`packages/Rgguf`](packages/Rgguf)       | GGUF model files: metadata, tensor directory, dequantized or **native (still-quantized)** imports into fmalloc storage                                                               |
-| [`packages/Rggml`](packages/Rggml)       | compute carrier: vendored GGML with a BLAS backend (R’s own BLAS via a `cblas`→Fortran shim) and runtime-SIMD-dispatched quantized kernels (AVX2/NEON, no non-portable-flags NOTE)   |
-| [`packages/Rllm`](packages/Rllm)         | the composition layer: registers Rggml as Rfmalloc’s codec-aware matmul backend, so `dense %*% quantized_tensor` runs natively in quantized space, zero-copy from the mmap’d payload |
-
-The whole stack, live — weights quantized to 4.5 bits/weight into mmap’d
-storage, multiplied by GGML’s SIMD kernels without ever decoding to
-double (this chunk runs when the README is rendered):
-
-``` r
-library(Rllm)   # registers + selects the ggml backend on load
-#> Rllm: ggml quantized matmul backend registered and active for Rfmalloc typed tensors (disable with rllm_use_ggml(FALSE)).
-
-rt <- Rfmalloc::open_fmalloc(tempfile(fileext = ".bin"))
-set.seed(1)
-W  <- matrix(rnorm(512 * 8, sd = 0.4), nrow = 512)   # a "weight" matrix
-Wq <- rllm_quantize_tensor(W, "q4_k", runtime = rt)  # 4.5 bits/weight, file-backed
-Wq
-#> <fmalloc_tensor q4_k [512 x 8], 2304 payload bytes>
-
-X <- matrix(rnorm(4 * 512), nrow = 4)                # "activations"
-Y <- X %*% Wq                                        # native quantized product
-# faithful to the full-precision product, at ~1/14th the weight bytes:
-sqrt(sum((Y - X %*% W)^2) / sum((X %*% W)^2))
-#> [1] 0.09047354
-```
-
-On a real model the weights come straight off the GGUF file instead:
-
-``` r
-W <- Rgguf::gguf_tensor("model.gguf", "blk.0.ffn_up.weight",
-                        runtime = rt, as = "native")  # zero-copy, stays q4_k
-Y <- X %*% W
-```
+| package                                  | role                                                                                                                                                                                        |
+|------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [`packages/Rfmalloc`](packages/Rfmalloc) | the substrate: file-backed ALTREP vectors/matrices/tensors, codec + backend registries, panel matmul, out-of-core eviction, `fmalloc_pca()`/`fmalloc_colVars()` for genomics-scale matrices |
+| [`packages/Rgguf`](packages/Rgguf)       | GGUF model files: metadata, tensor directory, dequantized or **native (still-quantized)** imports into fmalloc storage                                                                      |
+| [`packages/Rggml`](packages/Rggml)       | compute carrier: vendored GGML with a BLAS backend (R’s own BLAS via a `cblas`→Fortran shim) and runtime-SIMD-dispatched quantized kernels                                                  |
+| [`packages/Rllm`](packages/Rllm)         | composition + inference: registers Rggml as Rfmalloc’s codec-aware matmul backend, and builds the llama forward pass, KV cache, and byte-level generation                                   |
 
 ## Install
 
@@ -76,35 +124,41 @@ install.packages("Rllm",
   repos = c("https://sounkou-bioinfo.r-universe.dev", getOption("repos")))
 ```
 
-or from GitHub via subdir refs:
-
-``` r
-pak::pak("sounkou-bioinfo/Rfmalloc/packages/Rllm")
-```
-
-Unix (Linux/macOS) only, except `Rfmalloc` itself which also builds on
-Windows.
+or a GitHub subdir ref:
+`pak::pak("sounkou-bioinfo/Rfmalloc/packages/Rllm")`. Unix (Linux/macOS)
+only, except `Rfmalloc` itself, which also builds on Windows.
 
 ## Correctness discipline
 
 Every quantized codec decoder is pinned **bit-identical** to GGML’s
 reference (`Rggml_dequantize`, GGML’s own type-traits `to_float`) by
-regression fixtures in Rgguf and live cross-validation in Rllm — a
+regression fixtures in Rgguf and live cross-validation in Rllm — the
 discipline that caught a real upstream Q4_K dequantization bug in
 gguf-tools (~33% wrong decodes of the most common real-model format;
-fixed in our vendored copy). Lossless codecs round-trip exactly by
-construction. The integration CI job installs the whole stack and runs
-every package’s test suite against it (`tests/integration.R`).
+fixed in our vendored copy). The inference graph is pinned to a pure-R
+reference forward (~1e-6 on real weights); incremental KV-cache logits
+equal whole-batch logits at every position; lossless codecs round-trip
+exactly. The integration CI job installs the whole stack and runs every
+package’s test suite against it (`tests/integration.R`).
 
-## Layout
+## Layout & provenance
 
     packages/    the four R packages (independent installable units)
     tests/       cross-package integration entry points (run in CI)
     tools/       fixture generators and shared scripts
 
+The vendored GGML is currently **v0.9.5** (via the CRAN-facing
+[`ggmlR`](https://github.com/Zabis13/ggmlR), which supplied the
+stdio/abort compliance shim; upstream standalone GGML is at v0.9.11). It
+is refreshed deliberately, not continuously: the next refresh is folded
+into the CUDA work, vendored **directly from ggml-org** at a matching
+core+CUDA version and tested on real hardware, since ggmlR is
+unmaintained and the CUDA sources must version-match the core. See
+`packages/Rggml/inst/COPYRIGHTS`.
+
 Related but deliberately separate:
 [RsimdDispatch](https://github.com/sounkou-bioinfo/RsimdDispatch) (the
-runtime-SIMD staging pattern Rggml adopts, useful to any R package).
+runtime-SIMD staging pattern Rggml adopts).
 
 ## License
 
