@@ -33,6 +33,11 @@
 - Added native C kernel implementations for fmalloc-backed linear algebra
   (`%*%`, `crossprod()`, and `tcrossprod()`), returning managed fmalloc matrix
   outputs with base-consistent shape behavior and name propagation.
+- Typed/compressed tensors are now genuinely n-dimensional:
+  `create_fmalloc_tensor()`/`as_fmalloc_tensor()` accept dims of any rank and
+  `fmalloc_tensor_materialize()` returns an array of that shape (storage and
+  decoding are dimension-agnostic). The matrix products (`%*%`, `crossprod()`,
+  `tcrossprod()`) require exactly 2 dimensions and error clearly otherwise.
 - Added a builtin `"sparse"` tensor codec for mostly-zero data (e.g.
   single-cell counts): `as_fmalloc_tensor(x, dtype = "sparse")` stores only the
   nonzeros of each 1024-element chunk, losslessly, and the resulting tensor

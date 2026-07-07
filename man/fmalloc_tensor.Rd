@@ -38,13 +38,15 @@ fmalloc_tensor_materialize(x)
 \method{tcrossprod}{fmalloc_tensor}(x, y = NULL, ...)
 }
 \arguments{
-\item{payload}{An fmalloc raw vector holding the encoded matrix payload in
+\item{payload}{An fmalloc raw vector holding the encoded payload in
 column-major order (first dimension fastest).}
 
 \item{dtype}{Codec name, e.g. \code{"f32"}, \code{"f16"}, \code{"bf16"}; for
-\code{as_fmalloc_tensor()}, only \code{"alp"}.}
+\code{as_fmalloc_tensor()}, \code{"alp"} or \code{"sparse"}.}
 
-\item{dim}{Length-2 integer dimensions of the decoded matrix.}
+\item{dim}{Integer dimensions of the decoded tensor (any rank). Storage and
+\code{\link[=fmalloc_tensor_materialize]{fmalloc_tensor_materialize()}} handle any number of dimensions; the matrix
+products (\code{\%*\%}, \code{crossprod()}, \code{tcrossprod()}) require exactly 2.}
 
 \item{x}{An \code{fmalloc_tensor} object (or, in \code{\%*\%}, a dense operand).}
 

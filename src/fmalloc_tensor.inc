@@ -130,8 +130,10 @@ struct rfm_tensor_source {
     const rfm_tensor_codec *codec;
     const void *payload;
     fm_runtime *runtime;
-    R_xlen_t nrow;
-    R_xlen_t ncol;
+    R_xlen_t nrow;       // dims[0]; a valid matrix nrow only when ndim == 2
+    R_xlen_t ncol;       // dims[1] when ndim >= 2, else 1
+    R_xlen_t total_elems; // product of all dims (codecs decode a flat range)
+    int ndim;
     size_t payload_bytes;
     bool fixed_geometry; // true when byte offset == block_index * bytes_per_block
 };
@@ -163,16 +165,29 @@ static void tensor_source_from_args(SEXP payload, SEXP codec_name, SEXP dims_sex
     src->payload = vector_data_or_dummy(vec);
     src->runtime = vec->runtime;
 
-    if (TYPEOF(dims_sexp) != INTSXP || XLENGTH(dims_sexp) != 2) {
-        Rf_error("tensor dims must be a length-2 integer vector");
+    if (TYPEOF(dims_sexp) != INTSXP || XLENGTH(dims_sexp) < 1) {
+        Rf_error("tensor dims must be a non-empty integer vector");
     }
+    // Storage/decoding is dimension-agnostic (codecs decode a flat element
+    // range); only matrix products care about 2-D. Track the full shape but
+    // work off the total element count.
+    src->ndim = (int)XLENGTH(dims_sexp);
+    R_xlen_t total = 1;
+    for (int i = 0; i < src->ndim; i++) {
+        R_xlen_t d = (R_xlen_t)INTEGER(dims_sexp)[i];
+        if (d < 0) {
+            Rf_error("tensor dims must be non-negative");
+        }
+        if (d != 0 && total > (R_xlen_t)std::numeric_limits<R_xlen_t>::max() / d) {
+            Rf_error("tensor is too large");
+        }
+        total *= d;
+    }
+    src->total_elems = total;
     src->nrow = (R_xlen_t)INTEGER(dims_sexp)[0];
-    src->ncol = (R_xlen_t)INTEGER(dims_sexp)[1];
-    if (src->nrow < 0 || src->ncol < 0) {
-        Rf_error("tensor dims must be non-negative");
-    }
+    src->ncol = src->ndim >= 2 ? (R_xlen_t)INTEGER(dims_sexp)[1] : 1;
 
-    R_xlen_t n_elems = src->nrow * src->ncol;
+    R_xlen_t n_elems = total;
     uint32_t ipb = src->codec->items_per_block;
     R_xlen_t n_blocks = (n_elems + ipb - 1) / ipb;
     R_xlen_t needed = n_blocks * (R_xlen_t)src->codec->bytes_per_block;
@@ -270,6 +285,9 @@ extern "C" SEXP rfm_tensor_matmul_impl(SEXP payload, SEXP codec_name, SEXP dims_
 {
     rfm_tensor_source src;
     tensor_source_from_args(payload, codec_name, dims_sexp, &src);
+    if (src.ndim != 2) {
+        Rf_error("matrix product requires a 2-dimensional tensor");
+    }
 
     bool ooc = Rf_asLogical(ooc_sexp) == TRUE;
     if (ooc && src.payload) {
@@ -385,10 +403,12 @@ extern "C" SEXP rfm_tensor_materialize_impl(SEXP payload, SEXP codec_name, SEXP 
     rfm_tensor_source src;
     tensor_source_from_args(payload, codec_name, dims_sexp, &src);
 
-    SEXP ans = PROTECT(tensor_alloc_real_output(src.runtime, src.nrow, src.ncol));
-    R_xlen_t n = src.nrow * src.ncol;
-    if (n > 0) {
-        if (tensor_decode_range(&src, 0, n, REAL(ans)) != 0) {
+    // Decode the whole tensor flat (any number of dimensions); the R wrapper
+    // applies the shape and array/matrix class.
+    fm_vector *out_vec = allocate_fm_vector(src.runtime, REALSXP, src.total_elems, true, false);
+    SEXP ans = PROTECT(fmalloc_new_altrep(out_vec));
+    if (src.total_elems > 0) {
+        if (tensor_decode_range(&src, 0, src.total_elems, REAL(ans)) != 0) {
             Rf_error("fmalloc tensor codec '%s' failed to decode", src.codec->name);
         }
     }

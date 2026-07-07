@@ -319,10 +319,12 @@ local({
 ## Typed tensors and ALP compression
 
 A typed tensor is an fmalloc raw payload in a foreign element encoding plus
-dtype/dims tags. Matrix products decode the payload in bounded, block-aligned
-column panels streamed through `dgemm`, so the full double representation is
-never materialized. Codecs `f64`, `f32`, `f16`, and `bf16` are builtin;
-downstream packages register more through the C API (Rgguf adds the
+dtype/dims tags. It is genuinely n-dimensional — storage and
+`fmalloc_tensor_materialize()` handle any rank — while the matrix products,
+which decode the payload in bounded, block-aligned column panels streamed
+through `dgemm` (so the full double representation is never materialized),
+require exactly 2 dimensions. Codecs `f64`, `f32`, `f16`, and `bf16` are
+builtin; downstream packages register more through the C API (Rgguf adds the
 quantized GGUF formats).
 
 The builtin `"alp"` codec compresses decimal-scaled doubles losslessly

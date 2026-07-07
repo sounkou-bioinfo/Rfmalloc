@@ -27,11 +27,13 @@
 #' (for fixed-geometry codecs), so a tensor whose decoded `f64` form exceeds
 #' RAM multiplies with a bounded resident set.
 #'
-#' @param payload An fmalloc raw vector holding the encoded matrix payload in
+#' @param payload An fmalloc raw vector holding the encoded payload in
 #'   column-major order (first dimension fastest).
 #' @param dtype Codec name, e.g. `"f32"`, `"f16"`, `"bf16"`; for
-#'   `as_fmalloc_tensor()`, only `"alp"`.
-#' @param dim Length-2 integer dimensions of the decoded matrix.
+#'   `as_fmalloc_tensor()`, `"alp"` or `"sparse"`.
+#' @param dim Integer dimensions of the decoded tensor (any rank). Storage and
+#'   [fmalloc_tensor_materialize()] handle any number of dimensions; the matrix
+#'   products (`%*%`, `crossprod()`, `tcrossprod()`) require exactly 2.
 #' @param runtime Optional runtime handle from [open_fmalloc()]; defaults to
 #'   the runtime established by [init_fmalloc()].
 #' @param x An `fmalloc_tensor` object (or, in `%*%`, a dense operand).
@@ -75,9 +77,6 @@ create_fmalloc_tensor <- function(payload, dtype, dim) {
         stop("payload must be an fmalloc raw vector")
     }
     dims <- .fmalloc_validate_dimensions(dim, "dim")
-    if (length(dims) != 2L) {
-        stop("fmalloc tensors currently require length-2 dims")
-    }
 
     n_elems <- prod(as.double(dims))
     n_blocks <- ceiling(n_elems / codec$items_per_block)
@@ -106,13 +105,11 @@ as_fmalloc_tensor <- function(x, dtype = "alp", runtime = NULL) {
     )
     x0 <- .fmalloc_strip_class(x)
     if (!is.double(x0)) {
-        stop("x must be a double vector or matrix")
+        stop("x must be a double vector or array")
     }
     dims <- dim(x0)
     if (is.null(dims)) {
-        dims <- c(length(x0), 1L)
-    } else if (length(dims) != 2L) {
-        stop("x must be a vector or 2-dimensional matrix")
+        dims <- c(length(x0), 1L)   # bare vector -> n x 1
     }
 
     runtime <- .fmalloc_get_runtime(runtime)
@@ -139,11 +136,11 @@ fmalloc_tensor_materialize <- function(x) {
     if (!inherits(x, "fmalloc_tensor")) {
         stop("x must be an fmalloc_tensor")
     }
-    ans <- .Call(
-        "rfm_tensor_materialize_impl", x,
-        attr(x, "rfm_dtype"), attr(x, "rfm_dims")
-    )
-    .fmalloc_apply_class(ans, type = "numeric", shape = "matrix")
+    dims <- attr(x, "rfm_dims")
+    ans <- .Call("rfm_tensor_materialize_impl", x, attr(x, "rfm_dtype"), dims)
+    dim(ans) <- as.integer(dims)
+    .fmalloc_apply_class(ans, type = "numeric",
+                         shape = if (length(dims) == 2L) "matrix" else "array")
 }
 
 #' @rdname fmalloc_tensor
@@ -212,6 +209,10 @@ print.fmalloc_tensor <- function(x, ...) {
 
     tensor <- if (x_typed) x else y
     tdims <- attr(tensor, "rfm_dims")
+    if (length(tdims) != 2L) {
+        stop("matrix product requires a 2-dimensional fmalloc_tensor; use ",
+             "fmalloc_tensor_materialize() for higher-rank tensors")
+    }
     inner_len <- if (x_typed) tdims[2L] else tdims[1L]
     dense <- .fmalloc_tensor_dense_operand(
         if (x_typed) y else x, inner_len,

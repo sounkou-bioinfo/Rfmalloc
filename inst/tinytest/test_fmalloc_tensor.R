@@ -195,4 +195,35 @@ message("Testing typed fmalloc tensors and the panel-streaming matmul engine..."
     expect_equal(as.vector((da %*% ta)[]), as.vector(da %*% ma))
 })()
 
+(function() {
+    message("  Test 8: n-dimensional tensors store/materialize; products stay 2-D")
+    tmp <- tempfile(fileext = ".bin")
+    rt <- open_fmalloc(tmp, mode = "persistent")
+    on.exit({ cleanup_fmalloc(rt); unlink(tmp) }, add = TRUE)
+
+    set.seed(31)
+    A <- array(round(runif(20 * 15 * 4, 0, 2), 3), dim = c(20, 15, 4))
+    ten <- as_fmalloc_tensor(A, dtype = "alp", runtime = rt)
+    expect_equal(dim(ten), c(20L, 15L, 4L))
+
+    back <- fmalloc_tensor_materialize(ten)
+    expect_true(is.array(back))
+    expect_equal(dim(back), c(20L, 15L, 4L))
+    expect_identical(as.vector(back[]), as.vector(A))
+
+    # sparse codec works n-D too
+    S <- array(0, dim = c(30, 10, 3))
+    S[sample(length(S), length(S) * 0.1)] <- rpois(round(length(S) * 0.1), 2) + 1
+    tenS <- as_fmalloc_tensor(S, dtype = "sparse", runtime = rt)
+    expect_identical(as.vector(fmalloc_tensor_materialize(tenS)[]), as.vector(S))
+
+    # a matrix product on a >2-D tensor errors clearly
+    b <- matrix(rnorm(4), 4, 1)
+    expect_error(ten %*% b, "2-dimensional")
+
+    # a bare vector encodes as n x 1 and still multiplies
+    v <- as_fmalloc_tensor(round(runif(50, 0, 2), 3), dtype = "alp", runtime = rt)
+    expect_equal(dim(v), c(50L, 1L))
+})()
+
 message("fmalloc tensor tests completed")
