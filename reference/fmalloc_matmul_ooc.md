@@ -40,6 +40,15 @@ The backing storage is advised `MADV_SEQUENTIAL` so the kernel reads
 ahead. The result is an fmalloc-backed matrix allocated in `A`'s
 runtime.
 
+`%*%` on an fmalloc matrix calls this automatically when the left
+operand's payload reaches `getOption("Rfmalloc.ooc_threshold_gb")`
+(default: half of physical RAM), using
+`getOption("Rfmalloc.ooc_tile_mb", 256)` for the tile size; smaller
+products keep the in-core BLAS path.
+[`crossprod()`](https://rdrr.io/r/base/crossprod.html)/
+[`tcrossprod()`](https://rdrr.io/r/base/crossprod.html) are not
+auto-routed (their output can itself exceed RAM).
+
 ## Examples
 
 ``` r

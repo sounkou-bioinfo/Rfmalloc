@@ -83,6 +83,11 @@ tightly. Defaults to 256.</p></dd>
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
     <p>The backing storage is advised <code>MADV_SEQUENTIAL</code> so the kernel reads ahead.
 The result is an fmalloc-backed matrix allocated in <code>A</code>'s runtime.</p>
+<p><code>%*%</code> on an fmalloc matrix calls this automatically when the left operand's
+payload reaches <code>getOption("Rfmalloc.ooc_threshold_gb")</code> (default: half of
+physical RAM), using <code>getOption("Rfmalloc.ooc_tile_mb", 256)</code> for the tile
+size; smaller products keep the in-core BLAS path. <code><a href="https://rdrr.io/r/base/crossprod.html" class="external-link">crossprod()</a></code>/
+<code><a href="https://rdrr.io/r/base/crossprod.html" class="external-link">tcrossprod()</a></code> are not auto-routed (their output can itself exceed RAM).</p>
     </div>
 
     <div class="section level2">
