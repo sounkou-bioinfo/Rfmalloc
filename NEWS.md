@@ -49,6 +49,14 @@
   resident set stays bounded by the tile budget. Demonstrated on a 62.6 GB
   matrix (equal to total RAM): peak resident memory 0.31 GB during the gemv,
   result exact vs the analytic reference.
+- Added in-place (by-reference) mutation: `fmalloc_set(x, i, value)` and
+  `fmalloc_fill(x, value)` write straight through the backing store, bypassing
+  R's copy-on-modify. This is essential at fmalloc scale — an ordinary
+  `x[i] <- value` can duplicate a larger-than-RAM or persistent payload. The
+  functions are deliberately explicit (never a silent `[<-` method) because
+  they break value semantics by design: all bindings to the same vector
+  observe the change, and for a persistent runtime the durable store is
+  updated. Supported for atomic logical/integer/numeric/complex/raw vectors.
 - Added `fmalloc_crossprod_ooc()` and out-of-core routing for `crossprod(X)`:
   the Gram matrix `X'X` is computed as pairs of contiguous column panels of `X`
   through BLAS `dgemm`, writing each block straight into the `n x n` fmalloc

@@ -659,6 +659,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"rfm_vector_advise_impl", (DL_FUNC)&rfm_vector_advise_impl, 2},
     {"rfm_phys_ram_bytes_impl", (DL_FUNC)&rfm_phys_ram_bytes_impl, 0},
     {"rfm_raw_fill_pattern_impl", (DL_FUNC)&rfm_raw_fill_pattern_impl, 2},
+    {"rfm_set_in_place_impl", (DL_FUNC)&rfm_set_in_place_impl, 3},
+    {"rfm_fill_in_place_impl", (DL_FUNC)&rfm_fill_in_place_impl, 2},
     {"rfm_tensor_alp_encode_impl", (DL_FUNC)&rfm_tensor_alp_encode_impl, 2},
     {nullptr, nullptr, 0}
 };
