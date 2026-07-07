@@ -148,13 +148,12 @@ package’s test suite against it (`tests/integration.R`).
     tools/       fixture generators and shared scripts
 
 The vendored GGML is currently **v0.9.5** (via the CRAN-facing
-[`ggmlR`](https://github.com/Zabis13/ggmlR), which supplied the
+[`ggmlR`](https://github.com/Zabis13/ggmlR), which supplies the
 stdio/abort compliance shim; upstream standalone GGML is at v0.9.11). It
 is refreshed deliberately, not continuously: the next refresh is folded
-into the CUDA work, vendored **directly from ggml-org** at a matching
-core+CUDA version and tested on real hardware, since ggmlR is
-unmaintained and the CUDA sources must version-match the core. See
-`packages/Rggml/inst/COPYRIGHTS`.
+into the CUDA work and tested on real hardware, since the CUDA sources
+must version-match the core. See `packages/Rggml/inst/COPYRIGHTS` for
+the full version & update policy.
 
 Related but deliberately separate:
 [RsimdDispatch](https://github.com/sounkou-bioinfo/RsimdDispatch) (the
