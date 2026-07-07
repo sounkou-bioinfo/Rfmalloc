@@ -7,3 +7,5 @@ packages/*/src/Makevars
 packages/*/inst/ggml/libggml.a
 .Rhistory
 .RData
+README.html
+packages/*/README.html
