@@ -1,5 +1,12 @@
 # Rgguf 0.1.0 (unreleased)
 
+- `gguf_tensor(as = "native")` no longer requires gguflib dequantization
+  support for the tensor's type - a native import copies the raw,
+  still-encoded payload, so it only needs a registered Rfmalloc codec (which
+  another package may provide: Rllm registers GGML-backed codecs for `q5_0`/
+  `q5_1`/`q3_k`/`q5_k`, all common in real `Q4_K_M` model files). The
+  gguflib-support check now applies only to `as = "numeric"`, whose error
+  message points at the native path.
 - **Fixed a Q4_K dequantization bug inherited from upstream gguf-tools**: in
   `gguf_q4_k_to_float()`, the high-nibble half of every 64-weight group (the
   odd sub-blocks 1, 3, 5, 7 of each super-block) was dequantized with the

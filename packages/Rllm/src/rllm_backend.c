@@ -34,9 +34,13 @@ int rllm_ggml_type_from_codec(const char *codec, enum ggml_type *out)
     if (!codec) return -1;
     if      (!strcmp(codec, "q4_0")) *out = GGML_TYPE_Q4_0;
     else if (!strcmp(codec, "q4_1")) *out = GGML_TYPE_Q4_1;
+    else if (!strcmp(codec, "q5_0")) *out = GGML_TYPE_Q5_0;
+    else if (!strcmp(codec, "q5_1")) *out = GGML_TYPE_Q5_1;
     else if (!strcmp(codec, "q8_0")) *out = GGML_TYPE_Q8_0;
     else if (!strcmp(codec, "q2_k")) *out = GGML_TYPE_Q2_K;
+    else if (!strcmp(codec, "q3_k")) *out = GGML_TYPE_Q3_K;
     else if (!strcmp(codec, "q4_k")) *out = GGML_TYPE_Q4_K;
+    else if (!strcmp(codec, "q5_k")) *out = GGML_TYPE_Q5_K;
     else if (!strcmp(codec, "q6_k")) *out = GGML_TYPE_Q6_K;
     else return -1;
     return 0;
@@ -55,6 +59,65 @@ static ggml_backend_t rllm_cpu_backend(void)
         g_cpu = cpu_init ? cpu_init() : NULL;
     }
     return g_cpu;
+}
+
+/*
+ * GGML-backed Rfmalloc tensor codecs for the GGUF quantized types Rgguf's
+ * vendored gguflib cannot decode (q5_0/q5_1/q3_k/q5_k - q5_0 in particular is
+ * all over real Q4_K_M model mixes). The decoder is GGML's own type-traits
+ * to_float via Rggml_dequantize, i.e. the ecosystem's reference dequantizer,
+ * so these codecs are consistent-by-construction with the compute path. Block
+ * geometry is derived from the vendored GGML at registration, never hardcoded.
+ * Plain malloc (no R API): codec decodes run inside Rfmalloc's panel loops.
+ */
+static int rllm_codec_decode(enum ggml_type type, const void *payload,
+                             R_xlen_t elem_offset, R_xlen_t n_elems, double *out)
+{
+    if (n_elems <= 0) return 0;
+    if (!rllm_cpu_backend()) return -1;   /* fp16 table for block scales */
+
+    Rggml_blck_size_fun  blck = Rggml_blck_size_ptr();
+    Rggml_row_size_fun   rs   = Rggml_row_size_ptr();
+    Rggml_dequantize_fun deq  = Rggml_dequantize_ptr();
+
+    int64_t bs = blck(type);
+    if (elem_offset % bs != 0) return -1;
+    const unsigned char *base = (const unsigned char *) payload
+        + (size_t)(elem_offset / bs) * rs(type, bs);
+
+    /* Rggml_dequantize needs whole blocks; the payload always holds a whole
+     * number of blocks, so padding the final partial range is safe. */
+    R_xlen_t n_pad = ((n_elems + bs - 1) / bs) * bs;
+    float *buf = (float *) malloc((size_t) n_pad * sizeof(float));
+    if (!buf) return -1;
+    if (deq(type, base, buf, n_pad) != 0) { free(buf); return -1; }
+    for (R_xlen_t i = 0; i < n_elems; i++) out[i] = (double) buf[i];
+    free(buf);
+    return 0;
+}
+
+static int rllm_decode_q5_0(const void *p, R_xlen_t off, R_xlen_t n, double *out)
+{ return rllm_codec_decode(GGML_TYPE_Q5_0, p, off, n, out); }
+static int rllm_decode_q5_1(const void *p, R_xlen_t off, R_xlen_t n, double *out)
+{ return rllm_codec_decode(GGML_TYPE_Q5_1, p, off, n, out); }
+static int rllm_decode_q3_k(const void *p, R_xlen_t off, R_xlen_t n, double *out)
+{ return rllm_codec_decode(GGML_TYPE_Q3_K, p, off, n, out); }
+static int rllm_decode_q5_k(const void *p, R_xlen_t off, R_xlen_t n, double *out)
+{ return rllm_codec_decode(GGML_TYPE_Q5_K, p, off, n, out); }
+
+SEXP RC_rllm_register_codecs(void)
+{
+    Rggml_blck_size_fun blck = Rggml_blck_size_ptr();
+    Rggml_row_size_fun  rs   = Rggml_row_size_ptr();
+#define RLLM_REG_CODEC(name, TY, fn) \
+    Rfmalloc_register_tensor_codec(name, (unsigned int) blck(TY), \
+                                   (unsigned int) rs(TY, blck(TY)), fn)
+    RLLM_REG_CODEC("q5_0", GGML_TYPE_Q5_0, rllm_decode_q5_0);
+    RLLM_REG_CODEC("q5_1", GGML_TYPE_Q5_1, rllm_decode_q5_1);
+    RLLM_REG_CODEC("q3_k", GGML_TYPE_Q3_K, rllm_decode_q3_k);
+    RLLM_REG_CODEC("q5_k", GGML_TYPE_Q5_K, rllm_decode_q5_k);
+#undef RLLM_REG_CODEC
+    return R_NilValue;
 }
 
 /*
@@ -211,7 +274,7 @@ SEXP RC_rllm_qtensor_nbytes(SEXP dtype_sexp, SEXP k_sexp, SEXP n_sexp)
     enum ggml_type type;
     if (rllm_ggml_type_from_codec(CHAR(STRING_ELT(dtype_sexp, 0)), &type) != 0) {
         Rf_error("dtype '%s' is not a GGML quantized type Rllm can encode "
-                 "(q4_0, q4_1, q8_0, q2_k, q4_k, q6_k)",
+                 "(q4_0, q4_1, q5_0, q5_1, q8_0, q2_k, q3_k, q4_k, q5_k, q6_k)",
                  CHAR(STRING_ELT(dtype_sexp, 0)));
     }
     int64_t k = Rf_asInteger(k_sexp);
@@ -245,7 +308,7 @@ SEXP RC_rllm_quantize_into(SEXP x, SEXP dtype_sexp, SEXP payload)
     enum ggml_type type;
     if (rllm_ggml_type_from_codec(dtype, &type) != 0) {
         Rf_error("dtype '%s' is not a GGML quantized type Rllm can encode "
-                 "(q4_0, q4_1, q8_0, q2_k, q4_k, q6_k)", dtype);
+                 "(q4_0, q4_1, q5_0, q5_1, q8_0, q2_k, q3_k, q4_k, q5_k, q6_k)", dtype);
     }
     if (TYPEOF(payload) != RAWSXP) Rf_error("payload must be a raw vector");
 

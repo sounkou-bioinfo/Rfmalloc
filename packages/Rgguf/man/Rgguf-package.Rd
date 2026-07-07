@@ -58,9 +58,8 @@ block-by-block directly into the destination.
 \seealso{
 Useful links:
 \itemize{
-  \item \url{https://github.com/sounkou-bioinfo/Rgguf}
-  \item \url{https://sounkou-bioinfo.github.io/Rgguf/}
-  \item Report bugs at \url{https://github.com/sounkou-bioinfo/Rgguf/issues}
+  \item \url{https://github.com/sounkou-bioinfo/Rfmalloc}
+  \item Report bugs at \url{https://github.com/sounkou-bioinfo/Rfmalloc/issues}
 }
 
 }

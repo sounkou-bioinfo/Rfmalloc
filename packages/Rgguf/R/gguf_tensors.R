@@ -103,16 +103,14 @@ gguf_tensor <- function(x, name, runtime = NULL, as = c("numeric", "native")) {
     if (is.null(info)) {
         stop("no such tensor: '", name, "'")
     }
-    if (!isTRUE(info$supported)) {
-        stop(
-            "tensor '", name, "' has type '", info$type,
-            "' which the vendored gguflib parser cannot dequantize"
-        )
-    }
 
     dims <- as.integer(info$dims)
 
     if (as == "native") {
+        # Native import copies the raw, still-encoded payload; it does not
+        # need gguflib's dequantizer, only a registered Rfmalloc codec for the
+        # type (another package may provide one - e.g. Rllm registers
+        # GGML-backed codecs for types gguflib cannot decode, such as q5_0).
         if (length(dims) != 2L) {
             stop("as = \"native\" requires a 2-dimensional tensor; '",
                 name, "' has ", length(dims))
@@ -129,6 +127,16 @@ gguf_tensor <- function(x, name, runtime = NULL, as = c("numeric", "native")) {
         )
         .Call("RC_gguf_tensor_fill_raw", h$ctx, name, payload)
         return(Rfmalloc::create_fmalloc_tensor(payload, info$type, dims))
+    }
+
+    # Numeric import goes through gguflib's dequantizer, which only covers a
+    # subset of the quantized types.
+    if (!isTRUE(info$supported)) {
+        stop(
+            "tensor '", name, "' has type '", info$type,
+            "' which the vendored gguflib parser cannot dequantize; ",
+            "use as = \"native\" with a registered Rfmalloc codec"
+        )
     }
 
     dest <- if (length(dims) == 2L) {

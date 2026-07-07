@@ -1,5 +1,21 @@
 # Rllm 0.1.0 (unreleased)
 
+- **Validated on a real model** (SmolLM2-135M `Q4_K_M`, 30 layers, GQA 9:3,
+  272 tensors in a `q4_k`/`q5_0`/`q6_k`/`q8_0`/`f32` mix): with the model's
+  decoded weights, the GGML graph matches a pure-R reference forward to
+  1e-06 relative (f32-twin roundtrip written with Rgguf's own writer), and
+  the native quantized path agrees on the argmax; its ~0.19 relative logit
+  deviation is Q8_K-activation/quantized-weight arithmetic compounded over
+  30 layers, not graph error. An opt-in smoke test
+  (`RLLM_TEST_GGUF=<path>`, `test_real_model.R`) exercises the loader and
+  graph on real files without affecting CI/CRAN.
+- Registered **GGML-backed Rfmalloc codecs** for the GGUF quantized types
+  Rgguf's vendored gguflib cannot decode - `q5_0`, `q5_1`, `q3_k`, `q5_k`
+  (real `Q4_K_M` model files are full of `q5_0` tensors). The decoder is
+  GGML's reference `to_float` via `Rggml_dequantize`, so these codecs are
+  consistent-by-construction with the compute path; block geometry is taken
+  from the vendored GGML at registration. `rllm_quantize_tensor()` and the
+  typed-GEMM bridge accept the new types too.
 - Added the **llama-architecture forward pass**: `rllm_gguf_model()` loads a
   GGUF model's hyperparameters and weights (2-d tensors imported natively -
   still `q4_k`/`f32`/... encoded - into fmalloc-backed, memory-mapped
