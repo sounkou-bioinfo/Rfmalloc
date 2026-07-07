@@ -36,6 +36,9 @@
   [`fmalloc_vector_length()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_api.md)
   [`fmalloc_vector_payload_ptr()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_api.md)
   : Public Rfmalloc API helpers
+- [`fmalloc_set()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_insitu.md)
+  [`fmalloc_fill()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_insitu.md)
+  : In-place (by-reference) mutation of fmalloc vectors
 - [`` `%*%`( ``*`<fmalloc>`*`)`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_linalg.md)
   [`crossprod(`*`<fmalloc>`*`)`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_linalg.md)
   [`tcrossprod(`*`<fmalloc>`*`)`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_linalg.md)

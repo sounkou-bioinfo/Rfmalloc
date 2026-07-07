@@ -56,6 +56,10 @@ with fmalloc payload storage.
 
   Out-of-core matrix products for matrices larger than RAM.
 
+- [`fmalloc_insitu`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_insitu.md):
+
+  In-place, by-reference mutation that bypasses copy-on-modify.
+
 - [`list_fmalloc_allocations`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/list_fmalloc_allocations.md):
 
   List persistent allocation catalog records.
