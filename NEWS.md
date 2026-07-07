@@ -60,6 +60,13 @@
   resident set stays bounded by the tile budget. Demonstrated on a 62.6 GB
   matrix (equal to total RAM): peak resident memory 0.31 GB during the gemv,
   result exact vs the analytic reference.
+- Added a genomics layer: `fmalloc_pca()` (out-of-core truncated PCA via the
+  Gram matrix — `crossprod()` + eigendecomposition + projection) and
+  `fmalloc_colVars()`/`fmalloc_rowVars()` (variance reductions for
+  highly-variable-feature selection). The heavy steps dispatch through the
+  pluggable matrix-multiply backend, so single-cell PCA on a larger-than-RAM,
+  compressed count matrix runs on CPU BLAS today and on a registered GPU
+  backend unchanged — the same call, composable across backends.
 - Extended the backend registry with a codec-aware *typed* hook (C API v6,
   `Rfmalloc_register_matmul_backend_ex`): a backend can register a
   `typed_gemm` that receives a compressed tensor's raw codec payload and dims
