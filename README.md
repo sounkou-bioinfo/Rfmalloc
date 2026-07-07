@@ -1,0 +1,113 @@
+
+# Rfmalloc — out-of-core arrays for R
+
+<!-- badges: start -->
+
+[![R-CMD-check](https://github.com/sounkou-bioinfo/Rfmalloc/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/sounkou-bioinfo/Rfmalloc/actions/workflows/R-CMD-check.yaml)
+<!-- badges: end -->
+
+**One repo, one story: array computation on data that does not fit in
+RAM, over pluggable storage codecs and compute backends.**
+
+Memory-mapped file storage (a patched
+[fmalloc](https://github.com/yasukata/fmalloc) allocator behind R’s
+ALTREP) turns RAM from a hard cutoff into a spectrum of speed levels. On
+top of that substrate sit two plugin registries that everything else
+closes over:
+
+- a **codec registry** — how bytes are stored: lossless (`f64` `f32`
+  `f16` `bf16` `alp` `sparse`) for scientific data where bit-exactness
+  is non-negotiable, and lossy GGUF quantized blocks (`q4_0` `q4_1`
+  `q8_0` `q2_k` `q4_k` `q6_k`) for model weights at 2–8 bits each;
+- a **matmul backend registry** — how products are computed: R’s BLAS by
+  default, [GGML](https://github.com/ggml-org/ggml) natively in
+  quantized space, GPU backends next.
+
+The contract that makes it compose is the **decline protocol**: any
+backend may refuse any product, and the substrate falls back to bounded
+decode panels + BLAS. Plugins change how fast you get an answer, never
+whether it is correct.
+
+## The packages
+
+| package                                  | role                                                                                                                                                                                 |
+|------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [`packages/Rfmalloc`](packages/Rfmalloc) | the substrate: file-backed ALTREP vectors/matrices/tensors, codec + backend registries, panel matmul, out-of-core eviction, PCA/rowVars for genomics-scale matrices                  |
+| [`packages/Rgguf`](packages/Rgguf)       | GGUF model files: metadata, tensor directory, dequantized or **native (still-quantized)** imports into fmalloc storage                                                               |
+| [`packages/Rggml`](packages/Rggml)       | compute carrier: vendored GGML with a BLAS backend (R’s own BLAS via a `cblas`→Fortran shim) and runtime-SIMD-dispatched quantized kernels (AVX2/NEON, no non-portable-flags NOTE)   |
+| [`packages/Rllm`](packages/Rllm)         | the composition layer: registers Rggml as Rfmalloc’s codec-aware matmul backend, so `dense %*% quantized_tensor` runs natively in quantized space, zero-copy from the mmap’d payload |
+
+The whole stack, live — weights quantized to 4.5 bits/weight into mmap’d
+storage, multiplied by GGML’s SIMD kernels without ever decoding to
+double (this chunk runs when the README is rendered):
+
+``` r
+library(Rllm)   # registers + selects the ggml backend on load
+#> Rllm: ggml quantized matmul backend registered and active for Rfmalloc typed tensors (disable with rllm_use_ggml(FALSE)).
+
+rt <- Rfmalloc::open_fmalloc(tempfile(fileext = ".bin"))
+set.seed(1)
+W  <- matrix(rnorm(512 * 8, sd = 0.4), nrow = 512)   # a "weight" matrix
+Wq <- rllm_quantize_tensor(W, "q4_k", runtime = rt)  # 4.5 bits/weight, file-backed
+Wq
+#> <fmalloc_tensor q4_k [512 x 8], 2304 payload bytes>
+
+X <- matrix(rnorm(4 * 512), nrow = 4)                # "activations"
+Y <- X %*% Wq                                        # native quantized product
+# faithful to the full-precision product, at ~1/14th the weight bytes:
+sqrt(sum((Y - X %*% W)^2) / sum((X %*% W)^2))
+#> [1] 0.09047354
+```
+
+On a real model the weights come straight off the GGUF file instead:
+
+``` r
+W <- Rgguf::gguf_tensor("model.gguf", "blk.0.ffn_up.weight",
+                        runtime = rt, as = "native")  # zero-copy, stays q4_k
+Y <- X %*% W
+```
+
+## Install
+
+From the [r-universe](https://sounkou-bioinfo.r-universe.dev):
+
+``` r
+install.packages("Rllm",
+  repos = c("https://sounkou-bioinfo.r-universe.dev", getOption("repos")))
+```
+
+or from GitHub via subdir refs:
+
+``` r
+pak::pak("sounkou-bioinfo/Rfmalloc/packages/Rllm")
+```
+
+Unix (Linux/macOS) only, except `Rfmalloc` itself which also builds on
+Windows.
+
+## Correctness discipline
+
+Every quantized codec decoder is pinned **bit-identical** to GGML’s
+reference (`Rggml_dequantize`, GGML’s own type-traits `to_float`) by
+regression fixtures in Rgguf and live cross-validation in Rllm — a
+discipline that caught a real upstream Q4_K dequantization bug in
+gguf-tools (~33% wrong decodes of the most common real-model format;
+fixed in our vendored copy). Lossless codecs round-trip exactly by
+construction. The integration CI job installs the whole stack and runs
+every package’s test suite against it (`tests/integration.R`).
+
+## Layout
+
+    packages/    the four R packages (independent installable units)
+    tests/       cross-package integration entry points (run in CI)
+    tools/       fixture generators and shared scripts
+
+Related but deliberately separate:
+[RsimdDispatch](https://github.com/sounkou-bioinfo/RsimdDispatch) (the
+runtime-SIMD staging pattern Rggml adopts, useful to any R package).
+
+## License
+
+GPL (\>= 2). Vendored third-party components (fmalloc, gguflib, GGML via
+ggmlR) keep their upstream licenses; see each package’s
+`inst/COPYRIGHTS`.

@@ -1,0 +1,9 @@
+# build artifacts (any package)
+*.o
+*.so
+*.tar.gz
+*.Rcheck/
+packages/*/src/Makevars
+packages/*/inst/ggml/libggml.a
+.Rhistory
+.RData

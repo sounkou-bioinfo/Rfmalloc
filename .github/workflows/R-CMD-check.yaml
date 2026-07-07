@@ -1,0 +1,100 @@
+# Monorepo CI for the out-of-core array stack.
+#
+# One matrix checks each package from its packages/<pkg> subdirectory; sibling
+# dependencies are installed from the *local checkout* (not from Remotes) so a
+# commit that changes several packages is validated as one unit. The final
+# integration job installs the whole stack in dependency order and runs every
+# package's tinytest suite - the cross-package consistency tests (codec vs
+# GGML reference, typed-GEMM bridge vs decode path) live there.
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+name: R-CMD-check.yaml
+
+permissions: read-all
+
+jobs:
+  R-CMD-check:
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.pkg }} / ${{ matrix.os }} (${{ matrix.r }})
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Rfmalloc: the substrate - full platform matrix (incl. Windows).
+          - {pkg: Rfmalloc, os: macos-latest,   r: 'release'}
+          - {pkg: Rfmalloc, os: windows-latest, r: 'release'}
+          - {pkg: Rfmalloc, os: ubuntu-latest,  r: 'devel'}
+          - {pkg: Rfmalloc, os: ubuntu-latest,  r: 'release'}
+          - {pkg: Rfmalloc, os: ubuntu-latest,  r: 'oldrel-1'}
+          # Unix-only packages (OS_type: unix).
+          - {pkg: Rgguf,    os: ubuntu-latest,  r: 'release'}
+          - {pkg: Rgguf,    os: ubuntu-latest,  r: 'devel'}
+          - {pkg: Rgguf,    os: macos-latest,   r: 'release'}
+          - {pkg: Rggml,    os: ubuntu-latest,  r: 'release'}
+          - {pkg: Rggml,    os: ubuntu-latest,  r: 'devel'}
+          - {pkg: Rggml,    os: macos-latest,   r: 'release'}
+          - {pkg: Rllm,     os: ubuntu-latest,  r: 'release'}
+          - {pkg: Rllm,     os: ubuntu-latest,  r: 'devel'}
+          - {pkg: Rllm,     os: macos-latest,   r: 'release'}
+
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      R_KEEP_PKG_SOURCE: yes
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: r-lib/actions/setup-pandoc@v2
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: ${{ matrix.r }}
+          use-public-rspm: true
+
+      - name: Install tooling and sibling packages from the local checkout
+        run: |
+          install.packages("pak", repos = sprintf("https://r-lib.github.io/p/pak/stable/%s/%s/%s", .Platform$pkgType, R.Version()$os, R.Version()$arch))
+          pak::pkg_install(c("any::rcmdcheck", "any::tinytest"), ask = FALSE)
+          siblings <- switch("${{ matrix.pkg }}",
+            Rfmalloc = character(),
+            Rggml    = character(),
+            Rgguf    = c("Rfmalloc"),
+            Rllm     = c("Rfmalloc", "Rggml", "Rgguf"))
+          for (s in siblings) pak::local_install(file.path("packages", s), ask = FALSE, dependencies = TRUE)
+        shell: Rscript {0}
+
+      - uses: r-lib/actions/check-r-package@v2
+        with:
+          working-directory: packages/${{ matrix.pkg }}
+          upload-snapshots: true
+          build_args: 'c("--no-manual","--compact-vignettes=gs+qpdf")'
+
+  integration:
+    runs-on: ubuntu-latest
+    name: integration (full stack)
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+          use-public-rspm: true
+
+      - name: Install the whole stack in dependency order
+        run: |
+          install.packages("pak", repos = sprintf("https://r-lib.github.io/p/pak/stable/%s/%s/%s", .Platform$pkgType, R.Version()$os, R.Version()$arch))
+          pak::pkg_install("any::tinytest", ask = FALSE)
+          for (p in c("Rfmalloc", "Rggml", "Rgguf", "Rllm")) {
+            pak::local_install(file.path("packages", p), ask = FALSE, dependencies = TRUE)
+          }
+        shell: Rscript {0}
+
+      - name: Run every package's tinytest suite against the co-installed stack
+        run: Rscript tests/integration.R

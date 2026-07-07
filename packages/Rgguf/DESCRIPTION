@@ -25,13 +25,13 @@ LinkingTo:
 Suggests:
     tinytest
 Remotes:
-    sounkou-bioinfo/Rfmalloc
+    sounkou-bioinfo/Rfmalloc/packages/Rfmalloc
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 SystemRequirements: GNU make
 OS_type: unix
-URL: https://github.com/sounkou-bioinfo/Rgguf,
+URL: https://github.com/sounkou-bioinfo/Rfmalloc,
     https://sounkou-bioinfo.github.io/Rgguf/
 Depends:
     R (>= 4.4.0)
-BugReports: https://github.com/sounkou-bioinfo/Rgguf/issues
+BugReports: https://github.com/sounkou-bioinfo/Rfmalloc/issues
