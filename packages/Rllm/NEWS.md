@@ -1,5 +1,10 @@
 # Rllm 0.1.0 (unreleased)
 
+- `rllm_generate()` gained **sampling**: `temperature` (0 = greedy, the
+  default, so existing behaviour is unchanged), `top_k`, `top_p` (nucleus),
+  and `seed` for reproducibility. Greedy stays deterministic; sampled
+  decoding is reproducible under a fixed seed. The sampler is pure logic over
+  the logits vector (`test_sampling.R`).
 - Added **incremental decoding with a KV cache** and the **bytes-boundary
   generation API**. `rllm_kv_cache()` allocates per-layer f32 cache slabs
   (plain R memory, or fmalloc-backed when given a runtime - the cache as a

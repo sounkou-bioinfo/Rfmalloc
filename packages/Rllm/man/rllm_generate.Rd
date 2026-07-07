@@ -2,9 +2,19 @@
 % Please edit documentation in R/rllm_generate.R
 \name{rllm_generate}
 \alias{rllm_generate}
-\title{Generate tokens greedily with a KV cache}
+\title{Generate tokens with a KV cache (greedy or sampled)}
 \usage{
-rllm_generate(model, prompt, n_new = 32L, cache = NULL, runtime = NULL)
+rllm_generate(
+  model,
+  prompt,
+  n_new = 32L,
+  temperature = 0,
+  top_k = 0L,
+  top_p = 1,
+  seed = NULL,
+  cache = NULL,
+  runtime = NULL
+)
 }
 \arguments{
 \item{model}{An \code{rllm_model} from \code{\link[=rllm_gguf_model]{rllm_gguf_model()}}.}
@@ -14,6 +24,18 @@ rllm_generate(model, prompt, n_new = 32L, cache = NULL, runtime = NULL)
 \code{charToRaw()} as a convenience).}
 
 \item{n_new}{Maximum number of tokens to generate.}
+
+\item{temperature}{Sampling temperature. \code{0} (default) is greedy/argmax;
+larger values flatten the distribution (more diverse).}
+
+\item{top_k}{Keep only the \code{top_k} highest-logit tokens before sampling
+(\code{0}, default, disables the cutoff). Ignored when greedy.}
+
+\item{top_p}{Nucleus sampling: keep the smallest set of tokens whose
+probabilities sum to at least \code{top_p} (\code{1}, default, disables it).
+Ignored when greedy.}
+
+\item{seed}{Optional integer seed, for reproducible sampling.}
 
 \item{cache}{Optional \code{\link[=rllm_kv_cache]{rllm_kv_cache()}} to continue from; by default a
 fresh cache sized \code{length(prompt) + n_new} is created.}
@@ -28,7 +50,9 @@ generated tokens), and \code{raw} (the generated tokens decoded to bytes, or
 }
 \description{
 The bytes-in/bytes-out generation entry point: prefills a KV cache with the
-prompt (ids or raw bytes), then decodes greedily one token per step -
-each step is a single-token \code{\link[=rllm_forward]{rllm_forward()}} over the cache, not a full
-re-forward. Stops after \code{n_new} tokens or at the model's EOS token.
+prompt (ids or raw bytes), then decodes one token per step - each step is a
+single-token \code{\link[=rllm_forward]{rllm_forward()}} over the cache, not a full re-forward. Stops
+after \code{n_new} tokens or at the model's EOS token. Decoding is greedy by
+default (\code{temperature = 0}); set a positive temperature for
+temperature-scaled sampling, optionally narrowed by \code{top_k} and/or \code{top_p}.
 }
