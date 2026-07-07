@@ -1,0 +1,14 @@
+--- a/ggml-context.c	2026-05-15 08:29:10.000000000 +0200
++++ b/ggml-context.c	2026-07-07 18:38:14.142979226 +0200
+@@ -680,6 +680,11 @@
+ 
+ void * ggml_new_buffer(struct ggml_context * ctx, size_t nbytes) {
+     struct ggml_object * obj = ggml_new_object(ctx, GGML_OBJECT_TYPE_WORK_BUFFER, nbytes);
++    // ggml_new_object returns NULL when the context's memory pool is too small;
++    // dereferencing obj->offs here would corrupt the heap (silent abort on Windows).
++    if (obj == NULL) {
++        return NULL;
++    }
+ 
+     return (uint8_t *)ctx->mem_buffer + obj->offs;
+ }

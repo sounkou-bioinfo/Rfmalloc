@@ -9,3 +9,4 @@ packages/*/inst/ggml/libggml.a
 .RData
 README.html
 packages/*/README.html
+tools/vendor-ggml/cache/
