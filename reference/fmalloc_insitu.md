@@ -2,7 +2,11 @@
 
 Modify an fmalloc-backed atomic vector *in place*, writing straight
 through the backing store and deliberately bypassing R's copy-on-modify.
-This is the by-reference analogue of `x[i] <- value` / `x[] <- value`.
+`fmalloc_set()`/`fmalloc_fill()` are the by-reference analogue of
+`x[i] <- value` / `x[] <- value`; `fmalloc_add()`/`fmalloc_sub()`/
+`fmalloc_mul()`/`fmalloc_div()` compute `x <- x op y` in place (the
+accumulate-into-`x` pattern iterative algorithms need), for numeric
+vectors.
 
 ## Usage
 
@@ -10,6 +14,14 @@ This is the by-reference analogue of `x[i] <- value` / `x[] <- value`.
 fmalloc_set(x, i, value)
 
 fmalloc_fill(x, value)
+
+fmalloc_add(x, y)
+
+fmalloc_sub(x, y)
+
+fmalloc_mul(x, y)
+
+fmalloc_div(x, y)
 ```
 
 ## Arguments
@@ -26,6 +38,12 @@ fmalloc_fill(x, value)
 
   For `fmalloc_set()`, a vector of length 1 (recycled) or `length(i)`.
   For `fmalloc_fill()`, a single scalar.
+
+- y:
+
+  For the arithmetic ops, a numeric scalar (recycled) or a vector of
+  `length(x)`. `NA`/`NaN`/`Inf` follow IEEE double arithmetic (base R
+  semantics).
 
 ## Value
 
