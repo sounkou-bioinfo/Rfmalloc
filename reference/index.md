@@ -60,6 +60,8 @@
   [`rowMeans()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md)
   [`colMeans()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_reduction_methods.md)
   : Matrix reduction helpers for fmalloc-backed matrices
+- [`fmalloc_sync()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_sync.md)
+  : Flush an fmalloc runtime's backing store to disk
 - [`fmalloc_tensor_codecs()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_tensor.md)
   [`create_fmalloc_tensor()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_tensor.md)
   [`as_fmalloc_tensor()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_tensor.md)

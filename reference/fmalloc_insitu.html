@@ -96,10 +96,14 @@ semantics).</p></dd>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
-    <p>Copy-on-modify is fatal at fmalloc scale: an ordinary <code>x[i] &lt;- value</code> on a
-larger-than-RAM or persistent vector can duplicate the whole payload. These
-functions never copy — they update the durable store directly and return the
-same object invisibly.</p>
+    <p>On an <em>unshared</em> fmalloc vector, an ordinary <code>x[i] &lt;- value</code> already writes
+in place through the ALTREP data pointer — no copy — because the file-backed
+storage is exposed directly and this package controls duplication. The copy
+that hurts happens when the vector is <em>shared</em> (<code>y &lt;- x</code>): R then duplicates
+the whole payload to preserve value semantics before modifying, which is
+catastrophic for a larger-than-RAM or persistent vector. These functions
+mutate by reference regardless of sharing — they never copy, updating the
+durable store directly and returning the same object invisibly.</p>
     </div>
     <div class="section level2">
     <h2 id="aliasing-read-this-">Aliasing (read this)<a class="anchor" aria-label="anchor" href="#aliasing-read-this-"></a></h2>
@@ -107,10 +111,11 @@ same object invisibly.</p>
 
 <p>Because there is no copy, all bindings to the same fmalloc vector observe the
 change. After <code>y &lt;- x; fmalloc_set(x, 1, 5)</code>, <code>y[1]</code> is also <code>5</code> — <code>x</code> and
-<code>y</code> name the same backing store. This breaks R's usual value semantics <em>by
-design</em>; for a persistent runtime it is a feature (the durable data is
-updated). For this reason mutation is only ever done through these
-explicitly-named functions, never a silent <code>[&lt;-</code> method.</p>
+<code>y</code> name the same backing store, whereas ordinary <code>x[1] &lt;- 5</code> would copy <code>x</code>
+(leaving <code>y</code> untouched). This breaks R's usual value semantics <em>by design</em>;
+for a persistent runtime it is a feature (the durable data is updated). For
+this reason mutation is only ever done through these explicitly-named
+functions, never a silent <code>[&lt;-</code> method.</p>
 <p>Supported for fixed-width atomic vectors (logical, integer, numeric,
 complex, raw). Indices are 1-based linear positions (column-major for
 matrices/arrays).</p>

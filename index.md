@@ -611,13 +611,17 @@ local({
 
 ## In-place mutation
 
-[`fmalloc_set()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_insitu.md)/[`fmalloc_fill()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_insitu.md)
+On an *unshared* fmalloc vector, ordinary `x[i] <- value` already writes
+in place through the ALTREP data pointer (no copy — a benefit of the
+file-backed ALTREP design). The copy that hurts happens when the vector
+is *shared* (`y <- x`): R then duplicates the whole payload to preserve
+value semantics, which is catastrophic when it is larger than RAM.
+[`fmalloc_set()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_insitu.md)/
+[`fmalloc_fill()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_insitu.md)
 and
 [`fmalloc_add()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_insitu.md)/[`sub()`](https://rdrr.io/r/base/grep.html)/`mul()`/`div()`
-write straight through the backing store, bypassing R’s copy-on-modify.
-This is essential at fmalloc scale (copying a larger-than-RAM payload on
-every `x[i] <-` is fatal) and deliberately by-reference: all bindings to
-the same vector observe the change, so these are explicit functions,
+mutate by reference *regardless of sharing*, so all bindings observe the
+change — deliberately, and only ever through these explicit functions,
 never a silent `[<-`.
 
 ``` r
@@ -805,14 +809,14 @@ local({
   inspect_vec[] <- 1:4
   .Internal(inspect(inspect_vec))
 })
-#> @6403ea2409c0 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x7868a64023e8 mode=persistent runtime=open offset=9192 uuid=d82ceb2f2dc4fbe4d70852110629a3b5 file=/tmp/RtmpQbzMQF/file14cbd162ee3a66.bin
+#> @5c52e2e2f568 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x7155038023e8 mode=persistent runtime=open offset=9192 uuid=09adecd5d33e6e7a64e288c053d9d927 file=/tmp/RtmptHuDPO/file14ea3bba7fdeb.bin
 #> ATTRIB:
-#>   @6403ea245750 02 LISTSXP g0c0 [REF(1)] 
-#>     TAG: @6403e5ca2e40 01 SYMSXP g1c0 [MARK,REF(38390),LCK,gp=0x6000] "class" (has value)
-#>     @6403eae07888 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)
-#>       @6403eb1c48a8 09 CHARSXP g0c2 [MARK,REF(58),gp=0x60] [ASCII] [cached] "fmalloc_vector"
-#>       @6403eab75460 09 CHARSXP g0c1 [MARK,REF(210),gp=0x60] [ASCII] [cached] "fmalloc"
-#>       @6403e5cd5df8 09 CHARSXP g1c1 [MARK,REF(623),gp=0x61] [ASCII] [cached] "integer"
+#>   @5c52e2e2e5a8 02 LISTSXP g0c0 [REF(1)] 
+#>     TAG: @5c52de887e40 01 SYMSXP g1c0 [MARK,REF(38394),LCK,gp=0x6000] "class" (has value)
+#>     @5c52e39eefe8 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)
+#>       @5c52e3dabb38 09 CHARSXP g0c2 [MARK,REF(58),gp=0x60] [ASCII] [cached] "fmalloc_vector"
+#>       @5c52e375dbc0 09 CHARSXP g0c1 [MARK,REF(210),gp=0x60] [ASCII] [cached] "fmalloc"
+#>       @5c52de8badf8 09 CHARSXP g1c1 [MARK,REF(623),gp=0x61] [ASCII] [cached] "integer"
 ```
 
 `inspect()` output is an internal R diagnostic, so exact formatting can
@@ -1368,14 +1372,14 @@ perf_result
 #> # A tibble: 8 × 5
 #>   expression               median `itr/sec` mem_alloc `gc/sec`
 #>   <bch:expr>             <bch:tm>     <dbl> <bch:byt>    <dbl>
-#> 1 base_sequential_sum     35.13µs    28081.        0B        0
-#> 2 fmalloc_sequential_sum  49.71µs    21751.        0B        0
-#> 3 base_scalar_read        32.73µs    28632.        0B        0
-#> 4 fmalloc_scalar_read    930.29µs     1071.   24.55KB        0
-#> 5 base_subset_copy         2.96µs   268687.    7.86KB        0
-#> 6 fmalloc_subset_copy     31.88µs    28523.        0B        0
-#> 7 base_indexed_write      29.72µs    32483.  390.67KB        0
-#> 8 fmalloc_indexed_write  197.98µs     5010.        0B        0
+#> 1 base_sequential_sum     36.84µs    25742.        0B        0
+#> 2 fmalloc_sequential_sum  42.38µs    22750.        0B        0
+#> 3 base_scalar_read        33.55µs    28674.        0B        0
+#> 4 fmalloc_scalar_read    896.96µs     1114.   24.55KB        0
+#> 5 base_subset_copy         3.52µs   255065.    7.86KB        0
+#> 6 fmalloc_subset_copy     19.68µs    45277.        0B        0
+#> 7 base_indexed_write      27.99µs    34122.  390.67KB        0
+#> 8 fmalloc_indexed_write  191.25µs     5095.        0B        0
 ```
 
 ## Native C API for Other Packages

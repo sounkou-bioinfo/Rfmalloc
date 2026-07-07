@@ -533,7 +533,7 @@
 <div class="section level2">
 <h2 id="in-place-mutation">In-place mutation<a class="anchor" aria-label="anchor" href="#in-place-mutation"></a>
 </h2>
-<p><code><a href="reference/fmalloc_insitu.html">fmalloc_set()</a></code>/<code><a href="reference/fmalloc_insitu.html">fmalloc_fill()</a></code> and <code><a href="reference/fmalloc_insitu.html">fmalloc_add()</a></code>/<code><a href="https://rdrr.io/r/base/grep.html" class="external-link">sub()</a></code>/<code>mul()</code>/<code>div()</code> write straight through the backing store, bypassing R’s copy-on-modify. This is essential at fmalloc scale (copying a larger-than-RAM payload on every <code>x[i] &lt;-</code> is fatal) and deliberately by-reference: all bindings to the same vector observe the change, so these are explicit functions, never a silent <code>[&lt;-</code>.</p>
+<p>On an <em>unshared</em> fmalloc vector, ordinary <code>x[i] &lt;- value</code> already writes in place through the ALTREP data pointer (no copy — a benefit of the file-backed ALTREP design). The copy that hurts happens when the vector is <em>shared</em> (<code>y &lt;- x</code>): R then duplicates the whole payload to preserve value semantics, which is catastrophic when it is larger than RAM. <code><a href="reference/fmalloc_insitu.html">fmalloc_set()</a></code>/ <code><a href="reference/fmalloc_insitu.html">fmalloc_fill()</a></code> and <code><a href="reference/fmalloc_insitu.html">fmalloc_add()</a></code>/<code><a href="https://rdrr.io/r/base/grep.html" class="external-link">sub()</a></code>/<code>mul()</code>/<code>div()</code> mutate by reference <em>regardless of sharing</em>, so all bindings observe the change — deliberately, and only ever through these explicit functions, never a silent <code>[&lt;-</code>.</p>
 <div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="va">ip_file</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
@@ -680,14 +680,14 @@
 <span>  <span class="va">inspect_vec</span><span class="op">[</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fl">1</span><span class="op">:</span><span class="fl">4</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/Internal.html" class="external-link">.Internal</a></span><span class="op">(</span><span class="fu">inspect</span><span class="op">(</span><span class="va">inspect_vec</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
-<span><span class="co">#&gt; @6403ea2409c0 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x7868a64023e8 mode=persistent runtime=open offset=9192 uuid=d82ceb2f2dc4fbe4d70852110629a3b5 file=/tmp/RtmpQbzMQF/file14cbd162ee3a66.bin</span></span>
+<span><span class="co">#&gt; @5c52e2e2f568 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x7155038023e8 mode=persistent runtime=open offset=9192 uuid=09adecd5d33e6e7a64e288c053d9d927 file=/tmp/RtmptHuDPO/file14ea3bba7fdeb.bin</span></span>
 <span><span class="co">#&gt; ATTRIB:</span></span>
-<span><span class="co">#&gt;   @6403ea245750 02 LISTSXP g0c0 [REF(1)] </span></span>
-<span><span class="co">#&gt;     TAG: @6403e5ca2e40 01 SYMSXP g1c0 [MARK,REF(38390),LCK,gp=0x6000] "class" (has value)</span></span>
-<span><span class="co">#&gt;     @6403eae07888 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)</span></span>
-<span><span class="co">#&gt;       @6403eb1c48a8 09 CHARSXP g0c2 [MARK,REF(58),gp=0x60] [ASCII] [cached] "fmalloc_vector"</span></span>
-<span><span class="co">#&gt;       @6403eab75460 09 CHARSXP g0c1 [MARK,REF(210),gp=0x60] [ASCII] [cached] "fmalloc"</span></span>
-<span><span class="co">#&gt;       @6403e5cd5df8 09 CHARSXP g1c1 [MARK,REF(623),gp=0x61] [ASCII] [cached] "integer"</span></span></code></pre></div>
+<span><span class="co">#&gt;   @5c52e2e2e5a8 02 LISTSXP g0c0 [REF(1)] </span></span>
+<span><span class="co">#&gt;     TAG: @5c52de887e40 01 SYMSXP g1c0 [MARK,REF(38394),LCK,gp=0x6000] "class" (has value)</span></span>
+<span><span class="co">#&gt;     @5c52e39eefe8 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)</span></span>
+<span><span class="co">#&gt;       @5c52e3dabb38 09 CHARSXP g0c2 [MARK,REF(58),gp=0x60] [ASCII] [cached] "fmalloc_vector"</span></span>
+<span><span class="co">#&gt;       @5c52e375dbc0 09 CHARSXP g0c1 [MARK,REF(210),gp=0x60] [ASCII] [cached] "fmalloc"</span></span>
+<span><span class="co">#&gt;       @5c52de8badf8 09 CHARSXP g1c1 [MARK,REF(623),gp=0x61] [ASCII] [cached] "integer"</span></span></code></pre></div>
 <p><code>inspect()</code> output is an internal R diagnostic, so exact formatting can vary between R versions. The <code>fmalloc_altrep ...</code> line comes from Rfmalloc’s ALTREP <code>Inspect</code> method.</p>
 </div>
 <div class="section level2">
@@ -1161,14 +1161,14 @@
 <span><span class="co">#&gt; # A tibble: 8 × 5</span></span>
 <span><span class="co">#&gt;   expression               median `itr/sec` mem_alloc `gc/sec`</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt;             &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;    &lt;dbl&gt;</span></span>
-<span><span class="co">#&gt; 1 base_sequential_sum     35.13µs    28081.        0B        0</span></span>
-<span><span class="co">#&gt; 2 fmalloc_sequential_sum  49.71µs    21751.        0B        0</span></span>
-<span><span class="co">#&gt; 3 base_scalar_read        32.73µs    28632.        0B        0</span></span>
-<span><span class="co">#&gt; 4 fmalloc_scalar_read    930.29µs     1071.   24.55KB        0</span></span>
-<span><span class="co">#&gt; 5 base_subset_copy         2.96µs   268687.    7.86KB        0</span></span>
-<span><span class="co">#&gt; 6 fmalloc_subset_copy     31.88µs    28523.        0B        0</span></span>
-<span><span class="co">#&gt; 7 base_indexed_write      29.72µs    32483.  390.67KB        0</span></span>
-<span><span class="co">#&gt; 8 fmalloc_indexed_write  197.98µs     5010.        0B        0</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 base_sequential_sum     36.84µs    25742.        0B        0</span></span>
+<span><span class="co">#&gt; 2 fmalloc_sequential_sum  42.38µs    22750.        0B        0</span></span>
+<span><span class="co">#&gt; 3 base_scalar_read        33.55µs    28674.        0B        0</span></span>
+<span><span class="co">#&gt; 4 fmalloc_scalar_read    896.96µs     1114.   24.55KB        0</span></span>
+<span><span class="co">#&gt; 5 base_subset_copy         3.52µs   255065.    7.86KB        0</span></span>
+<span><span class="co">#&gt; 6 fmalloc_subset_copy     19.68µs    45277.        0B        0</span></span>
+<span><span class="co">#&gt; 7 base_indexed_write      27.99µs    34122.  390.67KB        0</span></span>
+<span><span class="co">#&gt; 8 fmalloc_indexed_write  191.25µs     5095.        0B        0</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="native-c-api-for-other-packages">Native C API for Other Packages<a class="anchor" aria-label="anchor" href="#native-c-api-for-other-packages"></a>
