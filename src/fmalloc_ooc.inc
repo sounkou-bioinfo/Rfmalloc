@@ -248,6 +248,85 @@ extern "C" SEXP rfm_matmul_ooc_impl(SEXP a_x, SEXP x_dense, SEXP tile_bytes_sexp
     return ans;
 }
 
+// Out-of-core tcrossprod: C = X X' for a large column-major fmalloc double
+// matrix X (m x n), returning an m x m fmalloc matrix. Tiling is over the
+// reduction dimension (columns of X): each contiguous column panel is a
+// rank-kw update C += X[,k-panel] X[,k-panel]' via dgemm('N','T'), read once
+// and evicted. Single streaming pass over X (input residency ~1 panel); the
+// m x m result is fmalloc-backed.
+extern "C" SEXP rfm_tcrossprod_ooc_impl(SEXP a_x, SEXP tile_bytes_sexp)
+{
+    fm_vector *a_vec = maybe_vector_from_altrep(a_x);
+    if (!a_vec || a_vec->type != REALSXP) {
+        Rf_error("X must be an fmalloc double matrix");
+    }
+    if (!a_vec->runtime || !a_vec->runtime->info) {
+        Rf_error("fmalloc runtime is closed");
+    }
+    SEXP adim = Rf_getAttrib(a_x, R_DimSymbol);
+    if (adim == R_NilValue || TYPEOF(adim) != INTSXP || XLENGTH(adim) != 2) {
+        Rf_error("X must be a matrix");
+    }
+    R_xlen_t m = (R_xlen_t)INTEGER(adim)[0];
+    R_xlen_t n = (R_xlen_t)INTEGER(adim)[1];
+    if (m > (R_xlen_t)std::numeric_limits<int>::max() ||
+        n > (R_xlen_t)std::numeric_limits<int>::max()) {
+        Rf_error("dimensions exceed the BLAS integer interface");
+    }
+    if (m > 0 && m > (R_xlen_t)std::numeric_limits<R_xlen_t>::max() / m) {
+        Rf_error("tcrossprod result is too large");
+    }
+
+    double tile_req = Rf_asReal(tile_bytes_sexp);
+    size_t tile_bytes = (!R_FINITE(tile_req) || tile_req < 1) ? (size_t)256 << 20
+                                                              : (size_t)tile_req;
+    R_xlen_t col_bytes = m * (R_xlen_t)sizeof(double);
+    R_xlen_t pw = col_bytes > 0 ? (R_xlen_t)(tile_bytes / (size_t)col_bytes) : n;
+    if (pw < 1) {
+        pw = 1;
+    }
+
+    fm_vector *c_vec = allocate_fm_vector(a_vec->runtime, REALSXP, m * m, true, false);
+    SEXP ans = PROTECT(fmalloc_new_altrep(c_vec));
+    SEXP cdim = PROTECT(Rf_allocVector(INTSXP, 2));
+    INTEGER(cdim)[0] = (int)m;
+    INTEGER(cdim)[1] = (int)m;
+    Rf_setAttrib(ans, R_DimSymbol, cdim);
+
+    if (m == 0) {
+        UNPROTECT(2);
+        return ans;
+    }
+
+    double *X = static_cast<double *>(vector_data_or_dummy(a_vec));
+    double *C = static_cast<double *>(vector_data_or_dummy(c_vec));
+
+    if (n == 0) {
+        memset(C, 0, (size_t)(m * m) * sizeof(double));
+        UNPROTECT(2);
+        return ans;
+    }
+
+    ooc_advise(X, (size_t)(m * n) * sizeof(double), OOC_SEQUENTIAL);
+
+    const double one = 1.0, zero = 0.0;
+    int mi = (int)m, mc = (int)m; // C is m x m, ldc = m
+    for (R_xlen_t k0 = 0; k0 < n; k0 += pw) {
+        R_xlen_t kw = n - k0 < pw ? n - k0 : pw;
+        int kk = (int)kw;
+        const double *beta = (k0 == 0) ? &zero : &one;
+        double *X_panel = X + k0 * m;
+        // C += X[,k0:k1] X[,k0:k1]'
+        F77_CALL(dgemm)("N", "T", &mi, &mc, &kk, &one,
+                        X_panel, &mi, X_panel, &mi, beta, C, &mi FCONE FCONE);
+        ooc_advise(X_panel, (size_t)(kw * m) * sizeof(double), OOC_DONTNEED);
+        R_CheckUserInterrupt();
+    }
+
+    UNPROTECT(2);
+    return ans;
+}
+
 // Out-of-core crossprod: C = X' X for a large column-major fmalloc double
 // matrix X (m x n), returning an n x n fmalloc matrix. X is consumed as pairs
 // of contiguous column panels: output block (i,j) = X[,i-panel]' X[,j-panel]

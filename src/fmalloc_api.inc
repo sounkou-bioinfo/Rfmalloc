@@ -656,6 +656,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"rfm_tensor_codec_list_impl", (DL_FUNC)&rfm_tensor_codec_list_impl, 0},
     {"rfm_matmul_ooc_impl", (DL_FUNC)&rfm_matmul_ooc_impl, 3},
     {"rfm_crossprod_ooc_impl", (DL_FUNC)&rfm_crossprod_ooc_impl, 2},
+    {"rfm_tcrossprod_ooc_impl", (DL_FUNC)&rfm_tcrossprod_ooc_impl, 2},
     {"rfm_vector_advise_impl", (DL_FUNC)&rfm_vector_advise_impl, 2},
     {"rfm_phys_ram_bytes_impl", (DL_FUNC)&rfm_phys_ram_bytes_impl, 0},
     {"rfm_raw_fill_pattern_impl", (DL_FUNC)&rfm_raw_fill_pattern_impl, 2},

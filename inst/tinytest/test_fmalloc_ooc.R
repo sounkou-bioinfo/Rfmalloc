@@ -155,4 +155,42 @@ message("Testing out-of-core column-tiled matrix products...")
     expect_equal(dimnames(Cn), list(paste0("v", seq_len(n)), paste0("v", seq_len(n))))
 })()
 
+(function() {
+    message("  Test 6: out-of-core tcrossprod matches base and auto-routes")
+    tmp <- tempfile(fileext = ".bin")
+    rt <- open_fmalloc(tmp, mode = "scratch", size_gb = 0.5)
+    on.exit({
+        cleanup_fmalloc(rt)
+        unlink(tmp)
+        options(Rfmalloc.ooc_threshold_gb = NULL, Rfmalloc.ooc_tile_mb = NULL)
+    }, add = TRUE)
+
+    set.seed(7)
+    m <- 70L; n <- 200L
+    X <- create_fmalloc_matrix("numeric", nrow = m, ncol = n, runtime = rt)
+    bx <- matrix(rnorm(m * n), m, n)
+    X[] <- bx
+
+    C <- fmalloc_tcrossprod_ooc(X, tile_mb = 0.01)   # single streaming pass
+    expect_true(inherits(C, "fmalloc_matrix"))
+    expect_true(is_fmalloc_vector(C))
+    expect_equal(dim(C), c(m, m))
+    expect_equal(as.vector(C[]), as.vector(tcrossprod(bx)))
+    expect_equal(as.vector(C[]), as.vector(t(matrix(C[], m, m))))  # symmetric
+
+    options(Rfmalloc.ooc_threshold_gb = 0, Rfmalloc.ooc_tile_mb = 0.01)
+    Cr <- tcrossprod(X)
+    expect_equal(as.vector(Cr[]), as.vector(tcrossprod(bx)))
+
+    # two-arg tcrossprod keeps the in-core path
+    Y <- create_fmalloc_matrix("numeric", nrow = 5L, ncol = n, runtime = rt)
+    by <- matrix(rnorm(5 * n), 5, n)
+    Y[] <- by
+    expect_equal(as.vector(tcrossprod(X, Y)[]), as.vector(tcrossprod(bx, by)))
+
+    dimnames(X) <- list(paste0("s", seq_len(m)), NULL)
+    Cn <- fmalloc_tcrossprod_ooc(X, tile_mb = 0.01)
+    expect_equal(dimnames(Cn), list(paste0("s", seq_len(m)), paste0("s", seq_len(m))))
+})()
+
 message("out-of-core matrix product tests completed")

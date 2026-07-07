@@ -60,6 +60,12 @@
   `fmalloc_add()`/`fmalloc_sub()`/`fmalloc_mul()`/`fmalloc_div()` compute
   `x <- x op y` in place (numeric vectors), for the accumulate-into-`x` pattern
   without per-step allocation.
+- Added `fmalloc_tcrossprod_ooc()` and out-of-core routing for `tcrossprod(X)`
+  (`X X'`): tiles over the reduction dimension (columns of `X`), accumulating
+  rank-`kw` updates via `dgemm('N','T')`. Each contiguous column panel is read
+  once and evicted, so it is a single streaming pass over `X` (input residency
+  ~one panel) with an fmalloc-backed `m x m` result. Single-argument
+  `tcrossprod(X)` on a real fmalloc matrix auto-routes above the threshold.
 - Added `fmalloc_crossprod_ooc()` and out-of-core routing for `crossprod(X)`:
   the Gram matrix `X'X` is computed as pairs of contiguous column panels of `X`
   through BLAS `dgemm`, writing each block straight into the `n x n` fmalloc

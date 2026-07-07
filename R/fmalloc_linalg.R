@@ -86,6 +86,13 @@ NULL
 
 .fmalloc_tcrossprod_impl <- function(x, y = NULL) {
     .fmalloc_linalg_runtime(x, y)
+
+    # Large single-argument tcrossprod(X) = X X' streams out-of-core in a
+    # single pass over X's columns (the m x m result can itself exceed RAM).
+    if (is.null(y) && !is.complex(x) && .fmalloc_crossprod_ooc_candidate(x)) {
+        return(fmalloc_tcrossprod_ooc(x, tile_mb = getOption("Rfmalloc.ooc_tile_mb", 256)))
+    }
+
     x0 <- .fmalloc_linalg_check_operand(x, "x")
     y0 <- if (is.null(y)) NULL else .fmalloc_linalg_check_operand(y, "y")
 
