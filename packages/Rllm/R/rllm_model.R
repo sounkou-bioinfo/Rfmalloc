@@ -106,7 +106,13 @@ rllm_gguf_model <- function(path, runtime = NULL, rope_mode = 0L) {
         ),
         tensors = tensors,
         rope_mode = as.integer(rope_mode),
-        arch = arch
+        arch = arch,
+        # Tokenizer material for the ids <-> bytes edge codecs (rllm_encode/
+        # rllm_decode); NULL when the file carries none (synthetic models).
+        tok_model = md[["tokenizer.ggml.model"]],
+        vocab = md[["tokenizer.ggml.tokens"]],
+        merges = md[["tokenizer.ggml.merges"]],
+        eos_id = md[["tokenizer.ggml.eos_token_id"]]
     ), class = "rllm_model")
 }
 
@@ -123,23 +129,85 @@ print.rllm_model <- function(x, ...) {
     invisible(x)
 }
 
+#' Create a KV cache for incremental decoding
+#'
+#' Allocates the per-layer key/value cache slabs an incremental
+#' [rllm_forward()] writes into and attends over. Each slab is a raw vector of
+#' `n_ctx * (n_embd / n_head) * n_head_kv` f32 values - plain R memory by
+#' default, or \pkg{Rfmalloc}-backed (file-backed, memory-mapped) when a
+#' `runtime` is given, which makes the cache a disk citizen: it survives in
+#' the runtime's file and its pages are evictable like any other fmalloc
+#' payload. (A quantized cache codec in the TurboQuant/PolarQuant vein can
+#' later replace the f32 slabs without touching the graph.)
+#'
+#' The returned object is an environment, so [rllm_forward()] can advance its
+#' `n_past` by reference.
+#'
+#' @param model An `rllm_model` from [rllm_gguf_model()].
+#' @param n_ctx Maximum number of positions the cache can hold.
+#' @param runtime Optional [Rfmalloc::open_fmalloc()] runtime for the slabs.
+#'
+#' @return An environment of class `rllm_kv_cache` with fields `k`, `v`
+#'   (per-layer lists of raw vectors), `n_ctx`, and `n_past`.
+#' @seealso [rllm_forward()], [rllm_generate()]
+#' @export
+rllm_kv_cache <- function(model, n_ctx = 512L, runtime = NULL) {
+    if (!inherits(model, "rllm_model")) {
+        stop("model must be an rllm_model from rllm_gguf_model()")
+    }
+    hp <- model$hparams
+    n_ctx <- as.integer(n_ctx)
+    if (n_ctx < 1L) stop("n_ctx must be positive")
+    slab_bytes <- as.double(n_ctx) * (hp$n_embd / hp$n_head) * hp$n_head_kv * 4
+
+    new_slab <- function() {
+        if (is.null(runtime)) {
+            raw(slab_bytes)
+        } else {
+            Rfmalloc::create_fmalloc_vector("raw", length = slab_bytes,
+                                            runtime = runtime,
+                                            zero_initialize = TRUE)
+        }
+    }
+    cache <- new.env(parent = emptyenv())
+    cache$k <- replicate(hp$n_layer, new_slab(), simplify = FALSE)
+    cache$v <- replicate(hp$n_layer, new_slab(), simplify = FALSE)
+    cache$n_ctx <- n_ctx
+    cache$n_past <- 0L
+    class(cache) <- "rllm_kv_cache"
+    cache
+}
+
+#' @export
+print.rllm_kv_cache <- function(x, ...) {
+    cat(sprintf("<rllm_kv_cache: %d/%d positions used, %d layers, %s slabs>\n",
+                x$n_past, x$n_ctx, length(x$k),
+                if (Rfmalloc::is_fmalloc_vector(x$k[[1L]])) "fmalloc" else "R"))
+    invisible(x)
+}
+
 #' Run a transformer forward pass and return the logits
 #'
 #' Assembles the GGML compute graph for a llama-architecture forward pass
 #' (RMSNorm, RoPE, causal self-attention, SwiGLU feed-forward) over the
 #' model's memory-mapped weights and computes it on the GGML CPU backend.
 #' Quantized weights are contracted natively through the SIMD-dispatched
-#' quantized kernels - they are never decoded to double. There is no KV cache
-#' yet: the graph attends over the whole token batch with a causal mask, so
-#' this is a prompt-scoring (not incremental-generation) entry point.
+#' quantized kernels - they are never decoded to double.
+#'
+#' Without a `cache`, the graph attends over the whole token batch with a
+#' causal mask (prompt scoring). With a [rllm_kv_cache()], the pass appends
+#' the new tokens' keys/values to the cache and attends over everything
+#' cached so far, advancing `cache$n_past` - the incremental-decoding path:
+#' prefill once with the prompt, then feed one token at a time.
 #'
 #' @param model An `rllm_model` from [rllm_gguf_model()].
 #' @param tokens Integer vector of 0-based token ids (as in the GGUF vocab).
+#' @param cache Optional [rllm_kv_cache()] for incremental decoding.
 #'
 #' @return A numeric matrix of logits, dim `c(n_vocab, length(tokens))`:
 #'   column `i` scores the token following position `i`.
 #' @export
-rllm_forward <- function(model, tokens) {
+rllm_forward <- function(model, tokens, cache = NULL) {
     if (!inherits(model, "rllm_model")) {
         stop("model must be an rllm_model from rllm_gguf_model()")
     }
@@ -147,6 +215,16 @@ rllm_forward <- function(model, tokens) {
     if (length(tokens) < 1L || anyNA(tokens)) {
         stop("tokens must be a non-empty vector of 0-based token ids")
     }
-    .Call("RC_rllm_llama_forward", model$hparams, model$tensors, tokens,
-          model$rope_mode, PACKAGE = "Rllm")
+    if (is.null(cache)) {
+        return(.Call("RC_rllm_llama_forward", model$hparams, model$tensors,
+                     tokens, model$rope_mode, NULL, NULL, 0L, PACKAGE = "Rllm"))
+    }
+    if (!inherits(cache, "rllm_kv_cache")) {
+        stop("cache must be an rllm_kv_cache from rllm_kv_cache()")
+    }
+    out <- .Call("RC_rllm_llama_forward", model$hparams, model$tensors,
+                 tokens, model$rope_mode, cache$k, cache$v, cache$n_past,
+                 PACKAGE = "Rllm")
+    cache$n_past <- cache$n_past + length(tokens)
+    out
 }

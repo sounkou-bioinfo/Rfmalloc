@@ -166,6 +166,26 @@ typedef struct ggml_tensor *(*Rggml_cont_fun)(struct ggml_context *ctx,
 typedef struct ggml_tensor *(*Rggml_transpose_fun)(struct ggml_context *ctx,
                                                     struct ggml_tensor *a);
 
+/* -- views and copies (API version 6) ----------------------------------------- */
+/* Strided views into a tensor (offsets/strides in bytes, as in ggml) and the
+ * copy op - the building blocks of a KV cache: cpy nodes write new K/V into
+ * views of a persistent cache tensor, expanded into the graph ahead of the
+ * attention nodes that read other views of the same cache. */
+typedef struct ggml_tensor *(*Rggml_view_1d_fun)(struct ggml_context *ctx,
+                                                  struct ggml_tensor *a,
+                                                  int64_t ne0, size_t offset);
+typedef struct ggml_tensor *(*Rggml_view_2d_fun)(struct ggml_context *ctx,
+                                                  struct ggml_tensor *a,
+                                                  int64_t ne0, int64_t ne1,
+                                                  size_t nb1, size_t offset);
+typedef struct ggml_tensor *(*Rggml_view_3d_fun)(struct ggml_context *ctx,
+                                                  struct ggml_tensor *a,
+                                                  int64_t ne0, int64_t ne1, int64_t ne2,
+                                                  size_t nb1, size_t nb2, size_t offset);
+typedef struct ggml_tensor *(*Rggml_cpy_fun)(struct ggml_context *ctx,
+                                              struct ggml_tensor *a,
+                                              struct ggml_tensor *b);
+
 /* -- type/size introspection -------------------------------------------------- */
 
 typedef size_t (*Rggml_type_size_fun)(enum ggml_type type);
@@ -362,6 +382,26 @@ static inline Rggml_cont_fun Rggml_cont_ptr(void)
 static inline Rggml_transpose_fun Rggml_transpose_ptr(void)
 {
     return (Rggml_transpose_fun) R_GetCCallable("Rggml", "Rggml_transpose");
+}
+
+static inline Rggml_view_1d_fun Rggml_view_1d_ptr(void)
+{
+    return (Rggml_view_1d_fun) R_GetCCallable("Rggml", "Rggml_view_1d");
+}
+
+static inline Rggml_view_2d_fun Rggml_view_2d_ptr(void)
+{
+    return (Rggml_view_2d_fun) R_GetCCallable("Rggml", "Rggml_view_2d");
+}
+
+static inline Rggml_view_3d_fun Rggml_view_3d_ptr(void)
+{
+    return (Rggml_view_3d_fun) R_GetCCallable("Rggml", "Rggml_view_3d");
+}
+
+static inline Rggml_cpy_fun Rggml_cpy_ptr(void)
+{
+    return (Rggml_cpy_fun) R_GetCCallable("Rggml", "Rggml_cpy");
 }
 
 static inline Rggml_type_size_fun Rggml_type_size_ptr(void)

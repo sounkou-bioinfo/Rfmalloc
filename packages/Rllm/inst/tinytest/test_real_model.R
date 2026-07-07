@@ -37,4 +37,25 @@ logits2 <- rllm_forward(model, tokens2)
 expect_equal(logits2[, 1L], logits[, 1L])
 expect_false(isTRUE(all.equal(logits2[, length(tokens)], logits[, length(tokens)])))
 
+# KV cache: incremental == full batch on real weights
+cache <- rllm_kv_cache(model, n_ctx = 8L, runtime = rt)
+pre <- rllm_forward(model, tokens[1:2], cache)
+expect_equal(pre, logits[, 1:2], tolerance = 1e-4)
+for (k in 3:length(tokens)) {
+    step <- rllm_forward(model, tokens[k], cache)
+    expect_equal(as.vector(step), logits[, k], tolerance = 1e-4)
+}
+
+# bytes in -> bytes out, when the file carries a byte-level BPE tokenizer
+# (validation record, SmolLM2-135M Q4_K_M: "The capital of France is Paris.
+#  The capital of Germany is" -> " Berlin. The capital of Italy is Rome...";
+#  cached decode ~16 tok/s, 8.5x over full re-forwards, identical outputs)
+if (identical(model$tok_model, "gpt2")) {
+    gen <- rllm_generate(model, charToRaw("The capital of France is"), n_new = 4L)
+    expect_true(is.raw(gen$raw))
+    expect_equal(length(gen$new_ids) + 5L, length(gen$ids))
+    expect_equal(rllm_decode(model, rllm_encode(model, charToRaw("hello world"))),
+                 charToRaw("hello world"))
+}
+
 message("real-model smoke test completed: ", basename(path))

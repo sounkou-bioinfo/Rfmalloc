@@ -339,6 +339,41 @@ struct ggml_tensor *Rggml_transpose(struct ggml_context *ctx, struct ggml_tensor
     return ggml_transpose(ctx, a);
 }
 
+/*
+ * Views and copies (API version 6) - what a KV cache is made of: strided
+ * views into a persistent cache tensor, written with ggml_cpy nodes expanded
+ * into the graph ahead of the attention that reads them. Offsets and strides
+ * are in bytes, as in ggml itself.
+ */
+struct ggml_tensor *Rggml_view_1d(struct ggml_context *ctx, struct ggml_tensor *a,
+                                   int64_t ne0, size_t offset)
+{
+    if (!ctx || !a) return NULL;
+    return ggml_view_1d(ctx, a, ne0, offset);
+}
+
+struct ggml_tensor *Rggml_view_2d(struct ggml_context *ctx, struct ggml_tensor *a,
+                                   int64_t ne0, int64_t ne1, size_t nb1, size_t offset)
+{
+    if (!ctx || !a) return NULL;
+    return ggml_view_2d(ctx, a, ne0, ne1, nb1, offset);
+}
+
+struct ggml_tensor *Rggml_view_3d(struct ggml_context *ctx, struct ggml_tensor *a,
+                                   int64_t ne0, int64_t ne1, int64_t ne2,
+                                   size_t nb1, size_t nb2, size_t offset)
+{
+    if (!ctx || !a) return NULL;
+    return ggml_view_3d(ctx, a, ne0, ne1, ne2, nb1, nb2, offset);
+}
+
+struct ggml_tensor *Rggml_cpy(struct ggml_context *ctx, struct ggml_tensor *a,
+                               struct ggml_tensor *b)
+{
+    if (!ctx || !a || !b) return NULL;
+    return ggml_cpy(ctx, a, b);
+}
+
 size_t Rggml_type_size(enum ggml_type type)
 {
     return ggml_type_size(type);

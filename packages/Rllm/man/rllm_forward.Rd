@@ -4,12 +4,14 @@
 \alias{rllm_forward}
 \title{Run a transformer forward pass and return the logits}
 \usage{
-rllm_forward(model, tokens)
+rllm_forward(model, tokens, cache = NULL)
 }
 \arguments{
 \item{model}{An \code{rllm_model} from \code{\link[=rllm_gguf_model]{rllm_gguf_model()}}.}
 
 \item{tokens}{Integer vector of 0-based token ids (as in the GGUF vocab).}
+
+\item{cache}{Optional \code{\link[=rllm_kv_cache]{rllm_kv_cache()}} for incremental decoding.}
 }
 \value{
 A numeric matrix of logits, dim \code{c(n_vocab, length(tokens))}:
@@ -20,7 +22,12 @@ Assembles the GGML compute graph for a llama-architecture forward pass
 (RMSNorm, RoPE, causal self-attention, SwiGLU feed-forward) over the
 model's memory-mapped weights and computes it on the GGML CPU backend.
 Quantized weights are contracted natively through the SIMD-dispatched
-quantized kernels - they are never decoded to double. There is no KV cache
-yet: the graph attends over the whole token batch with a causal mask, so
-this is a prompt-scoring (not incremental-generation) entry point.
+quantized kernels - they are never decoded to double.
+}
+\details{
+Without a \code{cache}, the graph attends over the whole token batch with a
+causal mask (prompt scoring). With a \code{\link[=rllm_kv_cache]{rllm_kv_cache()}}, the pass appends
+the new tokens' keys/values to the cache and attends over everything
+cached so far, advancing \code{cache$n_past} - the incremental-decoding path:
+prefill once with the prompt, then feed one token at a time.
 }

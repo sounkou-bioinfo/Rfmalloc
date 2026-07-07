@@ -1,5 +1,26 @@
 # Rllm 0.1.0 (unreleased)
 
+- Added **incremental decoding with a KV cache** and the **bytes-boundary
+  generation API**. `rllm_kv_cache()` allocates per-layer f32 cache slabs
+  (plain R memory, or fmalloc-backed when given a runtime - the cache as a
+  disk citizen; a quantized cache codec can later replace the slabs without
+  touching the graph). `rllm_forward(cache =)` appends new keys/values and
+  attends over everything cached (llama.cpp's classic layout: K flat,
+  V transposed), advancing `n_past` by reference. `rllm_generate()` prefills
+  the cache and decodes greedily one token per step; on SmolLM2-135M this
+  measures ~16 tok/s, 8.5x over full re-forwards, with identical outputs.
+  The correctness invariant - incremental logits equal whole-batch logits at
+  every position - is pinned on the synthetic model for plain and fmalloc
+  cache backings (`test_kv_cache.R`).
+- The model I/O boundary is **bytes, not text**: `rllm_encode()`/
+  `rllm_decode()` convert raw bytes to and from token ids using only the
+  GGUF's own byte-level BPE metadata (`tokenizer.ggml.tokens`/`merges`, GPT-2
+  byte alphabet) - no external tokenizer; `rawToChar()` is the caller's
+  interpretation. Encoding applies merge ranks without GPT-2's regex
+  pre-tokenizer, so splits may occasionally differ from llama.cpp's canonical
+  ones while always decoding back to the same bytes. Real-model record:
+  "The capital of France is Paris. The capital of Germany is" continues
+  " Berlin. The capital of Italy is Rome. The capital of Spain is Madrid."
 - **Validated on a real model** (SmolLM2-135M `Q4_K_M`, 30 layers, GQA 9:3,
   272 tensors in a `q4_k`/`q5_0`/`q6_k`/`q8_0`/`f32` mix): with the model's
   decoded weights, the GGML graph matches a pure-R reference forward to

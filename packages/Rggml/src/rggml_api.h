@@ -14,7 +14,7 @@
 #include <ggml.h>
 #include <ggml-backend.h>
 
-#define RGGML_API_VERSION 5
+#define RGGML_API_VERSION 6
 
 #ifdef __cplusplus
 extern "C" {
@@ -81,6 +81,17 @@ struct ggml_tensor *Rggml_permute(struct ggml_context *ctx, struct ggml_tensor *
                                    int axis0, int axis1, int axis2, int axis3);
 struct ggml_tensor *Rggml_cont(struct ggml_context *ctx, struct ggml_tensor *a);
 struct ggml_tensor *Rggml_transpose(struct ggml_context *ctx, struct ggml_tensor *a);
+
+/* views and copies (API version 6) */
+struct ggml_tensor *Rggml_view_1d(struct ggml_context *ctx, struct ggml_tensor *a,
+                                   int64_t ne0, size_t offset);
+struct ggml_tensor *Rggml_view_2d(struct ggml_context *ctx, struct ggml_tensor *a,
+                                   int64_t ne0, int64_t ne1, size_t nb1, size_t offset);
+struct ggml_tensor *Rggml_view_3d(struct ggml_context *ctx, struct ggml_tensor *a,
+                                   int64_t ne0, int64_t ne1, int64_t ne2,
+                                   size_t nb1, size_t nb2, size_t offset);
+struct ggml_tensor *Rggml_cpy(struct ggml_context *ctx, struct ggml_tensor *a,
+                               struct ggml_tensor *b);
 
 size_t Rggml_type_size(enum ggml_type type);
 size_t Rggml_row_size(enum ggml_type type, int64_t ne);

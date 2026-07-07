@@ -73,6 +73,10 @@ static void register_c_callables(DllInfo *dll)
     R_RegisterCCallable("Rggml", "Rggml_permute",               (DL_FUNC) Rggml_permute);
     R_RegisterCCallable("Rggml", "Rggml_cont",                  (DL_FUNC) Rggml_cont);
     R_RegisterCCallable("Rggml", "Rggml_transpose",             (DL_FUNC) Rggml_transpose);
+    R_RegisterCCallable("Rggml", "Rggml_view_1d",               (DL_FUNC) Rggml_view_1d);
+    R_RegisterCCallable("Rggml", "Rggml_view_2d",               (DL_FUNC) Rggml_view_2d);
+    R_RegisterCCallable("Rggml", "Rggml_view_3d",               (DL_FUNC) Rggml_view_3d);
+    R_RegisterCCallable("Rggml", "Rggml_cpy",                   (DL_FUNC) Rggml_cpy);
 
     R_RegisterCCallable("Rggml", "Rggml_type_size",              (DL_FUNC) Rggml_type_size);
     R_RegisterCCallable("Rggml", "Rggml_row_size",               (DL_FUNC) Rggml_row_size);

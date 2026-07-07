@@ -1,5 +1,11 @@
 # Rggml 0.1.0 (unreleased)
 
+- Added **view and copy C-callables** (API version 6): `Rggml_view_1d`/
+  `_2d`/`_3d` (byte offsets/strides, as in ggml) and `Rggml_cpy` - the
+  building blocks of a KV cache: cpy nodes write new keys/values into views
+  of a persistent cache tensor, expanded into the graph ahead of the
+  attention nodes that read other views of the same cache (see Rllm's
+  incremental decoding).
 - Added the transformer **graph-op C-callables** (API version 5): the ops a
   forward pass composes - `Rggml_get_rows`, `Rggml_rms_norm`, `Rggml_mul`,
   `Rggml_add`, `Rggml_silu`, `Rggml_scale`, `Rggml_soft_max`,
