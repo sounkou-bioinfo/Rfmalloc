@@ -56,17 +56,27 @@ jobs:
           r-version: ${{ matrix.r }}
           use-public-rspm: true
 
-      - name: Install tooling and sibling packages from the local checkout
+      - name: Install CRAN tooling
         run: |
           install.packages("pak", repos = sprintf("https://r-lib.github.io/p/pak/stable/%s/%s/%s", .Platform$pkgType, R.Version()$os, R.Version()$arch))
           pak::pkg_install(c("any::rcmdcheck", "any::tinytest"), ask = FALSE)
-          siblings <- switch("${{ matrix.pkg }}",
-            Rfmalloc = character(),
-            Rggml    = character(),
-            Rgguf    = c("Rfmalloc"),
-            Rllm     = c("Rfmalloc", "Rggml", "Rgguf"))
-          for (s in siblings) pak::local_install(file.path("packages", s), ask = FALSE, dependencies = TRUE)
         shell: Rscript {0}
+
+      # Siblings come from THIS checkout via plain R CMD INSTALL - never from
+      # pak's solver, which would resolve the DESCRIPTIONs' Remotes refs
+      # against GitHub main and validate the wrong code on pull requests.
+      - name: Install sibling packages from the local checkout
+        run: |
+          case "${{ matrix.pkg }}" in
+            Rgguf) siblings="Rfmalloc" ;;
+            Rllm)  siblings="Rfmalloc Rggml Rgguf" ;;
+            *)     siblings="" ;;
+          esac
+          for s in $siblings; do
+            echo "==== R CMD INSTALL packages/$s ===="
+            R CMD INSTALL "packages/$s" || exit 1
+          done
+        shell: bash
 
       - uses: r-lib/actions/check-r-package@v2
         with:
@@ -87,14 +97,21 @@ jobs:
           r-version: 'release'
           use-public-rspm: true
 
-      - name: Install the whole stack in dependency order
+      - name: Install CRAN tooling
         run: |
           install.packages("pak", repos = sprintf("https://r-lib.github.io/p/pak/stable/%s/%s/%s", .Platform$pkgType, R.Version()$os, R.Version()$arch))
           pak::pkg_install("any::tinytest", ask = FALSE)
-          for (p in c("Rfmalloc", "Rggml", "Rgguf", "Rllm")) {
-            pak::local_install(file.path("packages", p), ask = FALSE, dependencies = TRUE)
-          }
         shell: Rscript {0}
+
+      # Same rule as the check jobs: the stack under test is THIS checkout,
+      # installed with R CMD INSTALL in dependency order (no Remotes solving).
+      - name: Install the whole stack in dependency order
+        run: |
+          for p in Rfmalloc Rggml Rgguf Rllm; do
+            echo "==== R CMD INSTALL packages/$p ===="
+            R CMD INSTALL "packages/$p" || exit 1
+          done
+        shell: bash
 
       - name: Run every package's tinytest suite against the co-installed stack
         run: Rscript tests/integration.R
