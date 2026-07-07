@@ -560,6 +560,7 @@
 <h2 id="pluggable-matmul-backends">Pluggable matmul backends<a class="anchor" aria-label="anchor" href="#pluggable-matmul-backends"></a>
 </h2>
 <p>The matrix-product kernels dispatch their <code>dgemm</code> through a selectable backend. The default is R’s BLAS (itself user-swappable via <code>update-alternatives</code>, <code>LD_PRELOAD</code>, or FlexiBLAS). Downstream packages register an alternative (e.g. a GPU or out-of-core-aware GEMM) through the <code>Rfmalloc_register_matmul_backend</code> C-callable; selection is Rfmalloc-scoped, so base R’s <code>%*%</code> is unaffected.</p>
+<p>A backend can also register a <strong>codec-aware</strong> hook (<code>Rfmalloc_register_matmul_backend_ex</code>) that receives a compressed tensor’s <em>raw codec payload</em> and multiplies it by a dense operand without Rfmalloc decoding to <code>f64</code> first — so a quantized/device engine can multiply the compressed data natively (an fmalloc-mmap’d <code>q4_k</code> payload is byte-compatible with a <code>ggml</code> Q4_K tensor). A typed backend may decline a codec, in which case Rfmalloc falls back to the panel-decode path. Together the codec and backend registries make the stack pluggable at both tiers — how bytes decode and what hardware multiplies.</p>
 <div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="reference/fmalloc_backend.html">fmalloc_matmul_backend</a></span><span class="op">(</span><span class="op">)</span>   <span class="co"># "blas" by default</span></span>
 <span><span class="co">#&gt; [1] "blas"</span></span>
@@ -680,14 +681,14 @@
 <span>  <span class="va">inspect_vec</span><span class="op">[</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fl">1</span><span class="op">:</span><span class="fl">4</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/Internal.html" class="external-link">.Internal</a></span><span class="op">(</span><span class="fu">inspect</span><span class="op">(</span><span class="va">inspect_vec</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
-<span><span class="co">#&gt; @5e0cac228368 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x739c92a023e8 mode=persistent runtime=open offset=9192 uuid=186ff2ae060e34c3e099fb70629f4474 file=/tmp/RtmpTRExf9/file14fec879e8eeb4.bin</span></span>
+<span><span class="co">#&gt; @61b0e667a468 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x7f1b0d4023e8 mode=persistent runtime=open offset=9192 uuid=2e66609e226ea0edbc65a25c831e8d37 file=/tmp/Rtmp3rxYYx/file155444f317dea.bin</span></span>
 <span><span class="co">#&gt; ATTRIB:</span></span>
-<span><span class="co">#&gt;   @5e0cac22b1d8 02 LISTSXP g0c0 [REF(1)] </span></span>
-<span><span class="co">#&gt;     TAG: @5e0ca7c76e40 01 SYMSXP g1c0 [MARK,REF(38395),LCK,gp=0x6000] "class" (has value)</span></span>
-<span><span class="co">#&gt;     @5e0cacde1218 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)</span></span>
-<span><span class="co">#&gt;       @5e0cad1a3488 09 CHARSXP g0c2 [MARK,REF(58),gp=0x60] [ASCII] [cached] "fmalloc_vector"</span></span>
-<span><span class="co">#&gt;       @5e0cacb57750 09 CHARSXP g0c1 [MARK,REF(210),gp=0x60] [ASCII] [cached] "fmalloc"</span></span>
-<span><span class="co">#&gt;       @5e0ca7ca9df8 09 CHARSXP g1c1 [MARK,REF(623),gp=0x61] [ASCII] [cached] "integer"</span></span></code></pre></div>
+<span><span class="co">#&gt;   @61b0e66794a8 02 LISTSXP g0c0 [REF(1)] </span></span>
+<span><span class="co">#&gt;     TAG: @61b0e20c7e40 01 SYMSXP g1c0 [MARK,REF(38399),LCK,gp=0x6000] "class" (has value)</span></span>
+<span><span class="co">#&gt;     @61b0e7224e98 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)</span></span>
+<span><span class="co">#&gt;       @61b0e75f28c8 09 CHARSXP g0c2 [MARK,REF(58),gp=0x60] [ASCII] [cached] "fmalloc_vector"</span></span>
+<span><span class="co">#&gt;       @61b0e6fa2cc0 09 CHARSXP g0c1 [MARK,REF(210),gp=0x60] [ASCII] [cached] "fmalloc"</span></span>
+<span><span class="co">#&gt;       @61b0e20fadf8 09 CHARSXP g1c1 [MARK,REF(623),gp=0x61] [ASCII] [cached] "integer"</span></span></code></pre></div>
 <p><code>inspect()</code> output is an internal R diagnostic, so exact formatting can vary between R versions. The <code>fmalloc_altrep ...</code> line comes from Rfmalloc’s ALTREP <code>Inspect</code> method.</p>
 </div>
 <div class="section level2">
@@ -1161,14 +1162,14 @@
 <span><span class="co">#&gt; # A tibble: 8 × 5</span></span>
 <span><span class="co">#&gt;   expression               median `itr/sec` mem_alloc `gc/sec`</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt;             &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;    &lt;dbl&gt;</span></span>
-<span><span class="co">#&gt; 1 base_sequential_sum     36.83µs    25026.        0B        0</span></span>
-<span><span class="co">#&gt; 2 fmalloc_sequential_sum  48.44µs    22246.        0B        0</span></span>
-<span><span class="co">#&gt; 3 base_scalar_read        32.81µs    28313.        0B        0</span></span>
-<span><span class="co">#&gt; 4 fmalloc_scalar_read    882.88µs     1130.   24.55KB        0</span></span>
-<span><span class="co">#&gt; 5 base_subset_copy         2.75µs   274498.    7.86KB        0</span></span>
-<span><span class="co">#&gt; 6 fmalloc_subset_copy        19µs    45527.        0B        0</span></span>
-<span><span class="co">#&gt; 7 base_indexed_write      27.75µs    34215.  390.67KB        0</span></span>
-<span><span class="co">#&gt; 8 fmalloc_indexed_write   186.8µs     5301.        0B        0</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 base_sequential_sum     38.74µs    25035.        0B        0</span></span>
+<span><span class="co">#&gt; 2 fmalloc_sequential_sum  47.35µs    20462.        0B        0</span></span>
+<span><span class="co">#&gt; 3 base_scalar_read        36.99µs    24770.        0B        0</span></span>
+<span><span class="co">#&gt; 4 fmalloc_scalar_read      1.02ms      953.   24.55KB        0</span></span>
+<span><span class="co">#&gt; 5 base_subset_copy         4.82µs   189354.    7.86KB        0</span></span>
+<span><span class="co">#&gt; 6 fmalloc_subset_copy     21.93µs    39509.        0B        0</span></span>
+<span><span class="co">#&gt; 7 base_indexed_write      27.04µs    35321.  390.67KB        0</span></span>
+<span><span class="co">#&gt; 8 fmalloc_indexed_write  206.74µs     4782.        0B        0</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="native-c-api-for-other-packages">Native C API for Other Packages<a class="anchor" aria-label="anchor" href="#native-c-api-for-other-packages"></a>

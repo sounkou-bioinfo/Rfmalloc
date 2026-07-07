@@ -660,6 +660,17 @@ register an alternative (e.g. a GPU or out-of-core-aware GEMM) through
 the `Rfmalloc_register_matmul_backend` C-callable; selection is
 Rfmalloc-scoped, so base R’s `%*%` is unaffected.
 
+A backend can also register a **codec-aware** hook
+(`Rfmalloc_register_matmul_backend_ex`) that receives a compressed
+tensor’s *raw codec payload* and multiplies it by a dense operand
+without Rfmalloc decoding to `f64` first — so a quantized/device engine
+can multiply the compressed data natively (an fmalloc-mmap’d `q4_k`
+payload is byte-compatible with a `ggml` Q4_K tensor). A typed backend
+may decline a codec, in which case Rfmalloc falls back to the
+panel-decode path. Together the codec and backend registries make the
+stack pluggable at both tiers — how bytes decode and what hardware
+multiplies.
+
 ``` r
 
 fmalloc_matmul_backend()   # "blas" by default
@@ -812,14 +823,14 @@ local({
   inspect_vec[] <- 1:4
   .Internal(inspect(inspect_vec))
 })
-#> @5e0cac228368 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x739c92a023e8 mode=persistent runtime=open offset=9192 uuid=186ff2ae060e34c3e099fb70629f4474 file=/tmp/RtmpTRExf9/file14fec879e8eeb4.bin
+#> @61b0e667a468 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x7f1b0d4023e8 mode=persistent runtime=open offset=9192 uuid=2e66609e226ea0edbc65a25c831e8d37 file=/tmp/Rtmp3rxYYx/file155444f317dea.bin
 #> ATTRIB:
-#>   @5e0cac22b1d8 02 LISTSXP g0c0 [REF(1)] 
-#>     TAG: @5e0ca7c76e40 01 SYMSXP g1c0 [MARK,REF(38395),LCK,gp=0x6000] "class" (has value)
-#>     @5e0cacde1218 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)
-#>       @5e0cad1a3488 09 CHARSXP g0c2 [MARK,REF(58),gp=0x60] [ASCII] [cached] "fmalloc_vector"
-#>       @5e0cacb57750 09 CHARSXP g0c1 [MARK,REF(210),gp=0x60] [ASCII] [cached] "fmalloc"
-#>       @5e0ca7ca9df8 09 CHARSXP g1c1 [MARK,REF(623),gp=0x61] [ASCII] [cached] "integer"
+#>   @61b0e66794a8 02 LISTSXP g0c0 [REF(1)] 
+#>     TAG: @61b0e20c7e40 01 SYMSXP g1c0 [MARK,REF(38399),LCK,gp=0x6000] "class" (has value)
+#>     @61b0e7224e98 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)
+#>       @61b0e75f28c8 09 CHARSXP g0c2 [MARK,REF(58),gp=0x60] [ASCII] [cached] "fmalloc_vector"
+#>       @61b0e6fa2cc0 09 CHARSXP g0c1 [MARK,REF(210),gp=0x60] [ASCII] [cached] "fmalloc"
+#>       @61b0e20fadf8 09 CHARSXP g1c1 [MARK,REF(623),gp=0x61] [ASCII] [cached] "integer"
 ```
 
 `inspect()` output is an internal R diagnostic, so exact formatting can
@@ -1375,14 +1386,14 @@ perf_result
 #> # A tibble: 8 × 5
 #>   expression               median `itr/sec` mem_alloc `gc/sec`
 #>   <bch:expr>             <bch:tm>     <dbl> <bch:byt>    <dbl>
-#> 1 base_sequential_sum     36.83µs    25026.        0B        0
-#> 2 fmalloc_sequential_sum  48.44µs    22246.        0B        0
-#> 3 base_scalar_read        32.81µs    28313.        0B        0
-#> 4 fmalloc_scalar_read    882.88µs     1130.   24.55KB        0
-#> 5 base_subset_copy         2.75µs   274498.    7.86KB        0
-#> 6 fmalloc_subset_copy        19µs    45527.        0B        0
-#> 7 base_indexed_write      27.75µs    34215.  390.67KB        0
-#> 8 fmalloc_indexed_write   186.8µs     5301.        0B        0
+#> 1 base_sequential_sum     38.74µs    25035.        0B        0
+#> 2 fmalloc_sequential_sum  47.35µs    20462.        0B        0
+#> 3 base_scalar_read        36.99µs    24770.        0B        0
+#> 4 fmalloc_scalar_read      1.02ms      953.   24.55KB        0
+#> 5 base_subset_copy         4.82µs   189354.    7.86KB        0
+#> 6 fmalloc_subset_copy     21.93µs    39509.        0B        0
+#> 7 base_indexed_write      27.04µs    35321.  390.67KB        0
+#> 8 fmalloc_indexed_write  206.74µs     4782.        0B        0
 ```
 
 ## Native C API for Other Packages
