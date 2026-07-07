@@ -214,7 +214,7 @@ static void tensor_evict_range(const rfm_tensor_source *src, R_xlen_t elem_off,
     }
     ooc_advise(const_cast<void *>(static_cast<const void *>(
                    static_cast<const uint8_t *>(src->payload) + byte_start)),
-               byte_len, MADV_DONTNEED);
+               byte_len, OOC_DONTNEED);
 }
 
 static int tensor_decode_range(const rfm_tensor_source *src, R_xlen_t elem_off,
@@ -273,7 +273,7 @@ extern "C" SEXP rfm_tensor_matmul_impl(SEXP payload, SEXP codec_name, SEXP dims_
 
     bool ooc = Rf_asLogical(ooc_sexp) == TRUE;
     if (ooc && src.payload) {
-        ooc_advise(const_cast<void *>(src.payload), src.payload_bytes, MADV_SEQUENTIAL);
+        ooc_advise(const_cast<void *>(src.payload), src.payload_bytes, OOC_SEQUENTIAL);
     }
 
     if (TYPEOF(dense) != REALSXP) {

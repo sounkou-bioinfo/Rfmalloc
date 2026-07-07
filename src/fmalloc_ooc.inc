@@ -14,6 +14,30 @@
 #include <sys/sysctl.h>
 #endif
 
+// Some platforms (Windows/Rtools) provide <sys/mman.h> for mmap but no
+// madvise()/MADV_* — the OOC path still works there, just without eviction.
+#if defined(MADV_DONTNEED) && defined(MADV_SEQUENTIAL) && !defined(_WIN32)
+#  define RFM_HAVE_MADVISE 1
+#else
+#  define RFM_HAVE_MADVISE 0
+#endif
+
+// macOS/BSD mach headers (pulled in by <sys/sysctl.h>/<sys/mman.h>) define
+// FALSE/TRUE as macros, which shadow R's Rboolean enumerators. Since R 4.5
+// Rboolean is a fixed-underlying-type enum that an int does not implicitly
+// convert to, that shadowing breaks Rboolean-typed R API calls (e.g.
+// R_useDynamicSymbols) in translation units included after this one. Drop the
+// macros so the enumerators are visible again.
+#ifdef FALSE
+#  undef FALSE
+#endif
+#ifdef TRUE
+#  undef TRUE
+#endif
+
+// Portable page-advice request, mapped to madvise where available.
+enum ooc_advice_t { OOC_SEQUENTIAL = 0, OOC_DONTNEED = 1, OOC_WILLNEED = 2 };
+
 // Total physical RAM in bytes, or NA_REAL if it cannot be determined.
 // Uses POSIX sysconf where available (Linux and most Unix), falling back to
 // the BSD/macOS sysctl HW memory query.
@@ -48,25 +72,37 @@ extern "C" SEXP rfm_phys_ram_bytes_impl(void)
 
 static inline uintptr_t ooc_page_size(void)
 {
+#if defined(_SC_PAGESIZE)
     long ps = sysconf(_SC_PAGESIZE);
     return ps > 0 ? (uintptr_t)ps : 4096;
+#else
+    return 4096;
+#endif
 }
 
-// Advise the kernel about the whole A payload (best-effort; ignore failures,
-// which are expected for non-mmap or unaligned edge cases).
-static void ooc_advise(void *addr, size_t bytes, int advice)
+// Advise the kernel about a payload range (best-effort; a no-op on platforms
+// without madvise). Failures are ignored — they are expected for non-mmap or
+// unaligned edge cases.
+static void ooc_advise(void *addr, size_t bytes, ooc_advice_t advice)
 {
     if (!addr || bytes == 0) {
         return;
     }
+#if RFM_HAVE_MADVISE
+    int m = advice == OOC_SEQUENTIAL ? MADV_SEQUENTIAL
+          : advice == OOC_WILLNEED  ? MADV_WILLNEED
+                                    : MADV_DONTNEED;
     uintptr_t ps = ooc_page_size();
     uintptr_t start = (uintptr_t)addr;
     uintptr_t end = start + bytes;
     uintptr_t astart = (start + ps - 1) & ~(ps - 1); // round up
     uintptr_t aend = end & ~(ps - 1);                // round down
     if (aend > astart) {
-        madvise((void *)astart, (size_t)(aend - astart), advice);
+        madvise((void *)astart, (size_t)(aend - astart), m);
     }
+#else
+    (void)advice;
+#endif
 }
 
 // Evict (advice 0 = MADV_DONTNEED) or read-ahead-hint (1 = MADV_SEQUENTIAL,
@@ -79,7 +115,7 @@ extern "C" SEXP rfm_vector_advise_impl(SEXP vector_x, SEXP advice_sexp)
         Rf_error("x is not an fmalloc ALTREP vector");
     }
     int code = Rf_asInteger(advice_sexp);
-    int advice = code == 1 ? MADV_SEQUENTIAL : code == 2 ? MADV_WILLNEED : MADV_DONTNEED;
+    ooc_advice_t advice = code == 1 ? OOC_SEQUENTIAL : code == 2 ? OOC_WILLNEED : OOC_DONTNEED;
     if (vec->data && vec->bytes > 0) {
         ooc_advise(vec->data, vec->bytes, advice);
     }
@@ -187,7 +223,7 @@ extern "C" SEXP rfm_matmul_ooc_impl(SEXP a_x, SEXP x_dense, SEXP tile_bytes_sexp
         return ans;
     }
 
-    ooc_advise(A, (size_t)(m * n) * sizeof(double), MADV_SEQUENTIAL);
+    ooc_advise(A, (size_t)(m * n) * sizeof(double), OOC_SEQUENTIAL);
 
     const double one = 1.0, zero = 0.0;
     int mi = (int)m, ki = (int)xncol, ni = (int)n; // ni = ldb of X (n x k)
@@ -200,7 +236,7 @@ extern "C" SEXP rfm_matmul_ooc_impl(SEXP a_x, SEXP x_dense, SEXP tile_bytes_sexp
                         A_tile, &mi, X + j0, &ni, beta,
                         Y, &mi FCONE FCONE);
         // Release the tile's pages: resident set stays ~tile_bytes, not m*n*8.
-        ooc_advise(A_tile, (size_t)(tw * m) * sizeof(double), MADV_DONTNEED);
+        ooc_advise(A_tile, (size_t)(tw * m) * sizeof(double), OOC_DONTNEED);
         R_CheckUserInterrupt();
     }
 
