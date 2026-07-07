@@ -1,0 +1,200 @@
+Rggml vendors a CPU-only subset of the GGML tensor library as third-party C
+and C++ source, built into a static library (inst/ggml/libggml.a) and
+exposed through Rggml's own C-callable API. This file documents what was
+vendored, from where, and under what license.
+
+Upstream project
+-----------------
+GGML: https://github.com/ggml-org/ggml
+Copyright (c) Georgi Gerganov and contributors.
+License: MIT (see "Verbatim upstream LICENSE text" below).
+
+Immediate vendoring source
+---------------------------
+The GGML sources here were not copied directly from the ggml-org/ggml
+repository. They were copied from an existing CRAN-facing R package,
+'ggmlR' (https://github.com/Zabis13/ggmlR by Yuri Baramykov, MIT licensed),
+which already vendors GGML with the R-specific adaptations Rggml also
+needs (notably the stdio/abort CRAN-compliance shim, see below). ggmlR's
+DESCRIPTION records the vendored GGML version as 0.9.5; that version
+string and 'ggmlR' as the placeholder commit are compiled in unchanged
+(see inst/ggml/Makefile: -DGGML_VERSION, -DGGML_COMMIT) because ggmlR
+itself does not preserve the exact upstream ggml-org/ggml commit hash.
+Rggml's own C-callable API version (separate from the GGML library
+version) is tracked by RGGML_API_VERSION in src/rggml_api.h.
+
+ggmlR itself also splits GGML's monolithic ggml.c and ggml-cpu/ops.cpp
+into several smaller translation units compiled together as a single unit
+(ggml-core.c/ggml-context.c/ggml-ops-builders.c/ggml-graph.c/ggml-misc.c,
+included from ggml-private.c; ggml-cpu/ops-elemwise.cpp/ops-tensor.cpp/
+ops-rope-attn.cpp/ops-ssm.cpp/ops-recurrent.cpp/ops-misc.cpp, included
+from ggml-cpu/ops-private.cpp). Rggml keeps that split as-is.
+
+What was vendored (CPU backend only)
+-------------------------------------
+Under inst/ggml/ (built into libggml.a) and inst/include/ (installed
+public headers, also used by Rggml.h and by downstream LinkingTo
+packages):
+
+  Core tensor/context/graph:
+    ggml-private.c (unity include of ggml-core.c, ggml-context.c,
+      ggml-ops-builders.c, ggml-graph.c, ggml-misc.c), ggml-alloc.c,
+      ggml-impl.h, ggml-common.h, ggml-cpp.h, gguf.h (header only - GGUF
+      file I/O itself, gguf.cpp, is NOT vendored; ggml-impl.h merely
+      declares two gguf_* helper prototypes that are never called here)
+  Backend plumbing:
+    ggml-backend.cpp, ggml-backend-reg.cpp, ggml-backend-meta.cpp,
+      ggml-backend-impl.h, ggml-threading.cpp, ggml-threading.h
+  BLAS backend:
+    ggml-blas.cpp (inst/ggml/) and ggml-blas.h (inst/include/) - unlike
+      the rest, these were copied directly from ggml-org/ggml (ggmlR is
+      CPU-only and does not vendor the BLAS backend). Still MIT. GGML's
+      BLAS backend offloads dense F32 mul_mat to a system BLAS; Rggml
+      points it at R's own BLAS (see "CBLAS -> Fortran BLAS shim" below).
+  Quantization (tensor-level quantize/dequantize):
+    ggml-quants-legacy.c, ggml-quants-iq.c, ggml-quants-new.c,
+      ggml-quants-validate.c, ggml-quants.h, ggml-quants-helpers.h,
+      ggml-quants-new.h
+  CPU backend (inst/ggml/ggml-cpu/):
+    ggml-cpu.cpp, ggml-cpu-backend.c, ggml-cpu-impl.h, arch-fallback.h,
+      common.h, simd-gemm.h, simd-mappings.h, traits.cpp/.h, vec.cpp/.h,
+      quants.c/.h (CPU vec-dot/dequant kernels, distinct from the
+      tensor-level ggml-quants-*.c files above), repack.cpp/.h,
+      binary-ops.cpp/.h, unary-ops.cpp/.h, ops.h, ops-private.cpp (unity
+      include of ops-elemwise.cpp, ops-tensor.cpp, ops-rope-attn.cpp,
+      ops-ssm.cpp, ops-recurrent.cpp, ops-misc.cpp), amx/amx.h (header
+      only; the AMX kernels themselves, amx/amx.cpp and amx/mmq.cpp, are
+      NOT vendored - the header's declarations are compiled out unless
+      __AMX_INT8__/__AVX512VNNI__ are defined, which this build never
+      sets)
+  Installed public headers (inst/include/), also used by downstream
+  LinkingTo packages via Rggml.h:
+    ggml.h, ggml-alloc.h, ggml-backend.h, ggml-cpu.h
+
+Rggml builds the CPU kernels in an architecture-generic (GGML_CPU_GENERIC)
+configuration: no SIMD compiler flags, no OpenMP, and none of the
+hand-written x86 SIMD kernel files (ggml-cpu/arch/x86/*). GGML's BLAS
+backend (GGML_USE_BLAS, ggml-blas.cpp) IS built: dense F32 mul_mat
+offloads to R's own BLAS through the shim described below. GGML's GPU and
+other backends (CUDA/Metal/SYCL/Vulkan/RPC/CANN/...) are not vendored or
+compiled. See README.md for what a future Vulkan backend addition would
+need, and for the planned runtime-SIMD-dispatched quantized kernels.
+
+Deliberately NOT vendored (present in ggmlR but out of scope for Rggml):
+  - src/ggml-vulkan/ (the entire Vulkan backend and its shader sources)
+  - src/onnx/ (ONNX model loading)
+  - src/ggml-opt.cpp/.h (the optimizer/autograd training engine)
+  - src/gguf.cpp (GGUF file I/O; gguf.h is vendored as a header-only
+    dependency of ggml-impl.h, see above)
+  - src/ggml-cpu/amx/amx.cpp, amx/mmq.cpp, amx/common.h (AMX kernels)
+  - src/ggml-cpu/llamafile/sgemm.cpp (Mozilla Foundation's hand-tuned
+    x86 SIMD sgemm; not needed for a portable generic CPU build)
+  - src/ggml-cpu/arch/x86/* (hand-written x86 SIMD kernels)
+  - src/r_interface*.c, src/r_ggml_io.c (ggmlR's own R-level bindings;
+    Rggml's C-callable API and rggml_io.c/rggml_compat.h below are a
+    fresh implementation of the same idea, not copies of ggmlR's R
+    bindings)
+
+CRAN-compliance I/O shim
+--------------------------
+inst/ggml/rggml_compat.h and inst/ggml/rggml_io.c are adapted, with only
+cosmetic renaming (r_ggml_* -> unchanged internally; file names r_ggml_
+compat.h/r_ggml_io.c -> rggml_compat.h/rggml_io.c), from ggmlR's
+src/r_ggml_compat.h and src/r_ggml_io.c. They redirect the vendored GGML
+code's stdio (printf/fprintf/puts/...) and process-terminating calls
+(abort/exit/_Exit) to R-safe equivalents (Rprintf/REprintf/Rf_error), per
+CRAN policy (no direct writes to the console, no calls that can terminate
+the R session). This mechanism is ggmlR's own original contribution (not
+part of upstream GGML) and is MIT licensed along with the rest of ggmlR.
+
+CBLAS -> Fortran BLAS shim
+---------------------------
+GGML's BLAS backend (ggml-blas.cpp) calls the C CBLAS interface
+(cblas_sgemm), which R does not guarantee: R links against a BLAS that
+exposes the Fortran interface (sgemm_), not necessarily CBLAS. Rather than
+add a system CBLAS dependency, inst/ggml/cblas.h and inst/ggml/rggml_cblas.c
+provide a minimal cblas_sgemm() that forwards to Fortran sgemm_ via R's
+F77_NAME() convention (the final Rggml.so links $(BLAS_LIBS) $(FLIBS)).
+These two files are Rggml's own original code, not derived from GGML or
+ggmlR, and are GPL (>= 2) like the rest of Rggml.
+
+Runtime SIMD dispatch (tools/simd/)
+------------------------------------
+tools/simd/cpu_features.c and cpu_features.h are copied from the R package
+'RsimdDispatch' (https://github.com/sounkou-bioinfo/RsimdDispatch, GPL (>= 2),
+by the same author as Rggml). They provide runtime CPUID/ISA detection used by
+Rggml's SIMD dispatcher. tools/simd/rggml_simd_dispatch.c (the dispatcher) and
+tools/simd/vec_dot_q4_K.c (a copy of GGML's ggml_vec_dot_q4_K_q8_K_generic body
+from ggml-cpu/quants.c, compiled by configure with per-ISA flags into staged
+variants) are Rggml's own code, GPL (>= 2). The vec_dot_q4_K.c body is a
+verbatim derivative of GGML (MIT) and is kept in sync with quants.c.
+
+Licensing
+----------
+- GGML itself (Georgi Gerganov and contributors): MIT.
+- ggmlR (Yuri Baramykov), including its CRAN-compliance I/O shim and its
+  splitting of ggml.c/ops.cpp into multiple translation units: MIT.
+- RsimdDispatch (same author), incl. tools/simd/cpu_features.{c,h} copied
+  from it: GPL (>= 2).
+- Rggml's own code (src/rggml_api.c, src/rggml_api.h, src/rggml_init.c,
+  src/rggml_test.c, inst/include/Rggml.h, inst/ggml/cblas.h,
+  inst/ggml/rggml_cblas.c, tools/simd/rggml_simd_dispatch.c,
+  tools/simd/vec_dot_q4_K.c, all R/ code): GPL (>= 2), as declared in
+  DESCRIPTION.
+
+The vendored MIT-licensed components remain under their upstream license,
+which is GPL-compatible; this notice preserves their required copyright
+and permission statements and does not change the license terms declared
+for the Rggml package itself.
+
+Verbatim upstream LICENSE text (GGML, from the ggml-org/ggml repository,
+also the license under which ggmlR redistributes and Rggml further
+vendors these sources; fetched from
+https://raw.githubusercontent.com/ggml-org/ggml/master/LICENSE):
+
+    MIT License
+
+    Copyright (c) 2023-2026 The ggml authors
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+Verbatim ggmlR LICENSE text (covers the vendoring-source adaptations
+described above, notably the CRAN-compliance I/O shim):
+
+    MIT License
+
+    Copyright (c) 2026 Yuri Baramykov
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.

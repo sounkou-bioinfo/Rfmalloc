@@ -1,0 +1,77 @@
+/*
+ * rggml_init.c - native routine registration and R_RegisterCCallable() calls
+ * for Rggml. Mirrors the approach used by Rfmalloc/Rgguf: every .Call entry
+ * point and every C-callable is registered explicitly, and dynamic symbol
+ * lookup is disabled so R CMD check does not warn about unregistered native
+ * symbols.
+ */
+
+#include <R.h>
+#include <Rinternals.h>
+#include <R_ext/Rdynload.h>
+
+#include "rggml_api.h"
+
+SEXP RC_rggml_version(void);
+SEXP RC_rggml_test_mul_mat(SEXP A_sexp, SEXP B_sexp, SEXP zero_copy_sexp, SEXP use_blas_sexp);
+SEXP RC_rggml_test_mul_mat_q4k(SEXP A_sexp, SEXP B_sexp);
+SEXP RC_rggml_test_q4k_dot(SEXP nblocks_sexp);
+SEXP RC_rggml_bench_q4k_dot(SEXP nblocks_sexp, SEXP iters_sexp);
+
+static const R_CallMethodDef CallEntries[] = {
+    {"RC_rggml_version",           (DL_FUNC) &RC_rggml_version,           0},
+    {"RC_rggml_test_mul_mat",      (DL_FUNC) &RC_rggml_test_mul_mat,      4},
+    {"RC_rggml_test_mul_mat_q4k",  (DL_FUNC) &RC_rggml_test_mul_mat_q4k,  2},
+    {"RC_rggml_test_q4k_dot",      (DL_FUNC) &RC_rggml_test_q4k_dot,      1},
+    {"RC_rggml_bench_q4k_dot",     (DL_FUNC) &RC_rggml_bench_q4k_dot,     2},
+    {NULL, NULL, 0}
+};
+
+static void register_c_callables(DllInfo *dll)
+{
+    R_RegisterCCallable("Rggml", "Rggml_api_version",          (DL_FUNC) Rggml_api_version);
+    R_RegisterCCallable("Rggml", "Rggml_version",               (DL_FUNC) Rggml_version);
+
+    R_RegisterCCallable("Rggml", "Rggml_context_create",        (DL_FUNC) Rggml_context_create);
+    R_RegisterCCallable("Rggml", "Rggml_context_free",          (DL_FUNC) Rggml_context_free);
+    R_RegisterCCallable("Rggml", "Rggml_used_mem",               (DL_FUNC) Rggml_used_mem);
+    R_RegisterCCallable("Rggml", "Rggml_tensor_overhead",        (DL_FUNC) Rggml_tensor_overhead);
+    R_RegisterCCallable("Rggml", "Rggml_graph_overhead",         (DL_FUNC) Rggml_graph_overhead);
+
+    R_RegisterCCallable("Rggml", "Rggml_new_tensor",             (DL_FUNC) Rggml_new_tensor);
+    R_RegisterCCallable("Rggml", "Rggml_tensor_data",            (DL_FUNC) Rggml_tensor_data);
+    R_RegisterCCallable("Rggml", "Rggml_tensor_set_data",        (DL_FUNC) Rggml_tensor_set_data);
+    R_RegisterCCallable("Rggml", "Rggml_tensor_ne",              (DL_FUNC) Rggml_tensor_ne);
+    R_RegisterCCallable("Rggml", "Rggml_tensor_nb",              (DL_FUNC) Rggml_tensor_nb);
+
+    R_RegisterCCallable("Rggml", "Rggml_backend_cpu_init",       (DL_FUNC) Rggml_backend_cpu_init);
+    R_RegisterCCallable("Rggml", "Rggml_backend_free",           (DL_FUNC) Rggml_backend_free);
+    R_RegisterCCallable("Rggml", "Rggml_backend_graph_compute",  (DL_FUNC) Rggml_backend_graph_compute);
+    R_RegisterCCallable("Rggml", "Rggml_backend_blas_init",      (DL_FUNC) Rggml_backend_blas_init);
+    R_RegisterCCallable("Rggml", "Rggml_backend_blas_set_n_threads", (DL_FUNC) Rggml_backend_blas_set_n_threads);
+
+    R_RegisterCCallable("Rggml", "Rggml_new_graph",              (DL_FUNC) Rggml_new_graph);
+    R_RegisterCCallable("Rggml", "Rggml_build_forward_expand",   (DL_FUNC) Rggml_build_forward_expand);
+
+    R_RegisterCCallable("Rggml", "Rggml_mul_mat",                (DL_FUNC) Rggml_mul_mat);
+    R_RegisterCCallable("Rggml", "Rggml_compute_mul_mat",        (DL_FUNC) Rggml_compute_mul_mat);
+
+    R_RegisterCCallable("Rggml", "Rggml_quantize",              (DL_FUNC) Rggml_quantize);
+    R_RegisterCCallable("Rggml", "Rggml_dequantize",            (DL_FUNC) Rggml_dequantize);
+
+    R_RegisterCCallable("Rggml", "Rggml_type_size",              (DL_FUNC) Rggml_type_size);
+    R_RegisterCCallable("Rggml", "Rggml_row_size",               (DL_FUNC) Rggml_row_size);
+    R_RegisterCCallable("Rggml", "Rggml_blck_size",              (DL_FUNC) Rggml_blck_size);
+    R_RegisterCCallable("Rggml", "Rggml_nbytes",                 (DL_FUNC) Rggml_nbytes);
+    R_RegisterCCallable("Rggml", "Rggml_nelements",              (DL_FUNC) Rggml_nelements);
+    R_RegisterCCallable("Rggml", "Rggml_type_name",              (DL_FUNC) Rggml_type_name);
+
+    (void) dll;
+}
+
+void R_init_Rggml(DllInfo *dll)
+{
+    R_registerRoutines(dll, NULL, CallEntries, NULL, NULL);
+    register_c_callables(dll);
+    R_useDynamicSymbols(dll, FALSE);
+}
