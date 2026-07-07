@@ -73,4 +73,44 @@ message("Testing out-of-core column-tiled matrix products...")
     expect_equal(nb, 10 * 6 * 8)
 })()
 
+(function() {
+    message("  Test 4: %*% auto-routes to OOC above the size threshold")
+    tmp <- tempfile(fileext = ".bin")
+    rt <- open_fmalloc(tmp, mode = "scratch", size_gb = 0.5)
+    on.exit({
+        cleanup_fmalloc(rt)
+        unlink(tmp)
+        options(Rfmalloc.ooc_threshold_gb = NULL, Rfmalloc.ooc_tile_mb = NULL)
+    }, add = TRUE)
+
+    set.seed(5)
+    m <- 200L; n <- 120L
+    A <- create_fmalloc_matrix("numeric", nrow = m, ncol = n, runtime = rt,
+                               dimnames = list(NULL, NULL))
+    ba <- matrix(rnorm(m * n), m, n)
+    A[] <- ba
+
+    b <- matrix(rnorm(n * 3), n, 3)
+    incore <- A %*% b            # threshold default Inf-ish -> in-core
+
+    # Force every product through the OOC path with a tiny threshold + tiles.
+    options(Rfmalloc.ooc_threshold_gb = 0, Rfmalloc.ooc_tile_mb = 0.02)
+    routed <- A %*% b
+    expect_true(is_fmalloc_vector(routed))
+    expect_equal(as.vector(routed[]), as.vector(ba %*% b))
+    expect_equal(as.vector(routed[]), as.vector(incore[]))
+
+    # gemv shape too
+    v <- rnorm(n)
+    expect_equal(as.vector((A %*% v)[]), as.vector(ba %*% v))
+
+    # dimnames propagate like base
+    An <- create_fmalloc_matrix("numeric", nrow = 4L, ncol = 3L, runtime = rt)
+    An[] <- as.numeric(1:12)
+    dimnames(An) <- list(c("r1","r2","r3","r4"), c("a","b","c"))
+    bn <- matrix(as.numeric(1:6), 3, 2, dimnames = list(NULL, c("x","y")))
+    rn <- An %*% bn
+    expect_equal(dimnames(rn), list(c("r1","r2","r3","r4"), c("x","y")))
+})()
+
 message("out-of-core matrix product tests completed")

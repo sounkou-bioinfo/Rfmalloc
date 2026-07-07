@@ -10,6 +10,12 @@
 #' The backing storage is advised `MADV_SEQUENTIAL` so the kernel reads ahead.
 #' The result is an fmalloc-backed matrix allocated in `A`'s runtime.
 #'
+#' `%*%` on an fmalloc matrix calls this automatically when the left operand's
+#' payload reaches `getOption("Rfmalloc.ooc_threshold_gb")` (default: half of
+#' physical RAM), using `getOption("Rfmalloc.ooc_tile_mb", 256)` for the tile
+#' size; smaller products keep the in-core BLAS path. `crossprod()`/
+#' `tcrossprod()` are not auto-routed (their output can itself exceed RAM).
+#'
 #' @param A An fmalloc-backed double matrix (`m x n`).
 #' @param x A numeric vector of length `n`, or a numeric matrix (`n x k`).
 #' @param tile_mb Target resident megabytes per column tile of `A`. Larger
@@ -41,6 +47,11 @@ fmalloc_matmul_ooc <- function(A, x, tile_mb = 256) {
         stop("tile_mb must be a single positive number")
     }
 
+    # Capture column names of the dense operand before stripping/coercion,
+    # so the result can carry base-consistent dimnames.
+    rn <- dimnames(A)[[1L]]
+    cn <- if (!is.null(dim(x))) dimnames(x)[[2L]] else NULL
+
     x <- .fmalloc_strip_class(x)
     if (!(is.numeric(x) || is.logical(x))) {
         stop("x must be a numeric vector or matrix")
@@ -50,5 +61,67 @@ fmalloc_matmul_ooc <- function(A, x, tile_mb = 256) {
     }
 
     ans <- .Call("rfm_matmul_ooc_impl", A, x, as.double(tile_mb) * 2^20)
-    .fmalloc_apply_class(ans, type = "numeric", shape = "matrix")
+    ans <- .fmalloc_apply_class(ans, type = "numeric", shape = "matrix")
+    if (!is.null(rn) || !is.null(cn)) {
+        dimnames(ans) <- list(rn, cn)
+    }
+    ans
+}
+
+# Total physical RAM in GB, or NA when it cannot be determined (non-Linux).
+.fmalloc_ram_gb <- function() {
+    tryCatch({
+        if (!file.exists("/proc/meminfo")) {
+            return(NA_real_)
+        }
+        line <- grep("^MemTotal:", readLines("/proc/meminfo"), value = TRUE)
+        if (length(line) != 1L) {
+            return(NA_real_)
+        }
+        as.numeric(sub("^MemTotal:\\s*([0-9]+).*", "\\1", line)) / 1024^2
+    }, error = function(e) NA_real_)
+}
+
+# Payload size (GB) at or above which a matrix product auto-selects the
+# out-of-core column-tiled path. Controlled by option
+# `Rfmalloc.ooc_threshold_gb`; defaults to half of physical RAM, or Inf
+# (never auto) when RAM is undetectable.
+.fmalloc_ooc_threshold_gb <- function() {
+    opt <- getOption("Rfmalloc.ooc_threshold_gb")
+    if (!is.null(opt)) {
+        if (!is.numeric(opt) || length(opt) != 1L || is.na(opt)) {
+            stop("option 'Rfmalloc.ooc_threshold_gb' must be a single number")
+        }
+        return(as.double(opt))
+    }
+    ram <- .fmalloc_ram_gb()
+    if (is.na(ram)) Inf else 0.5 * ram
+}
+
+# TRUE when `x %*% y` should route to the out-of-core path: x must be the
+# left fmalloc double matrix, y a conformable real dense vector/matrix, and
+# x's payload at or above the threshold. Any other shape/type returns FALSE
+# and falls through to the in-core BLAS dispatch.
+.fmalloc_matmul_ooc_candidate <- function(x, y0) {
+    if (!inherits(x, "fmalloc") || !is.double(x)) {
+        return(FALSE)
+    }
+    xd <- dim(x)
+    if (is.null(xd) || length(xd) != 2L) {
+        return(FALSE)
+    }
+    if (is.complex(y0)) {
+        return(FALSE)
+    }
+    n <- xd[2L]
+    yd <- dim(y0)
+    if (is.null(yd)) {
+        if (length(y0) != n) {
+            return(FALSE)
+        }
+    } else if (length(yd) != 2L || yd[1L] != n) {
+        return(FALSE)
+    }
+    gb <- as.double(xd[1L]) * as.double(xd[2L]) * 8 / 2^30
+    gb >= .fmalloc_ooc_threshold_gb()
 }

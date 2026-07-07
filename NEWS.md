@@ -49,6 +49,14 @@
   resident set stays bounded by the tile budget. Demonstrated on a 62.6 GB
   matrix (equal to total RAM): peak resident memory 0.31 GB during the gemv,
   result exact vs the analytic reference.
+- `%*%` on an fmalloc matrix now auto-selects the out-of-core path when the
+  left operand's payload reaches `getOption("Rfmalloc.ooc_threshold_gb")`
+  (default: half of physical RAM), tiling with
+  `getOption("Rfmalloc.ooc_tile_mb", 256)`; smaller products keep the in-core
+  BLAS path unchanged. Elementwise `Ops` and matrix reductions are left as-is:
+  they are already single-pass streaming, so forcing page eviction on them
+  would only regress the in-core case. `crossprod()`/`tcrossprod()` are not
+  auto-routed because their output can itself exceed RAM.
 - Added typed fmalloc tensors: `create_fmalloc_tensor()` tags an fmalloc raw
   payload with a dtype codec (builtin `f64`/`f32`/`f16`/`bf16`; other packages
   register codecs through the new `Rfmalloc_register_tensor_codec` C-callable,

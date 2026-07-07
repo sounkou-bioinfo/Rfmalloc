@@ -51,6 +51,14 @@ NULL
     x0 <- .fmalloc_linalg_check_operand(x, "x")
     y0 <- .fmalloc_linalg_check_operand(y, "y")
 
+    # Large left-operand matrices auto-route to the out-of-core column-tiled
+    # path so `dgemm`'s revisiting access pattern does not thrash. Elementwise
+    # Ops and reductions are already single-pass streaming and are left alone.
+    if (.fmalloc_matmul_ooc_candidate(x, y0)) {
+        return(fmalloc_matmul_ooc(x, y0,
+                                  tile_mb = getOption("Rfmalloc.ooc_tile_mb", 256)))
+    }
+
     ans <- .Call("rfm_matrix_ops_dispatch", 0L, x0, y0)
     .fmalloc_apply_class(ans,
                          type = .fmalloc_linalg_result_type(x0, y0),

@@ -29,6 +29,12 @@ released with \code{madvise(MADV_DONTNEED)}, so the resident set stays bounded b
 \details{
 The backing storage is advised \code{MADV_SEQUENTIAL} so the kernel reads ahead.
 The result is an fmalloc-backed matrix allocated in \code{A}'s runtime.
+
+\code{\%*\%} on an fmalloc matrix calls this automatically when the left operand's
+payload reaches \code{getOption("Rfmalloc.ooc_threshold_gb")} (default: half of
+physical RAM), using \code{getOption("Rfmalloc.ooc_tile_mb", 256)} for the tile
+size; smaller products keep the in-core BLAS path. \code{crossprod()}/
+\code{tcrossprod()} are not auto-routed (their output can itself exceed RAM).
 }
 \examples{
 \dontrun{
