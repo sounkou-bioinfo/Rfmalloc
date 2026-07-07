@@ -9,13 +9,17 @@
 // than the matrix size. MADV_SEQUENTIAL hints the pager to read ahead.
 //==============================================================================
 
+// <sys/mman.h> (for madvise) is unavailable in the Rtools toolchain used for
+// the R package compile on Windows; the OOC path degrades to a no-op there.
+#if !defined(_WIN32)
 #include <sys/mman.h>
+#endif
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
 #include <sys/sysctl.h>
 #endif
 
-// Some platforms (Windows/Rtools) provide <sys/mman.h> for mmap but no
-// madvise()/MADV_* — the OOC path still works there, just without eviction.
+// madvise()/MADV_* are POSIX but absent on some platforms — the OOC path still
+// works there, just without per-tile eviction.
 #if defined(MADV_DONTNEED) && defined(MADV_SEQUENTIAL) && !defined(_WIN32)
 #  define RFM_HAVE_MADVISE 1
 #else

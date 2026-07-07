@@ -99,8 +99,9 @@ cat > src/Makevars.win << 'EOF'
 # Include directories
 PKG_CPPFLAGS = -I../inst/fmalloc -DHAVE_CONFIG_H
 
-# Linker flags - Rtools includes pthread support
-PKG_LIBS = -L../inst/fmalloc ../inst/fmalloc/libfmalloc.a -lpthread
+# Linker flags - Rtools includes pthread support; BLAS/FLIBS for the matrix
+# product kernels (dgemm).
+PKG_LIBS = -L../inst/fmalloc ../inst/fmalloc/libfmalloc.a -lpthread $(BLAS_LIBS) $(FLIBS)
 EOF
 
 echo "Configure completed successfully!"
