@@ -229,16 +229,13 @@ extern "C" SEXP rfm_matmul_ooc_impl(SEXP a_x, SEXP x_dense, SEXP tile_bytes_sexp
 
     ooc_advise(A, (size_t)(m * n) * sizeof(double), OOC_SEQUENTIAL);
 
-    const double one = 1.0, zero = 0.0;
     int mi = (int)m, ki = (int)xncol, ni = (int)n; // ni = ldb of X (n x k)
     for (R_xlen_t j0 = 0; j0 < n; j0 += tile_cols) {
         R_xlen_t tw = n - j0 < tile_cols ? n - j0 : tile_cols;
         int kk = (int)tw;
-        const double *beta = (j0 == 0) ? &zero : &one;
+        double beta = (j0 == 0) ? 0.0 : 1.0;
         double *A_tile = A + j0 * m;
-        F77_CALL(dgemm)("N", "N", &mi, &ki, &kk, &one,
-                        A_tile, &mi, X + j0, &ni, beta,
-                        Y, &mi FCONE FCONE);
+        rfm_gemm("N", "N", mi, ki, kk, 1.0, A_tile, mi, X + j0, ni, beta, Y, mi);
         // Release the tile's pages: resident set stays ~tile_bytes, not m*n*8.
         ooc_advise(A_tile, (size_t)(tw * m) * sizeof(double), OOC_DONTNEED);
         R_CheckUserInterrupt();
@@ -309,16 +306,14 @@ extern "C" SEXP rfm_tcrossprod_ooc_impl(SEXP a_x, SEXP tile_bytes_sexp)
 
     ooc_advise(X, (size_t)(m * n) * sizeof(double), OOC_SEQUENTIAL);
 
-    const double one = 1.0, zero = 0.0;
     int mi = (int)m, mc = (int)m; // C is m x m, ldc = m
     for (R_xlen_t k0 = 0; k0 < n; k0 += pw) {
         R_xlen_t kw = n - k0 < pw ? n - k0 : pw;
         int kk = (int)kw;
-        const double *beta = (k0 == 0) ? &zero : &one;
+        double beta = (k0 == 0) ? 0.0 : 1.0;
         double *X_panel = X + k0 * m;
         // C += X[,k0:k1] X[,k0:k1]'
-        F77_CALL(dgemm)("N", "T", &mi, &mc, &kk, &one,
-                        X_panel, &mi, X_panel, &mi, beta, C, &mi FCONE FCONE);
+        rfm_gemm("N", "T", mi, mc, kk, 1.0, X_panel, mi, X_panel, mi, beta, C, mi);
         ooc_advise(X_panel, (size_t)(kw * m) * sizeof(double), OOC_DONTNEED);
         R_CheckUserInterrupt();
     }
@@ -388,7 +383,6 @@ extern "C" SEXP rfm_crossprod_ooc_impl(SEXP a_x, SEXP tile_bytes_sexp)
 
     ooc_advise(X, (size_t)(m * n) * sizeof(double), OOC_SEQUENTIAL);
 
-    const double one = 1.0, zero = 0.0;
     int mi = (int)m, nc = (int)n; // nc = ldc of the n x n result
     // For each row-panel i of C, hold panel X[,i0:i1] resident and sweep the
     // column panels j, writing each block C[i0:i1, j0:j1] = X[,i0:i1]'X[,j0:j1]
@@ -399,9 +393,8 @@ extern "C" SEXP rfm_crossprod_ooc_impl(SEXP a_x, SEXP tile_bytes_sexp)
         for (R_xlen_t j0 = 0; j0 < n; j0 += pw) {
             R_xlen_t jw = n - j0 < pw ? n - j0 : pw;
             int jj = (int)jw;
-            F77_CALL(dgemm)("T", "N", &ii, &jj, &mi, &one,
-                            X + i0 * m, &mi, X + j0 * m, &mi, &zero,
-                            C + i0 + j0 * n, &nc FCONE FCONE);
+            rfm_gemm("T", "N", ii, jj, mi, 1.0, X + i0 * m, mi, X + j0 * m, mi,
+                     0.0, C + i0 + j0 * n, nc);
             if (j0 != i0) {
                 ooc_advise(X + j0 * m, (size_t)(jw * m) * sizeof(double), OOC_DONTNEED);
             }

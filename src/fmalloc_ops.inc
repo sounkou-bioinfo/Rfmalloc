@@ -1385,10 +1385,10 @@ static void run_linalg_blas(fm_linalg_op_id op, const fm_linalg_plan &plan, doub
     const char *transa = (op == FM_LINALG_CROSSPROD) ? "T" : "N";
     const char *transb = (op == FM_LINALG_TCROSSPROD) ? "T" : "N";
 
-    F77_CALL(dgemm)(transa, transb, &m, &n, &k, &one,
-                    static_cast<const double *>(plan.lhs.data), &lda,
-                    static_cast<const double *>(plan.rhs.data), &ldb,
-                    &zero, out, &m FCONE FCONE);
+    rfm_gemm(transa, transb, m, n, k, 1.0,
+             static_cast<const double *>(plan.lhs.data), lda,
+             static_cast<const double *>(plan.rhs.data), ldb,
+             0.0, out, m);
 }
 
 static inline Rcomplex complex_add(Rcomplex x, Rcomplex y)

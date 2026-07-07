@@ -10,7 +10,7 @@ extern "C" {
 #endif
 
 /*
- * Rfmalloc C-callable API, version 4.
+ * Rfmalloc C-callable API, version 5.
  *
  * These functions are resolved with R_GetCCallable(). Packages should import
  * Rfmalloc at runtime before calling them, for example by listing Rfmalloc in
@@ -55,6 +55,22 @@ typedef int (*Rfmalloc_register_tensor_codec_fun)(const char *name,
                                                   unsigned int items_per_block,
                                                   unsigned int bytes_per_block,
                                                   Rfmalloc_tensor_decode_fn decode);
+
+/*
+ * Pluggable matrix-multiply backend (API version 5). Register a GEMM kernel
+ * and select it (from R via fmalloc_matmul_backend(name), or another package)
+ * so Rfmalloc's matrix products dispatch to it instead of R's BLAS. The
+ * kernel computes C = alpha op(A) op(B) + beta C (op = 'N'/'T'), returning 0
+ * if it handled the call or non-zero to decline (fall back to BLAS). Names
+ * "blas" and the empty string are reserved.
+ */
+typedef int (*Rfmalloc_gemm_fn)(const char *transa, const char *transb,
+                                int m, int n, int k, double alpha,
+                                const double *A, int lda,
+                                const double *B, int ldb,
+                                double beta, double *C, int ldc);
+typedef int (*Rfmalloc_register_matmul_backend_fun)(const char *name,
+                                                    Rfmalloc_gemm_fn fn);
 
 static inline Rfmalloc_api_version_fun Rfmalloc_api_version_ptr(void)
 {
@@ -242,6 +258,16 @@ static inline int Rfmalloc_register_tensor_codec(const char *name,
 {
     return Rfmalloc_register_tensor_codec_ptr()(name, items_per_block,
                                                 bytes_per_block, decode);
+}
+
+static inline Rfmalloc_register_matmul_backend_fun Rfmalloc_register_matmul_backend_ptr(void)
+{
+    return (Rfmalloc_register_matmul_backend_fun) R_GetCCallable("Rfmalloc", "Rfmalloc_register_matmul_backend");
+}
+
+static inline int Rfmalloc_register_matmul_backend(const char *name, Rfmalloc_gemm_fn fn)
+{
+    return Rfmalloc_register_matmul_backend_ptr()(name, fn);
 }
 
 #ifdef __cplusplus

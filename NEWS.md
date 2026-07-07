@@ -55,6 +55,17 @@
   resident set stays bounded by the tile budget. Demonstrated on a 62.6 GB
   matrix (equal to total RAM): peak resident memory 0.31 GB during the gemv,
   result exact vs the analytic reference.
+- Added a pluggable matrix-multiply backend registry: the matrix-product
+  kernels (`%*%`, `crossprod()`, `tcrossprod()`, the out-of-core and
+  typed-tensor products) dispatch their `dgemm` through a selectable backend.
+  `fmalloc_matmul_backend(name)` selects one (default `"blas"` = R's BLAS) and
+  `fmalloc_matmul_backends()` lists registered ones; downstream packages
+  register a GEMM kernel (e.g. GPU or out-of-core-aware) through the new
+  `Rfmalloc_register_matmul_backend` C-callable (API version 5). Selection is
+  Rfmalloc-scoped (base R's `%*%` is unaffected), and a backend may decline a
+  call to fall back to BLAS. Together with the tensor codec registry this makes
+  the stack pluggable at both tiers — how bytes decode and what hardware
+  multiplies — over fmalloc storage.
 - Added in-place (by-reference) mutation: `fmalloc_set(x, i, value)` and
   `fmalloc_fill(x, value)` write straight through the backing store, bypassing
   R's copy-on-modify. This is essential at fmalloc scale — an ordinary

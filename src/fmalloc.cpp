@@ -3,6 +3,7 @@
 #include "fmalloc_runtime.inc"
 #include "fmalloc_vector.inc"
 #include "fmalloc_altrep.inc"
+#include "fmalloc_backend.inc"
 #include "fmalloc_ops.inc"
 #include "fmalloc_ooc.inc"
 #include "fmalloc_tensor.inc"

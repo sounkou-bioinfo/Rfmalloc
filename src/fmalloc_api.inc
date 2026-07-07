@@ -468,7 +468,7 @@ SEXP cleanup_fmalloc_impl(SEXP runtime_xptr)
 
 int Rfmalloc_api_version(void)
 {
-    return 4;
+    return 5;
 }
 
 SEXP fmalloc_api_version_impl(void)
@@ -625,6 +625,7 @@ static void register_c_callables(void)
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_vector_info", (DL_FUNC)Rfmalloc_vector_info);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_destroy_vector", (DL_FUNC)Rfmalloc_destroy_vector);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_register_tensor_codec", (DL_FUNC)Rfmalloc_register_tensor_codec);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_register_matmul_backend", (DL_FUNC)Rfmalloc_register_matmul_backend);
 }
 
 static const R_CallMethodDef CallEntries[] = {
@@ -665,6 +666,10 @@ static const R_CallMethodDef CallEntries[] = {
     {"rfm_inplace_op_impl", (DL_FUNC)&rfm_inplace_op_impl, 3},
     {"rfm_tensor_alp_encode_impl", (DL_FUNC)&rfm_tensor_alp_encode_impl, 2},
     {"rfm_tensor_sparse_encode_impl", (DL_FUNC)&rfm_tensor_sparse_encode_impl, 2},
+    {"rfm_set_matmul_backend_impl", (DL_FUNC)&rfm_set_matmul_backend_impl, 1},
+    {"rfm_matmul_backend_impl", (DL_FUNC)&rfm_matmul_backend_impl, 0},
+    {"rfm_matmul_backends_impl", (DL_FUNC)&rfm_matmul_backends_impl, 0},
+    {"rfm_register_test_backend_impl", (DL_FUNC)&rfm_register_test_backend_impl, 0},
     {nullptr, nullptr, 0}
 };
 
