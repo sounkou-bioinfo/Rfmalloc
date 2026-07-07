@@ -51,20 +51,46 @@
 </h1></div>
 <!-- badges: start -->
 
-<p>Rfmalloc is an experimental R package for file-backed R vectors using a patched copy of <a href="https://github.com/yasukata/fmalloc" class="external-link">fmalloc</a>. The current R-facing vector API creates fmalloc-backed ALTREP vectors for atomic, character, and list storage.</p>
-<p>Earlier prototypes explored R’s custom allocator / <code>Rf_allocVector3()</code> path (see Simon Urbanek’s <a href="https://gist.github.com/s-u/6712c97ca74181f5a1a5" class="external-link">proof-of-concept</a>). The package has moved to direct ALTREP vectors for the public vector API and control over copy-on-write duplication. The patched fmalloc <code>malloc</code>/<code>free</code>/<code>realloc</code> layer is still built and installed for native consumers that use the C API or link against the bundled library.</p>
+<p>Rfmalloc gives you <strong>the real R matrix, file-backed</strong> — a genuine ALTREP numeric vector/matrix whose storage lives in an <code>mmap</code>-ed file instead of the R heap, powered by a patched copy of <a href="https://github.com/yasukata/fmalloc" class="external-link">fmalloc</a>. Because it is the actual R object and not a proxy handle or a lazy file index, <code><a href="https://rdrr.io/r/base/dim.html" class="external-link">dim()</a></code>, <code>%*%</code>, <code><a href="https://rdrr.io/r/base/crossprod.html" class="external-link">crossprod()</a></code>, <code>Ops</code>, and subsetting just work — but the data can be larger than RAM, compressed on disk, mutated in place, and multiplied by a pluggable backend.</p>
+<p>The direction of the project is an <strong>out-of-core, compressed, in-place-mutable matrix stack</strong> built from three runtime-pluggable tiers over fmalloc storage:</p>
+<ul>
+<li>
+<strong>codecs</strong> — <em>how bytes decode</em>: builtin <code>f32</code>/<code>f16</code>/<code>bf16</code>, a lossless floating-point codec (<code>alp</code>), a <code>sparse</code> codec for mostly-zero data (single-cell counts), and quantized GGUF formats via <a href="https://github.com/sounkou-bioinfo/Rgguf" class="external-link">Rgguf</a> — all registered through a codec registry other packages can extend;</li>
+<li>
+<strong>backends</strong> — <em>what hardware multiplies</em>: the matrix products dispatch <code>dgemm</code> through a selectable backend (default R’s BLAS; downstream packages can register a GPU or out-of-core-aware kernel);</li>
+<li>
+<strong>fmalloc</strong> — <em>where it lives</em>: file-backed, out-of-core, persistent, and mutable in place.</li>
+</ul>
+<p>Contrast with neighbours: this is not a lazy file index (<a href="https://vroom.r-lib.org" class="external-link">vroom</a>) and not a proxy class (<a href="https://cran.r-project.org/package=bigmemory" class="external-link">bigmemory</a>, <a href="https://privefl.github.io/bigstatsr/" class="external-link">bigstatsr</a> FBM, <a href="https://github.com/HervePerdry/houba" class="external-link">houba</a>) — it is the real ALTREP object that computes and compresses out of core.</p>
+<p>Earlier prototypes explored R’s custom allocator / <code>Rf_allocVector3()</code> path (see Simon Urbanek’s <a href="https://gist.github.com/s-u/6712c97ca74181f5a1a5" class="external-link">proof-of-concept</a>). The patched fmalloc <code>malloc</code>/<code>free</code>/<code>realloc</code> layer is still built and installed for native consumers that use the C API or link against the bundled library.</p>
 <div class="section level2">
 <h2 id="current-status">Current Status<a class="anchor" aria-label="anchor" href="#current-status"></a>
 </h2>
-<p>Implemented now:</p>
+<p>Storage and vectors:</p>
 <ul>
-<li>fmalloc-backed ALTREP vectors for logical, integer, numeric, raw, complex, character, and list values; list elements are restricted to <code>NULL</code> or other Rfmalloc vectors from the same runtime;</li>
-<li>explicit runtime handles and <code>persistent</code> / <code>scratch</code> runtime modes;</li>
-<li>persistent serialization and reopening for fixed-width atomic and character vectors;</li>
-<li>native elementwise <code>Ops</code>, <code>Summary</code>, <code>Math</code>/<code>Math2</code>, and matrix reduction kernels; matrix products (<code>%*%</code>, <code><a href="https://rdrr.io/r/base/crossprod.html" class="external-link">crossprod()</a></code>, <code><a href="https://rdrr.io/r/base/crossprod.html" class="external-link">tcrossprod()</a></code>) call BLAS <code>dgemm</code> for finite double operands and managed native loops otherwise;</li>
-<li>typed tensors: raw fmalloc payloads in a foreign element encoding (<code>f32</code>/<code>f16</code>/<code>bf16</code> builtin; quantized GGUF formats via <a href="https://github.com/sounkou-bioinfo/Rgguf" class="external-link">Rgguf</a>) whose matrix products decode bounded, block-aligned panels streamed through <code>dgemm</code>;</li>
-<li>a builtin lossless <code>"alp"</code> compression codec (<code><a href="reference/fmalloc_tensor.html">as_fmalloc_tensor()</a></code>) storing decimal-scaled doubles as bit-packed integers in independently decodable chunks;</li>
-<li>explicit <code><a href="reference/destroy_fmalloc_vector.html">destroy_fmalloc_vector()</a></code>, an in-file persistent allocation catalog, runtime/vector introspection helpers, and an installed C header with <code>R_RegisterCCallable()</code> entry points (API version 4), including tensor codec registration for downstream packages.</li>
+<li>fmalloc-backed ALTREP vectors for logical, integer, numeric, raw, complex, character, and list values; explicit runtime handles and <code>persistent</code> / <code>scratch</code> modes; persistent serialization/reopening for fixed-width atomic and character vectors.</li>
+</ul>
+<p>Matrix computing:</p>
+<ul>
+<li>native elementwise <code>Ops</code>, <code>Summary</code>, <code>Math</code>/<code>Math2</code>, and matrix reductions;</li>
+<li>matrix products (<code>%*%</code>, <code><a href="https://rdrr.io/r/base/crossprod.html" class="external-link">crossprod()</a></code>, <code><a href="https://rdrr.io/r/base/crossprod.html" class="external-link">tcrossprod()</a></code>) call BLAS <code>dgemm</code> for finite double operands (managed native loops otherwise), dispatched through a <strong>pluggable backend</strong> (<code><a href="reference/fmalloc_backend.html">fmalloc_matmul_backend()</a></code>);</li>
+<li>
+<strong>out-of-core</strong> products (<code><a href="reference/fmalloc_matmul_ooc.html">fmalloc_matmul_ooc()</a></code>, <code><a href="reference/fmalloc_matmul_ooc.html">fmalloc_crossprod_ooc()</a></code>, <code><a href="reference/fmalloc_matmul_ooc.html">fmalloc_tcrossprod_ooc()</a></code>) that stream column tiles through <code>dgemm</code> with <code>madvise</code> eviction, so operands larger than RAM multiply with a bounded resident set; <code>%*%</code>/<code>crossprod</code>/<code>tcrossprod</code> auto-route to these above a RAM-based threshold.</li>
+</ul>
+<p>Compression (typed tensors):</p>
+<ul>
+<li>
+<code><a href="reference/fmalloc_tensor.html">as_fmalloc_tensor()</a></code> stores a matrix under a codec — lossless <code>"alp"</code> for decimal-scaled doubles, <code>"sparse"</code> for mostly-zero (single-cell/count) data — and the compressed tensor still participates in the panel-streamed matrix products;</li>
+<li>codecs are a registry (<code><a href="reference/fmalloc_tensor.html">fmalloc_tensor_codecs()</a></code>); downstream packages add their own (Rgguf registers the quantized GGUF formats).</li>
+</ul>
+<p>In-place mutation:</p>
+<ul>
+<li>
+<code><a href="reference/fmalloc_insitu.html">fmalloc_set()</a></code>, <code><a href="reference/fmalloc_insitu.html">fmalloc_fill()</a></code>, and <code><a href="reference/fmalloc_insitu.html">fmalloc_add()</a></code>/<code><a href="https://rdrr.io/r/base/grep.html" class="external-link">sub()</a></code>/<code>mul()</code>/<code>div()</code> write through the backing store, bypassing R’s copy-on-modify — essential when the payload is larger than RAM or persistent.</li>
+</ul>
+<p>Native surface:</p>
+<ul>
+<li>explicit <code><a href="reference/destroy_fmalloc_vector.html">destroy_fmalloc_vector()</a></code>, an in-file persistent allocation catalog, runtime/vector introspection, and an installed C header with <code>R_RegisterCCallable()</code> entry points (API version 5), including tensor codec and matmul backend registration for downstream packages.</li>
 </ul>
 <p>Known base-fallback boundaries:</p>
 <ul>
@@ -417,7 +443,7 @@
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; &lt;fmalloc_tensor alp [20000 x 10], 279720 payload bytes&gt;</span></span>
 <span><span class="co">#&gt; $codecs</span></span>
-<span><span class="co">#&gt; [1] "f64"  "f32"  "f16"  "bf16" "alp" </span></span>
+<span><span class="co">#&gt; [1] "f64"    "f32"    "f16"    "bf16"   "alp"    "sparse"</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; $compression_ratio</span></span>
 <span><span class="co">#&gt; [1] 0.174825</span></span>
@@ -430,12 +456,121 @@
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; $product_matches_base</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
+<p>The <code>"sparse"</code> codec stores only the nonzeros of each chunk, for mostly-zero data such as single-cell counts — it compresses heavily and still multiplies through the panel engine:</p>
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
+<span>  <span class="va">sp_file</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
+<span>  <span class="va">rt</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/open_fmalloc.html">open_fmalloc</a></span><span class="op">(</span><span class="va">sp_file</span>, mode <span class="op">=</span> <span class="st">"scratch"</span>, size_gb <span class="op">=</span> <span class="fl">0.5</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/on.exit.html" class="external-link">on.exit</a></span><span class="op">(</span><span class="op">{</span> <span class="fu"><a href="reference/cleanup_fmalloc.html">cleanup_fmalloc</a></span><span class="op">(</span><span class="va">rt</span><span class="op">)</span>; <span class="fu"><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink</a></span><span class="op">(</span><span class="va">sp_file</span><span class="op">)</span> <span class="op">}</span>, add <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">3</span><span class="op">)</span></span>
+<span>  <span class="co"># ~10% nonzero small counts (single-cell-like)</span></span>
+<span>  <span class="va">X</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">5000</span>, <span class="fl">40</span><span class="op">)</span></span>
+<span>  <span class="va">nz</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">X</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">X</span><span class="op">)</span> <span class="op">*</span> <span class="fl">0.1</span><span class="op">)</span></span>
+<span>  <span class="va">X</span><span class="op">[</span><span class="va">nz</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">nz</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span> <span class="op">+</span> <span class="fl">1</span></span>
+<span></span>
+<span>  <span class="va">ten</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/fmalloc_tensor.html">as_fmalloc_tensor</a></span><span class="op">(</span><span class="va">X</span>, dtype <span class="op">=</span> <span class="st">"sparse"</span>, runtime <span class="op">=</span> <span class="va">rt</span><span class="op">)</span></span>
+<span>  <span class="va">b</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">40</span> <span class="op">*</span> <span class="fl">3</span><span class="op">)</span>, nrow <span class="op">=</span> <span class="fl">40</span><span class="op">)</span></span>
+<span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
+<span>    dtype <span class="op">=</span> <span class="fu"><a href="reference/fmalloc_tensor.html">fmalloc_tensor_dtype</a></span><span class="op">(</span><span class="va">ten</span><span class="op">)</span>,</span>
+<span>    compression_ratio <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/class.html" class="external-link">unclass</a></span><span class="op">(</span><span class="va">ten</span><span class="op">)</span><span class="op">)</span> <span class="op">/</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">X</span><span class="op">)</span> <span class="op">*</span> <span class="fl">8</span><span class="op">)</span>,</span>
+<span>    lossless <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/vector.html" class="external-link">as.vector</a></span><span class="op">(</span><span class="fu"><a href="reference/fmalloc_tensor.html">fmalloc_tensor_materialize</a></span><span class="op">(</span><span class="va">ten</span><span class="op">)</span><span class="op">[</span><span class="op">]</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/vector.html" class="external-link">as.vector</a></span><span class="op">(</span><span class="va">X</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>    product_matches_base <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/all.equal.html" class="external-link">all.equal</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/vector.html" class="external-link">as.vector</a></span><span class="op">(</span><span class="op">(</span><span class="va">ten</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html" class="external-link">%*%</a></span> <span class="va">b</span><span class="op">)</span><span class="op">[</span><span class="op">]</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/vector.html" class="external-link">as.vector</a></span><span class="op">(</span><span class="va">X</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html" class="external-link">%*%</a></span> <span class="va">b</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="op">)</span></span>
+<span><span class="op">}</span><span class="op">)</span></span>
+<span><span class="co">#&gt; $dtype</span></span>
+<span><span class="co">#&gt; [1] "sparse"</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; $compression_ratio</span></span>
+<span><span class="co">#&gt; [1] 0.1522</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; $lossless</span></span>
+<span><span class="co">#&gt; [1] TRUE</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; $product_matches_base</span></span>
+<span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
+</div>
+<div class="section level2">
+<h2 id="out-of-core-matrix-products">Out-of-core matrix products<a class="anchor" aria-label="anchor" href="#out-of-core-matrix-products"></a>
+</h2>
+<p><code><a href="reference/fmalloc_matmul_ooc.html">fmalloc_matmul_ooc()</a></code>, <code><a href="reference/fmalloc_matmul_ooc.html">fmalloc_crossprod_ooc()</a></code>, and <code><a href="reference/fmalloc_matmul_ooc.html">fmalloc_tcrossprod_ooc()</a></code> stream a matrix through <code>dgemm</code> one contiguous column tile at a time, releasing each tile’s pages with <code>madvise(MADV_DONTNEED)</code>, so a matrix larger than RAM multiplies with a resident set bounded by the tile size rather than the matrix size. <code>crossprod(X)</code> = <code>X'X</code> is the covariance/Gram matrix behind PCA, ridge, and GWAS.</p>
+<p><code>%*%</code>/<code><a href="https://rdrr.io/r/base/crossprod.html" class="external-link">crossprod()</a></code>/<code><a href="https://rdrr.io/r/base/crossprod.html" class="external-link">tcrossprod()</a></code> on an fmalloc matrix auto-route to these when the operand reaches <code>getOption("Rfmalloc.ooc_threshold_gb")</code> (default half of physical RAM). The example forces the threshold to 0 to show the path on a small matrix:</p>
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
+<span>  <span class="va">ooc_file</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
+<span>  <span class="va">rt</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/open_fmalloc.html">open_fmalloc</a></span><span class="op">(</span><span class="va">ooc_file</span>, mode <span class="op">=</span> <span class="st">"scratch"</span>, size_gb <span class="op">=</span> <span class="fl">0.5</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/on.exit.html" class="external-link">on.exit</a></span><span class="op">(</span><span class="op">{</span></span>
+<span>    <span class="fu"><a href="reference/cleanup_fmalloc.html">cleanup_fmalloc</a></span><span class="op">(</span><span class="va">rt</span><span class="op">)</span>; <span class="fu"><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink</a></span><span class="op">(</span><span class="va">ooc_file</span><span class="op">)</span></span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/options.html" class="external-link">options</a></span><span class="op">(</span>Rfmalloc.ooc_threshold_gb <span class="op">=</span> <span class="cn">NULL</span>, Rfmalloc.ooc_tile_mb <span class="op">=</span> <span class="cn">NULL</span><span class="op">)</span></span>
+<span>  <span class="op">}</span>, add <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">4</span><span class="op">)</span></span>
+<span>  <span class="va">X</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/create_fmalloc_matrix.html">create_fmalloc_matrix</a></span><span class="op">(</span><span class="st">"numeric"</span>, nrow <span class="op">=</span> <span class="fl">4000</span>, ncol <span class="op">=</span> <span class="fl">200</span>, runtime <span class="op">=</span> <span class="va">rt</span><span class="op">)</span></span>
+<span>  <span class="va">bx</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">4000</span> <span class="op">*</span> <span class="fl">200</span><span class="op">)</span>, <span class="fl">4000</span>, <span class="fl">200</span><span class="op">)</span></span>
+<span>  <span class="va">X</span><span class="op">[</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="va">bx</span></span>
+<span></span>
+<span>  <span class="co"># explicit out-of-core Gram matrix</span></span>
+<span>  <span class="va">G</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/fmalloc_matmul_ooc.html">fmalloc_crossprod_ooc</a></span><span class="op">(</span><span class="va">X</span>, tile_mb <span class="op">=</span> <span class="fl">8</span><span class="op">)</span></span>
+<span></span>
+<span>  <span class="co"># auto-routing: force the threshold so crossprod(X) takes the OOC path</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/options.html" class="external-link">options</a></span><span class="op">(</span>Rfmalloc.ooc_threshold_gb <span class="op">=</span> <span class="fl">0</span>, Rfmalloc.ooc_tile_mb <span class="op">=</span> <span class="fl">8</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
+<span>    gram_matches_base <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/all.equal.html" class="external-link">all.equal</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/vector.html" class="external-link">as.vector</a></span><span class="op">(</span><span class="va">G</span><span class="op">[</span><span class="op">]</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/vector.html" class="external-link">as.vector</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/crossprod.html" class="external-link">crossprod</a></span><span class="op">(</span><span class="va">bx</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>    gram_is_fmalloc_backed <span class="op">=</span> <span class="fu"><a href="reference/fmalloc_api.html">is_fmalloc_vector</a></span><span class="op">(</span><span class="va">G</span><span class="op">)</span>,</span>
+<span>    auto_routed_matches <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/all.equal.html" class="external-link">all.equal</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/vector.html" class="external-link">as.vector</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/crossprod.html" class="external-link">crossprod</a></span><span class="op">(</span><span class="va">X</span><span class="op">)</span><span class="op">[</span><span class="op">]</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/vector.html" class="external-link">as.vector</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/crossprod.html" class="external-link">crossprod</a></span><span class="op">(</span><span class="va">bx</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="op">)</span></span>
+<span><span class="op">}</span><span class="op">)</span></span>
+<span><span class="co">#&gt; $gram_matches_base</span></span>
+<span><span class="co">#&gt; [1] TRUE</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; $gram_is_fmalloc_backed</span></span>
+<span><span class="co">#&gt; [1] TRUE</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; $auto_routed_matches</span></span>
+<span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
+</div>
+<div class="section level2">
+<h2 id="in-place-mutation">In-place mutation<a class="anchor" aria-label="anchor" href="#in-place-mutation"></a>
+</h2>
+<p><code><a href="reference/fmalloc_insitu.html">fmalloc_set()</a></code>/<code><a href="reference/fmalloc_insitu.html">fmalloc_fill()</a></code> and <code><a href="reference/fmalloc_insitu.html">fmalloc_add()</a></code>/<code><a href="https://rdrr.io/r/base/grep.html" class="external-link">sub()</a></code>/<code>mul()</code>/<code>div()</code> write straight through the backing store, bypassing R’s copy-on-modify. This is essential at fmalloc scale (copying a larger-than-RAM payload on every <code>x[i] &lt;-</code> is fatal) and deliberately by-reference: all bindings to the same vector observe the change, so these are explicit functions, never a silent <code>[&lt;-</code>.</p>
+<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
+<span>  <span class="va">ip_file</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
+<span>  <span class="va">rt</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/open_fmalloc.html">open_fmalloc</a></span><span class="op">(</span><span class="va">ip_file</span>, mode <span class="op">=</span> <span class="st">"scratch"</span>, size_gb <span class="op">=</span> <span class="fl">0.1</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/on.exit.html" class="external-link">on.exit</a></span><span class="op">(</span><span class="op">{</span> <span class="fu"><a href="reference/cleanup_fmalloc.html">cleanup_fmalloc</a></span><span class="op">(</span><span class="va">rt</span><span class="op">)</span>; <span class="fu"><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink</a></span><span class="op">(</span><span class="va">ip_file</span><span class="op">)</span> <span class="op">}</span>, add <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span></span>
+<span>  <span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/create_fmalloc_vector.html">create_fmalloc_vector</a></span><span class="op">(</span><span class="st">"numeric"</span>, <span class="fl">6</span>, runtime <span class="op">=</span> <span class="va">rt</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="reference/fmalloc_insitu.html">fmalloc_fill</a></span><span class="op">(</span><span class="va">x</span>, <span class="fl">1</span><span class="op">)</span>          <span class="co"># x[] &lt;- 1, no copy</span></span>
+<span>  <span class="fu"><a href="reference/fmalloc_insitu.html">fmalloc_set</a></span><span class="op">(</span><span class="va">x</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">2</span>, <span class="fl">4</span><span class="op">)</span>, <span class="fl">9</span><span class="op">)</span>  <span class="co"># x[c(2,4)] &lt;- 9, no copy</span></span>
+<span>  <span class="fu"><a href="reference/fmalloc_insitu.html">fmalloc_add</a></span><span class="op">(</span><span class="va">x</span>, <span class="fl">10</span><span class="op">)</span>          <span class="co"># x &lt;- x + 10, in place</span></span>
+<span></span>
+<span>  <span class="va">y</span> <span class="op">&lt;-</span> <span class="va">x</span>                      <span class="co"># no copy on assignment</span></span>
+<span>  <span class="fu"><a href="reference/fmalloc_insitu.html">fmalloc_mul</a></span><span class="op">(</span><span class="va">x</span>, <span class="fl">2</span><span class="op">)</span>           <span class="co"># mutating x also changes its alias y</span></span>
+<span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>x <span class="op">=</span> <span class="va">x</span><span class="op">[</span><span class="op">]</span>, alias_y <span class="op">=</span> <span class="va">y</span><span class="op">[</span><span class="op">]</span><span class="op">)</span></span>
+<span><span class="op">}</span><span class="op">)</span></span>
+<span><span class="co">#&gt; $x</span></span>
+<span><span class="co">#&gt; [1] 22 38 22 38 22 22</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; $alias_y</span></span>
+<span><span class="co">#&gt; [1] 22 38 22 38 22 22</span></span></code></pre></div>
+</div>
+<div class="section level2">
+<h2 id="pluggable-matmul-backends">Pluggable matmul backends<a class="anchor" aria-label="anchor" href="#pluggable-matmul-backends"></a>
+</h2>
+<p>The matrix-product kernels dispatch their <code>dgemm</code> through a selectable backend. The default is R’s BLAS (itself user-swappable via <code>update-alternatives</code>, <code>LD_PRELOAD</code>, or FlexiBLAS). Downstream packages register an alternative (e.g. a GPU or out-of-core-aware GEMM) through the <code>Rfmalloc_register_matmul_backend</code> C-callable; selection is Rfmalloc-scoped, so base R’s <code>%*%</code> is unaffected.</p>
+<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="reference/fmalloc_backend.html">fmalloc_matmul_backend</a></span><span class="op">(</span><span class="op">)</span>   <span class="co"># "blas" by default</span></span>
+<span><span class="co">#&gt; [1] "blas"</span></span>
+<span><span class="fu"><a href="reference/fmalloc_backend.html">fmalloc_matmul_backends</a></span><span class="op">(</span><span class="op">)</span>  <span class="co"># names registered by other packages (none here)</span></span>
+<span><span class="co">#&gt; character(0)</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="explicit-destruction-and-parent-safety">Explicit destruction and parent safety<a class="anchor" aria-label="anchor" href="#explicit-destruction-and-parent-safety"></a>
 </h2>
 <p><code><a href="reference/destroy_fmalloc_vector.html">destroy_fmalloc_vector()</a></code> immediately releases native bookkeeping for one fmalloc ALTREP vector and returns a logical indicating whether a live vector was destroyed. The helper enforces parent-reference safety: a vector cannot be destroyed while it is still stored as a child of any fmalloc list. When needed, drop parent links first.</p>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="va">destroy_file</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
@@ -468,7 +603,7 @@
 <span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
 <p>In persistent mode, destroying with default semantics retains payload bytes so the recorded on-disk allocation remains recoverable by normal <code><a href="https://rdrr.io/r/base/serialize.html" class="external-link">serialize()</a></code> flows. Use <code>destroy_fmalloc_vector(x, unsafe = TRUE)</code> to reclaim persistent payload memory and mark the catalog entry as non-recoverable.</p>
 <p>This is scoped to the targeted vector(s): if one object is unsafe-destroyed, other objects in the same runtime remain recoverable.</p>
-<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="va">selective_file</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
@@ -510,7 +645,7 @@
 <li>In persistent mode, committed vector payloads are not returned to fmalloc by vector finalizers. Fixed-width atomic vectors serialize by reference to the physical allocation in the backing file.</li>
 <li>In scratch mode, the backing file is a temporary allocation arena. Vector finalizers may return payloads to fmalloc, and serialization falls back to ordinary R values.</li>
 </ul>
-<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="va">persist_file</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
@@ -531,7 +666,7 @@
 <h2 id="inspecting-fmalloc-altrep-metadata">Inspecting fmalloc ALTREP Metadata<a class="anchor" aria-label="anchor" href="#inspecting-fmalloc-altrep-metadata"></a>
 </h2>
 <p>R’s internal inspector dispatches to the ALTREP <code>Inspect</code> hook. Rfmalloc’s inspector reports the vector type, length, payload byte count, runtime mode, runtime state, payload offset, file UUID, and backing-file path.</p>
-<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="va">inspect_file</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
@@ -545,21 +680,21 @@
 <span>  <span class="va">inspect_vec</span><span class="op">[</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fl">1</span><span class="op">:</span><span class="fl">4</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/Internal.html" class="external-link">.Internal</a></span><span class="op">(</span><span class="fu">inspect</span><span class="op">(</span><span class="va">inspect_vec</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
-<span><span class="co">#&gt; @5c7a24c24b18 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x7100e00023e8 mode=persistent runtime=open offset=9192 uuid=65fe6537666056344ff705a4de3f1485 file=/tmp/RtmpwhfMDr/file87c7a664565fd.bin</span></span>
+<span><span class="co">#&gt; @6403ea2409c0 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x7868a64023e8 mode=persistent runtime=open offset=9192 uuid=d82ceb2f2dc4fbe4d70852110629a3b5 file=/tmp/RtmpQbzMQF/file14cbd162ee3a66.bin</span></span>
 <span><span class="co">#&gt; ATTRIB:</span></span>
-<span><span class="co">#&gt;   @5c7a24df1c18 02 LISTSXP g0c0 [REF(1)] </span></span>
-<span><span class="co">#&gt;     TAG: @5c7a23d4ce40 01 SYMSXP g1c0 [MARK,REF(37688),LCK,gp=0x6000] "class" (has value)</span></span>
-<span><span class="co">#&gt;     @5c7a27a3b928 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)</span></span>
-<span><span class="co">#&gt;       @5c7a291630f8 09 CHARSXP g0c2 [MARK,REF(54),gp=0x60] [ASCII] [cached] "fmalloc_vector"</span></span>
-<span><span class="co">#&gt;       @5c7a28b80ed8 09 CHARSXP g0c1 [MARK,REF(190),gp=0x60] [ASCII] [cached] "fmalloc"</span></span>
-<span><span class="co">#&gt;       @5c7a23d7fdf8 09 CHARSXP g1c1 [MARK,REF(594),gp=0x61] [ASCII] [cached] "integer"</span></span></code></pre></div>
+<span><span class="co">#&gt;   @6403ea245750 02 LISTSXP g0c0 [REF(1)] </span></span>
+<span><span class="co">#&gt;     TAG: @6403e5ca2e40 01 SYMSXP g1c0 [MARK,REF(38390),LCK,gp=0x6000] "class" (has value)</span></span>
+<span><span class="co">#&gt;     @6403eae07888 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)</span></span>
+<span><span class="co">#&gt;       @6403eb1c48a8 09 CHARSXP g0c2 [MARK,REF(58),gp=0x60] [ASCII] [cached] "fmalloc_vector"</span></span>
+<span><span class="co">#&gt;       @6403eab75460 09 CHARSXP g0c1 [MARK,REF(210),gp=0x60] [ASCII] [cached] "fmalloc"</span></span>
+<span><span class="co">#&gt;       @6403e5cd5df8 09 CHARSXP g1c1 [MARK,REF(623),gp=0x61] [ASCII] [cached] "integer"</span></span></code></pre></div>
 <p><code>inspect()</code> output is an internal R diagnostic, so exact formatting can vary between R versions. The <code>fmalloc_altrep ...</code> line comes from Rfmalloc’s ALTREP <code>Inspect</code> method.</p>
 </div>
 <div class="section level2">
 <h2 id="character-vectors">Character Vectors<a class="anchor" aria-label="anchor" href="#character-vectors"></a>
 </h2>
 <p>Rfmalloc character vectors are ALTSTRING vectors. String bytes, lengths, encodings, and NA flags live in fmalloc storage. R <code>CHARSXP</code> values are materialized on <code>STRING_ELT()</code> access; Rfmalloc does not allocate <code>CHARSXP</code> objects inside fmalloc.</p>
-<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="va">char_file</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
@@ -590,7 +725,7 @@
 <h2 id="matrix-and-dataframe-constructors-and-converters">Matrix and data.frame constructors and converters<a class="anchor" aria-label="anchor" href="#matrix-and-dataframe-constructors-and-converters"></a>
 </h2>
 <p>Use constructor helpers for shape-aware allocation, and <code>as_fmalloc_*()</code> helpers to install shape metadata on existing fmalloc-backed vectors:</p>
-<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb18"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="va">ctor_file</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
@@ -646,7 +781,7 @@
 <li><code>options(Rfmalloc.reduce_result_length = n)</code></li>
 </ul>
 <p>where <code>n</code> is the maximum allowed result length to keep in-memory. Results with length greater than <code>n</code> stay fmalloc-backed.</p>
-<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb19"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="va">reduce_file</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
@@ -706,7 +841,7 @@
 <h2 id="multiple-runtimes-and-lifetime">Multiple Runtimes and Lifetime<a class="anchor" aria-label="anchor" href="#multiple-runtimes-and-lifetime"></a>
 </h2>
 <p>Runtime handles make it possible to use more than one backing file in one R process.</p>
-<div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb20"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="va">file_a</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
@@ -759,7 +894,7 @@
 <li>payload byte size.</li>
 </ul>
 <p>During <code><a href="https://rdrr.io/r/base/serialize.html" class="external-link">unserialize()</a></code>, Rfmalloc reopens the backing file, verifies the UUID, checks the recorded dimensions and file bounds, validates the catalog record and generation, and reconstructs an ALTREP vector around the same fmalloc allocation.</p>
-<div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb21"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="va">ser_file</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
@@ -802,7 +937,7 @@
 <h2 id="catalog-diagnostics">Catalog diagnostics<a class="anchor" aria-label="anchor" href="#catalog-diagnostics"></a>
 </h2>
 <p>Use <code><a href="reference/diagnose_fmalloc_runtime.html">diagnose_fmalloc_runtime()</a></code> to inspect runtime metadata, the live catalog, and a compact summary that can help decide when a runtime is a reset candidate:</p>
-<div class="sourceCode" id="cb18"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb22"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="va">diag_file</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
 <span>  <span class="va">rt</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/open_fmalloc.html">open_fmalloc</a></span><span class="op">(</span><span class="va">diag_file</span>, mode <span class="op">=</span> <span class="st">"persistent"</span><span class="op">)</span></span>
@@ -843,7 +978,7 @@
 <span><span class="co">#&gt; $compaction_implemented</span></span>
 <span><span class="co">#&gt; [1] FALSE</span></span></code></pre></div>
 <p>Scratch runtimes use ordinary R serialization instead. Their serialized values do not depend on reopening the scratch backing file.</p>
-<div class="sourceCode" id="cb19"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb23"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="va">scratch_file</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
 <span>  <span class="va">scratch_rt</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/open_fmalloc.html">open_fmalloc</a></span><span class="op">(</span><span class="va">scratch_file</span>, mode <span class="op">=</span> <span class="st">"scratch"</span><span class="op">)</span></span>
@@ -867,7 +1002,7 @@
 <h2 id="list-constraints-and-recovery-examples">List constraints and recovery examples<a class="anchor" aria-label="anchor" href="#list-constraints-and-recovery-examples"></a>
 </h2>
 <p>List assignment rejects non-fmalloc payloads at runtime.</p>
-<div class="sourceCode" id="cb20"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb24"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="va">reject_file</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
@@ -897,7 +1032,7 @@
 <span><span class="co">#&gt; $rejected_non_fmalloc_payload</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
 <p>Nested fmalloc lists recover recursively when serialized and unserialized from a persistent backing file.</p>
-<div class="sourceCode" id="cb21"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb25"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="va">recover_file</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
@@ -933,7 +1068,7 @@
 <span><span class="co">#&gt; $recovered_labels</span></span>
 <span><span class="co">#&gt; [1] "alpha" "beta"</span></span></code></pre></div>
 <p>Cross-runtime insertion is also rejected.</p>
-<div class="sourceCode" id="cb22"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb26"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="va">cross_file_a</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
@@ -973,7 +1108,7 @@
 <code><a href="https://bench.r-lib.org/reference/mark.html" class="external-link">bench::mark()</a></code> reports R heap allocation in <code>mem_alloc</code>; it does not count bytes stored in the fmalloc mapped file.</li>
 </ul>
 <p>The small benchmark below uses <code>bench</code> and a scratch runtime, so benchmark-only fmalloc allocations are not preserved as persistent records. Timings are machine- and R-version-specific; use this as a template for local measurements.</p>
-<div class="sourceCode" id="cb23"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb27"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span></span>
 <span><span class="va">perf_file</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
 <span><span class="va">rt</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/open_fmalloc.html">open_fmalloc</a></span><span class="op">(</span><span class="va">perf_file</span>, mode <span class="op">=</span> <span class="st">"scratch"</span>, size_gb <span class="op">=</span> <span class="fl">0.1</span><span class="op">)</span></span>
@@ -1026,30 +1161,51 @@
 <span><span class="co">#&gt; # A tibble: 8 × 5</span></span>
 <span><span class="co">#&gt;   expression               median `itr/sec` mem_alloc `gc/sec`</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt;             &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;    &lt;dbl&gt;</span></span>
-<span><span class="co">#&gt; 1 base_sequential_sum      36.8µs    25690.        0B        0</span></span>
-<span><span class="co">#&gt; 2 fmalloc_sequential_sum   44.5µs    22885.        0B        0</span></span>
-<span><span class="co">#&gt; 3 base_scalar_read         32.6µs    28702.        0B        0</span></span>
-<span><span class="co">#&gt; 4 fmalloc_scalar_read     895.4µs     1111.   24.55KB        0</span></span>
-<span><span class="co">#&gt; 5 base_subset_copy          2.8µs   287915.    7.86KB        0</span></span>
-<span><span class="co">#&gt; 6 fmalloc_subset_copy      29.5µs    33358.        0B        0</span></span>
-<span><span class="co">#&gt; 7 base_indexed_write       39.2µs    14910.  390.67KB        0</span></span>
-<span><span class="co">#&gt; 8 fmalloc_indexed_write   187.4µs     5670.        0B        0</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 base_sequential_sum     35.13µs    28081.        0B        0</span></span>
+<span><span class="co">#&gt; 2 fmalloc_sequential_sum  49.71µs    21751.        0B        0</span></span>
+<span><span class="co">#&gt; 3 base_scalar_read        32.73µs    28632.        0B        0</span></span>
+<span><span class="co">#&gt; 4 fmalloc_scalar_read    930.29µs     1071.   24.55KB        0</span></span>
+<span><span class="co">#&gt; 5 base_subset_copy         2.96µs   268687.    7.86KB        0</span></span>
+<span><span class="co">#&gt; 6 fmalloc_subset_copy     31.88µs    28523.        0B        0</span></span>
+<span><span class="co">#&gt; 7 base_indexed_write      29.72µs    32483.  390.67KB        0</span></span>
+<span><span class="co">#&gt; 8 fmalloc_indexed_write  197.98µs     5010.        0B        0</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="native-c-api-for-other-packages">Native C API for Other Packages<a class="anchor" aria-label="anchor" href="#native-c-api-for-other-packages"></a>
 </h2>
 <p>Rfmalloc installs <code>inst/include/Rfmalloc.h</code> and registers C-callable entry points with <code>R_RegisterCCallable()</code>. Downstream packages can add Rfmalloc to <code>LinkingTo</code> and <code>Imports</code>, include the header, and use the inline wrappers.</p>
-<p>The current native surface (API version 4) exposes runtime open/cleanup, vector creation, default-runtime lookup and synchronization, catalog listing, runtime/vector introspection, vector destruction, an API-version query, and tensor codec registration (<code>Rfmalloc_register_tensor_codec</code>) so downstream packages can plug their own element encodings into the panel-streamed matrix products — <a href="https://github.com/sounkou-bioinfo/Rgguf" class="external-link">Rgguf</a> uses this to register the quantized GGUF formats. Returned <code>SEXP</code> objects follow normal R API ownership rules.</p>
+<p>The current native surface (API version 5) exposes runtime open/cleanup, vector creation, default-runtime lookup and synchronization, catalog listing, runtime/vector introspection, vector destruction, an API-version query, and the two extension registries: <code>Rfmalloc_register_tensor_codec</code> (plug an element encoding into the panel-streamed matrix products — <a href="https://github.com/sounkou-bioinfo/Rgguf" class="external-link">Rgguf</a> uses this for the quantized GGUF formats) and <code>Rfmalloc_register_matmul_backend</code> (plug a GEMM kernel behind the matrix products). Returned <code>SEXP</code> objects follow normal R API ownership rules.</p>
 </div>
 <div class="section level2">
 <h2 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a>
 </h2>
+<p>Storage / allocator:</p>
 <ul>
 <li>fmalloc: <a href="https://github.com/yasukata/fmalloc" class="external-link uri">https://github.com/yasukata/fmalloc</a>
 </li>
 <li>Simon Urbanek’s <code>Rf_allocVector3()</code> custom mmap allocator PoC: <a href="https://gist.github.com/s-u/6712c97ca74181f5a1a5" class="external-link uri">https://gist.github.com/s-u/6712c97ca74181f5a1a5</a>
 </li>
 <li>Rfmalloc’s prior custom allocator implementation using <code>Rf_allocVector3()</code> (for historical comparison): <a href="https://github.com/sounkou-bioinfo/Rfmalloc/commit/0165953" class="external-link uri">https://github.com/sounkou-bioinfo/Rfmalloc/commit/0165953</a>
+</li>
+</ul>
+<p>Compression:</p>
+<ul>
+<li>ALP (Adaptive Lossless floating-Point Compression), Afroozeh, Kuffo &amp; Boncz, <a href="https://doi.org/10.1145/3626717" class="external-link uri">https://doi.org/10.1145/3626717</a>; reference implementation <a href="https://github.com/cwida/ALP" class="external-link uri">https://github.com/cwida/ALP</a>. Rfmalloc’s <code>"alp"</code> codec adapts the scalar core from Mike Cheng’s MIT-licensed <a href="https://github.com/coolbutuseless/zap" class="external-link">zap</a>.</li>
+</ul>
+<p>In-place / by-reference mutation:</p>
+<ul>
+<li>insitu (modify R vectors by reference, bypassing copy-on-modify): <a href="https://github.com/coolbutuseless/insitu" class="external-link uri">https://github.com/coolbutuseless/insitu</a>
+</li>
+</ul>
+<p>Related work (memory-mapped / larger-than-RAM matrices in R):</p>
+<ul>
+<li>houba — memory-mapped vectors/matrices/arrays: <a href="https://github.com/HervePerdry/houba" class="external-link uri">https://github.com/HervePerdry/houba</a>
+</li>
+<li>bigstatsr / bigsnpr (FBM): <a href="https://privefl.github.io/bigstatsr/" class="external-link uri">https://privefl.github.io/bigstatsr/</a>, <a href="https://privefl.github.io/bigsnpr/" class="external-link uri">https://privefl.github.io/bigsnpr/</a>
+</li>
+<li>bigmemory: <a href="https://cran.r-project.org/package=bigmemory" class="external-link uri">https://cran.r-project.org/package=bigmemory</a>
+</li>
+<li>vroom (lazy file index): <a href="https://vroom.r-lib.org" class="external-link uri">https://vroom.r-lib.org</a>
 </li>
 </ul>
 </div>

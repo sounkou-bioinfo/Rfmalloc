@@ -1,48 +1,101 @@
 # Rfmalloc
 
-Rfmalloc is an experimental R package for file-backed R vectors using a
-patched copy of [fmalloc](https://github.com/yasukata/fmalloc). The
-current R-facing vector API creates fmalloc-backed ALTREP vectors for
-atomic, character, and list storage.
+Rfmalloc gives you **the real R matrix, file-backed** — a genuine ALTREP
+numeric vector/matrix whose storage lives in an `mmap`-ed file instead
+of the R heap, powered by a patched copy of
+[fmalloc](https://github.com/yasukata/fmalloc). Because it is the actual
+R object and not a proxy handle or a lazy file index,
+[`dim()`](https://rdrr.io/r/base/dim.html), `%*%`,
+[`crossprod()`](https://rdrr.io/r/base/crossprod.html), `Ops`, and
+subsetting just work — but the data can be larger than RAM, compressed
+on disk, mutated in place, and multiplied by a pluggable backend.
+
+The direction of the project is an **out-of-core, compressed,
+in-place-mutable matrix stack** built from three runtime-pluggable tiers
+over fmalloc storage:
+
+- **codecs** — *how bytes decode*: builtin `f32`/`f16`/`bf16`, a
+  lossless floating-point codec (`alp`), a `sparse` codec for
+  mostly-zero data (single-cell counts), and quantized GGUF formats via
+  [Rgguf](https://github.com/sounkou-bioinfo/Rgguf) — all registered
+  through a codec registry other packages can extend;
+- **backends** — *what hardware multiplies*: the matrix products
+  dispatch `dgemm` through a selectable backend (default R’s BLAS;
+  downstream packages can register a GPU or out-of-core-aware kernel);
+- **fmalloc** — *where it lives*: file-backed, out-of-core, persistent,
+  and mutable in place.
+
+Contrast with neighbours: this is not a lazy file index
+([vroom](https://vroom.r-lib.org)) and not a proxy class
+([bigmemory](https://cran.r-project.org/package=bigmemory),
+[bigstatsr](https://privefl.github.io/bigstatsr/) FBM,
+[houba](https://github.com/HervePerdry/houba)) — it is the real ALTREP
+object that computes and compresses out of core.
 
 Earlier prototypes explored R’s custom allocator / `Rf_allocVector3()`
 path (see Simon Urbanek’s
 [proof-of-concept](https://gist.github.com/s-u/6712c97ca74181f5a1a5)).
-The package has moved to direct ALTREP vectors for the public vector API
-and control over copy-on-write duplication. The patched fmalloc
-`malloc`/`free`/`realloc` layer is still built and installed for native
-consumers that use the C API or link against the bundled library.
+The patched fmalloc `malloc`/`free`/`realloc` layer is still built and
+installed for native consumers that use the C API or link against the
+bundled library.
 
 ## Current Status
 
-Implemented now:
+Storage and vectors:
 
 - fmalloc-backed ALTREP vectors for logical, integer, numeric, raw,
-  complex, character, and list values; list elements are restricted to
-  `NULL` or other Rfmalloc vectors from the same runtime;
-- explicit runtime handles and `persistent` / `scratch` runtime modes;
-- persistent serialization and reopening for fixed-width atomic and
-  character vectors;
+  complex, character, and list values; explicit runtime handles and
+  `persistent` / `scratch` modes; persistent serialization/reopening for
+  fixed-width atomic and character vectors.
+
+Matrix computing:
+
 - native elementwise `Ops`, `Summary`, `Math`/`Math2`, and matrix
-  reduction kernels; matrix products (`%*%`,
+  reductions;
+- matrix products (`%*%`,
   [`crossprod()`](https://rdrr.io/r/base/crossprod.html),
   [`tcrossprod()`](https://rdrr.io/r/base/crossprod.html)) call BLAS
-  `dgemm` for finite double operands and managed native loops otherwise;
-- typed tensors: raw fmalloc payloads in a foreign element encoding
-  (`f32`/`f16`/`bf16` builtin; quantized GGUF formats via
-  [Rgguf](https://github.com/sounkou-bioinfo/Rgguf)) whose matrix
-  products decode bounded, block-aligned panels streamed through
-  `dgemm`;
-- a builtin lossless `"alp"` compression codec
-  ([`as_fmalloc_tensor()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_tensor.md))
-  storing decimal-scaled doubles as bit-packed integers in independently
-  decodable chunks;
+  `dgemm` for finite double operands (managed native loops otherwise),
+  dispatched through a **pluggable backend**
+  ([`fmalloc_matmul_backend()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_backend.md));
+- **out-of-core** products
+  ([`fmalloc_matmul_ooc()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_matmul_ooc.md),
+  [`fmalloc_crossprod_ooc()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_matmul_ooc.md),
+  [`fmalloc_tcrossprod_ooc()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_matmul_ooc.md))
+  that stream column tiles through `dgemm` with `madvise` eviction, so
+  operands larger than RAM multiply with a bounded resident set;
+  `%*%`/`crossprod`/`tcrossprod` auto-route to these above a RAM-based
+  threshold.
+
+Compression (typed tensors):
+
+- [`as_fmalloc_tensor()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_tensor.md)
+  stores a matrix under a codec — lossless `"alp"` for decimal-scaled
+  doubles, `"sparse"` for mostly-zero (single-cell/count) data — and the
+  compressed tensor still participates in the panel-streamed matrix
+  products;
+- codecs are a registry
+  ([`fmalloc_tensor_codecs()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_tensor.md));
+  downstream packages add their own (Rgguf registers the quantized GGUF
+  formats).
+
+In-place mutation:
+
+- [`fmalloc_set()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_insitu.md),
+  [`fmalloc_fill()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_insitu.md),
+  and
+  [`fmalloc_add()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_insitu.md)/[`sub()`](https://rdrr.io/r/base/grep.html)/`mul()`/`div()`
+  write through the backing store, bypassing R’s copy-on-modify —
+  essential when the payload is larger than RAM or persistent.
+
+Native surface:
+
 - explicit
   [`destroy_fmalloc_vector()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/destroy_fmalloc_vector.md),
-  an in-file persistent allocation catalog, runtime/vector introspection
-  helpers, and an installed C header with `R_RegisterCCallable()` entry
-  points (API version 4), including tensor codec registration for
-  downstream packages.
+  an in-file persistent allocation catalog, runtime/vector
+  introspection, and an installed C header with `R_RegisterCCallable()`
+  entry points (API version 5), including tensor codec and matmul
+  backend registration for downstream packages.
 
 Known base-fallback boundaries:
 
@@ -447,7 +500,7 @@ local({
 })
 #> <fmalloc_tensor alp [20000 x 10], 279720 payload bytes>
 #> $codecs
-#> [1] "f64"  "f32"  "f16"  "bf16" "alp" 
+#> [1] "f64"    "f32"    "f16"    "bf16"   "alp"    "sparse"
 #> 
 #> $compression_ratio
 #> [1] 0.174825
@@ -460,6 +513,152 @@ local({
 #> 
 #> $product_matches_base
 #> [1] TRUE
+```
+
+The `"sparse"` codec stores only the nonzeros of each chunk, for
+mostly-zero data such as single-cell counts — it compresses heavily and
+still multiplies through the panel engine:
+
+``` r
+
+local({
+  sp_file <- tempfile(fileext = ".bin")
+  rt <- open_fmalloc(sp_file, mode = "scratch", size_gb = 0.5)
+  on.exit({ cleanup_fmalloc(rt); unlink(sp_file) }, add = TRUE)
+
+  set.seed(3)
+  # ~10% nonzero small counts (single-cell-like)
+  X <- matrix(0, 5000, 40)
+  nz <- sample(length(X), length(X) * 0.1)
+  X[nz] <- rpois(length(nz), 3) + 1
+
+  ten <- as_fmalloc_tensor(X, dtype = "sparse", runtime = rt)
+  b <- matrix(rnorm(40 * 3), nrow = 40)
+
+  list(
+    dtype = fmalloc_tensor_dtype(ten),
+    compression_ratio = length(unclass(ten)) / (length(X) * 8),
+    lossless = identical(as.vector(fmalloc_tensor_materialize(ten)[]), as.vector(X)),
+    product_matches_base = all.equal(as.vector((ten %*% b)[]), as.vector(X %*% b))
+  )
+})
+#> $dtype
+#> [1] "sparse"
+#> 
+#> $compression_ratio
+#> [1] 0.1522
+#> 
+#> $lossless
+#> [1] TRUE
+#> 
+#> $product_matches_base
+#> [1] TRUE
+```
+
+## Out-of-core matrix products
+
+[`fmalloc_matmul_ooc()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_matmul_ooc.md),
+[`fmalloc_crossprod_ooc()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_matmul_ooc.md),
+and
+[`fmalloc_tcrossprod_ooc()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_matmul_ooc.md)
+stream a matrix through `dgemm` one contiguous column tile at a time,
+releasing each tile’s pages with `madvise(MADV_DONTNEED)`, so a matrix
+larger than RAM multiplies with a resident set bounded by the tile size
+rather than the matrix size. `crossprod(X)` = `X'X` is the
+covariance/Gram matrix behind PCA, ridge, and GWAS.
+
+`%*%`/[`crossprod()`](https://rdrr.io/r/base/crossprod.html)/[`tcrossprod()`](https://rdrr.io/r/base/crossprod.html)
+on an fmalloc matrix auto-route to these when the operand reaches
+`getOption("Rfmalloc.ooc_threshold_gb")` (default half of physical RAM).
+The example forces the threshold to 0 to show the path on a small
+matrix:
+
+``` r
+
+local({
+  ooc_file <- tempfile(fileext = ".bin")
+  rt <- open_fmalloc(ooc_file, mode = "scratch", size_gb = 0.5)
+  on.exit({
+    cleanup_fmalloc(rt); unlink(ooc_file)
+    options(Rfmalloc.ooc_threshold_gb = NULL, Rfmalloc.ooc_tile_mb = NULL)
+  }, add = TRUE)
+
+  set.seed(4)
+  X <- create_fmalloc_matrix("numeric", nrow = 4000, ncol = 200, runtime = rt)
+  bx <- matrix(rnorm(4000 * 200), 4000, 200)
+  X[] <- bx
+
+  # explicit out-of-core Gram matrix
+  G <- fmalloc_crossprod_ooc(X, tile_mb = 8)
+
+  # auto-routing: force the threshold so crossprod(X) takes the OOC path
+  options(Rfmalloc.ooc_threshold_gb = 0, Rfmalloc.ooc_tile_mb = 8)
+  list(
+    gram_matches_base = all.equal(as.vector(G[]), as.vector(crossprod(bx))),
+    gram_is_fmalloc_backed = is_fmalloc_vector(G),
+    auto_routed_matches = all.equal(as.vector(crossprod(X)[]), as.vector(crossprod(bx)))
+  )
+})
+#> $gram_matches_base
+#> [1] TRUE
+#> 
+#> $gram_is_fmalloc_backed
+#> [1] TRUE
+#> 
+#> $auto_routed_matches
+#> [1] TRUE
+```
+
+## In-place mutation
+
+[`fmalloc_set()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_insitu.md)/[`fmalloc_fill()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_insitu.md)
+and
+[`fmalloc_add()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_insitu.md)/[`sub()`](https://rdrr.io/r/base/grep.html)/`mul()`/`div()`
+write straight through the backing store, bypassing R’s copy-on-modify.
+This is essential at fmalloc scale (copying a larger-than-RAM payload on
+every `x[i] <-` is fatal) and deliberately by-reference: all bindings to
+the same vector observe the change, so these are explicit functions,
+never a silent `[<-`.
+
+``` r
+
+local({
+  ip_file <- tempfile(fileext = ".bin")
+  rt <- open_fmalloc(ip_file, mode = "scratch", size_gb = 0.1)
+  on.exit({ cleanup_fmalloc(rt); unlink(ip_file) }, add = TRUE)
+
+  x <- create_fmalloc_vector("numeric", 6, runtime = rt)
+  fmalloc_fill(x, 1)          # x[] <- 1, no copy
+  fmalloc_set(x, c(2, 4), 9)  # x[c(2,4)] <- 9, no copy
+  fmalloc_add(x, 10)          # x <- x + 10, in place
+
+  y <- x                      # no copy on assignment
+  fmalloc_mul(x, 2)           # mutating x also changes its alias y
+
+  list(x = x[], alias_y = y[])
+})
+#> $x
+#> [1] 22 38 22 38 22 22
+#> 
+#> $alias_y
+#> [1] 22 38 22 38 22 22
+```
+
+## Pluggable matmul backends
+
+The matrix-product kernels dispatch their `dgemm` through a selectable
+backend. The default is R’s BLAS (itself user-swappable via
+`update-alternatives`, `LD_PRELOAD`, or FlexiBLAS). Downstream packages
+register an alternative (e.g. a GPU or out-of-core-aware GEMM) through
+the `Rfmalloc_register_matmul_backend` C-callable; selection is
+Rfmalloc-scoped, so base R’s `%*%` is unaffected.
+
+``` r
+
+fmalloc_matmul_backend()   # "blas" by default
+#> [1] "blas"
+fmalloc_matmul_backends()  # names registered by other packages (none here)
+#> character(0)
 ```
 
 ## Explicit destruction and parent safety
@@ -606,14 +805,14 @@ local({
   inspect_vec[] <- 1:4
   .Internal(inspect(inspect_vec))
 })
-#> @5c7a24c24b18 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x7100e00023e8 mode=persistent runtime=open offset=9192 uuid=65fe6537666056344ff705a4de3f1485 file=/tmp/RtmpwhfMDr/file87c7a664565fd.bin
+#> @6403ea2409c0 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x7868a64023e8 mode=persistent runtime=open offset=9192 uuid=d82ceb2f2dc4fbe4d70852110629a3b5 file=/tmp/RtmpQbzMQF/file14cbd162ee3a66.bin
 #> ATTRIB:
-#>   @5c7a24df1c18 02 LISTSXP g0c0 [REF(1)] 
-#>     TAG: @5c7a23d4ce40 01 SYMSXP g1c0 [MARK,REF(37688),LCK,gp=0x6000] "class" (has value)
-#>     @5c7a27a3b928 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)
-#>       @5c7a291630f8 09 CHARSXP g0c2 [MARK,REF(54),gp=0x60] [ASCII] [cached] "fmalloc_vector"
-#>       @5c7a28b80ed8 09 CHARSXP g0c1 [MARK,REF(190),gp=0x60] [ASCII] [cached] "fmalloc"
-#>       @5c7a23d7fdf8 09 CHARSXP g1c1 [MARK,REF(594),gp=0x61] [ASCII] [cached] "integer"
+#>   @6403ea245750 02 LISTSXP g0c0 [REF(1)] 
+#>     TAG: @6403e5ca2e40 01 SYMSXP g1c0 [MARK,REF(38390),LCK,gp=0x6000] "class" (has value)
+#>     @6403eae07888 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)
+#>       @6403eb1c48a8 09 CHARSXP g0c2 [MARK,REF(58),gp=0x60] [ASCII] [cached] "fmalloc_vector"
+#>       @6403eab75460 09 CHARSXP g0c1 [MARK,REF(210),gp=0x60] [ASCII] [cached] "fmalloc"
+#>       @6403e5cd5df8 09 CHARSXP g1c1 [MARK,REF(623),gp=0x61] [ASCII] [cached] "integer"
 ```
 
 `inspect()` output is an internal R diagnostic, so exact formatting can
@@ -1169,14 +1368,14 @@ perf_result
 #> # A tibble: 8 × 5
 #>   expression               median `itr/sec` mem_alloc `gc/sec`
 #>   <bch:expr>             <bch:tm>     <dbl> <bch:byt>    <dbl>
-#> 1 base_sequential_sum      36.8µs    25690.        0B        0
-#> 2 fmalloc_sequential_sum   44.5µs    22885.        0B        0
-#> 3 base_scalar_read         32.6µs    28702.        0B        0
-#> 4 fmalloc_scalar_read     895.4µs     1111.   24.55KB        0
-#> 5 base_subset_copy          2.8µs   287915.    7.86KB        0
-#> 6 fmalloc_subset_copy      29.5µs    33358.        0B        0
-#> 7 base_indexed_write       39.2µs    14910.  390.67KB        0
-#> 8 fmalloc_indexed_write   187.4µs     5670.        0B        0
+#> 1 base_sequential_sum     35.13µs    28081.        0B        0
+#> 2 fmalloc_sequential_sum  49.71µs    21751.        0B        0
+#> 3 base_scalar_read        32.73µs    28632.        0B        0
+#> 4 fmalloc_scalar_read    930.29µs     1071.   24.55KB        0
+#> 5 base_subset_copy         2.96µs   268687.    7.86KB        0
+#> 6 fmalloc_subset_copy     31.88µs    28523.        0B        0
+#> 7 base_indexed_write      29.72µs    32483.  390.67KB        0
+#> 8 fmalloc_indexed_write  197.98µs     5010.        0B        0
 ```
 
 ## Native C API for Other Packages
@@ -1186,17 +1385,20 @@ entry points with `R_RegisterCCallable()`. Downstream packages can add
 Rfmalloc to `LinkingTo` and `Imports`, include the header, and use the
 inline wrappers.
 
-The current native surface (API version 4) exposes runtime open/cleanup,
+The current native surface (API version 5) exposes runtime open/cleanup,
 vector creation, default-runtime lookup and synchronization, catalog
 listing, runtime/vector introspection, vector destruction, an
-API-version query, and tensor codec registration
-(`Rfmalloc_register_tensor_codec`) so downstream packages can plug their
-own element encodings into the panel-streamed matrix products —
-[Rgguf](https://github.com/sounkou-bioinfo/Rgguf) uses this to register
-the quantized GGUF formats. Returned `SEXP` objects follow normal R API
-ownership rules.
+API-version query, and the two extension registries:
+`Rfmalloc_register_tensor_codec` (plug an element encoding into the
+panel-streamed matrix products —
+[Rgguf](https://github.com/sounkou-bioinfo/Rgguf) uses this for the
+quantized GGUF formats) and `Rfmalloc_register_matmul_backend` (plug a
+GEMM kernel behind the matrix products). Returned `SEXP` objects follow
+normal R API ownership rules.
 
 ## References
+
+Storage / allocator:
 
 - fmalloc: <https://github.com/yasukata/fmalloc>
 - Simon Urbanek’s `Rf_allocVector3()` custom mmap allocator PoC:
@@ -1204,6 +1406,28 @@ ownership rules.
 - Rfmalloc’s prior custom allocator implementation using
   `Rf_allocVector3()` (for historical comparison):
   <https://github.com/sounkou-bioinfo/Rfmalloc/commit/0165953>
+
+Compression:
+
+- ALP (Adaptive Lossless floating-Point Compression), Afroozeh, Kuffo &
+  Boncz, <https://doi.org/10.1145/3626717>; reference implementation
+  <https://github.com/cwida/ALP>. Rfmalloc’s `"alp"` codec adapts the
+  scalar core from Mike Cheng’s MIT-licensed
+  [zap](https://github.com/coolbutuseless/zap).
+
+In-place / by-reference mutation:
+
+- insitu (modify R vectors by reference, bypassing copy-on-modify):
+  <https://github.com/coolbutuseless/insitu>
+
+Related work (memory-mapped / larger-than-RAM matrices in R):
+
+- houba — memory-mapped vectors/matrices/arrays:
+  <https://github.com/HervePerdry/houba>
+- bigstatsr / bigsnpr (FBM): <https://privefl.github.io/bigstatsr/>,
+  <https://privefl.github.io/bigsnpr/>
+- bigmemory: <https://cran.r-project.org/package=bigmemory>
+- vroom (lazy file index): <https://vroom.r-lib.org>
 
 ## License
 
