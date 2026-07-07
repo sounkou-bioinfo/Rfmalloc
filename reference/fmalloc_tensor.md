@@ -45,17 +45,22 @@ tcrossprod(x, y = NULL, ...)
 
 - payload:
 
-  An fmalloc raw vector holding the encoded matrix payload in
-  column-major order (first dimension fastest).
+  An fmalloc raw vector holding the encoded payload in column-major
+  order (first dimension fastest).
 
 - dtype:
 
   Codec name, e.g. `"f32"`, `"f16"`, `"bf16"`; for
-  `as_fmalloc_tensor()`, only `"alp"`.
+  `as_fmalloc_tensor()`, `"alp"` or `"sparse"`.
 
 - dim:
 
-  Length-2 integer dimensions of the decoded matrix.
+  Integer dimensions of the decoded tensor (any rank). Storage and
+  `fmalloc_tensor_materialize()` handle any number of dimensions; the
+  matrix products (`%*%`,
+  [`crossprod()`](https://rdrr.io/r/base/crossprod.html),
+  [`tcrossprod()`](https://rdrr.io/r/base/crossprod.html)) require
+  exactly 2.
 
 - x:
 

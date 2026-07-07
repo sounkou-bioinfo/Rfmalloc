@@ -460,11 +460,14 @@ local({
 ## Typed tensors and ALP compression
 
 A typed tensor is an fmalloc raw payload in a foreign element encoding
-plus dtype/dims tags. Matrix products decode the payload in bounded,
-block-aligned column panels streamed through `dgemm`, so the full double
-representation is never materialized. Codecs `f64`, `f32`, `f16`, and
-`bf16` are builtin; downstream packages register more through the C API
-(Rgguf adds the quantized GGUF formats).
+plus dtype/dims tags. It is genuinely n-dimensional — storage and
+[`fmalloc_tensor_materialize()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_tensor.md)
+handle any rank — while the matrix products, which decode the payload in
+bounded, block-aligned column panels streamed through `dgemm` (so the
+full double representation is never materialized), require exactly 2
+dimensions. Codecs `f64`, `f32`, `f16`, and `bf16` are builtin;
+downstream packages register more through the C API (Rgguf adds the
+quantized GGUF formats).
 
 The builtin `"alp"` codec compresses decimal-scaled doubles losslessly
 (Afroozeh et al., ALP; scalar core adapted from the MIT-licensed
@@ -809,14 +812,14 @@ local({
   inspect_vec[] <- 1:4
   .Internal(inspect(inspect_vec))
 })
-#> @5c52e2e2f568 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x7155038023e8 mode=persistent runtime=open offset=9192 uuid=09adecd5d33e6e7a64e288c053d9d927 file=/tmp/RtmptHuDPO/file14ea3bba7fdeb.bin
+#> @5e0cac228368 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x739c92a023e8 mode=persistent runtime=open offset=9192 uuid=186ff2ae060e34c3e099fb70629f4474 file=/tmp/RtmpTRExf9/file14fec879e8eeb4.bin
 #> ATTRIB:
-#>   @5c52e2e2e5a8 02 LISTSXP g0c0 [REF(1)] 
-#>     TAG: @5c52de887e40 01 SYMSXP g1c0 [MARK,REF(38394),LCK,gp=0x6000] "class" (has value)
-#>     @5c52e39eefe8 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)
-#>       @5c52e3dabb38 09 CHARSXP g0c2 [MARK,REF(58),gp=0x60] [ASCII] [cached] "fmalloc_vector"
-#>       @5c52e375dbc0 09 CHARSXP g0c1 [MARK,REF(210),gp=0x60] [ASCII] [cached] "fmalloc"
-#>       @5c52de8badf8 09 CHARSXP g1c1 [MARK,REF(623),gp=0x61] [ASCII] [cached] "integer"
+#>   @5e0cac22b1d8 02 LISTSXP g0c0 [REF(1)] 
+#>     TAG: @5e0ca7c76e40 01 SYMSXP g1c0 [MARK,REF(38395),LCK,gp=0x6000] "class" (has value)
+#>     @5e0cacde1218 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)
+#>       @5e0cad1a3488 09 CHARSXP g0c2 [MARK,REF(58),gp=0x60] [ASCII] [cached] "fmalloc_vector"
+#>       @5e0cacb57750 09 CHARSXP g0c1 [MARK,REF(210),gp=0x60] [ASCII] [cached] "fmalloc"
+#>       @5e0ca7ca9df8 09 CHARSXP g1c1 [MARK,REF(623),gp=0x61] [ASCII] [cached] "integer"
 ```
 
 `inspect()` output is an internal R diagnostic, so exact formatting can
@@ -1372,14 +1375,14 @@ perf_result
 #> # A tibble: 8 × 5
 #>   expression               median `itr/sec` mem_alloc `gc/sec`
 #>   <bch:expr>             <bch:tm>     <dbl> <bch:byt>    <dbl>
-#> 1 base_sequential_sum     36.84µs    25742.        0B        0
-#> 2 fmalloc_sequential_sum  42.38µs    22750.        0B        0
-#> 3 base_scalar_read        33.55µs    28674.        0B        0
-#> 4 fmalloc_scalar_read    896.96µs     1114.   24.55KB        0
-#> 5 base_subset_copy         3.52µs   255065.    7.86KB        0
-#> 6 fmalloc_subset_copy     19.68µs    45277.        0B        0
-#> 7 base_indexed_write      27.99µs    34122.  390.67KB        0
-#> 8 fmalloc_indexed_write  191.25µs     5095.        0B        0
+#> 1 base_sequential_sum     36.83µs    25026.        0B        0
+#> 2 fmalloc_sequential_sum  48.44µs    22246.        0B        0
+#> 3 base_scalar_read        32.81µs    28313.        0B        0
+#> 4 fmalloc_scalar_read    882.88µs     1130.   24.55KB        0
+#> 5 base_subset_copy         2.75µs   274498.    7.86KB        0
+#> 6 fmalloc_subset_copy        19µs    45527.        0B        0
+#> 7 base_indexed_write      27.75µs    34215.  390.67KB        0
+#> 8 fmalloc_indexed_write   186.8µs     5301.        0B        0
 ```
 
 ## Native C API for Other Packages

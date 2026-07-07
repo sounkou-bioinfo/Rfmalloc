@@ -91,17 +91,19 @@ full tensor is never materialized at once.</p>
 
 
 <dl><dt id="arg-payload">payload<a class="anchor" aria-label="anchor" href="#arg-payload"></a></dt>
-<dd><p>An fmalloc raw vector holding the encoded matrix payload in
+<dd><p>An fmalloc raw vector holding the encoded payload in
 column-major order (first dimension fastest).</p></dd>
 
 
 <dt id="arg-dtype">dtype<a class="anchor" aria-label="anchor" href="#arg-dtype"></a></dt>
 <dd><p>Codec name, e.g. <code>"f32"</code>, <code>"f16"</code>, <code>"bf16"</code>; for
-<code>as_fmalloc_tensor()</code>, only <code>"alp"</code>.</p></dd>
+<code>as_fmalloc_tensor()</code>, <code>"alp"</code> or <code>"sparse"</code>.</p></dd>
 
 
 <dt id="arg-dim">dim<a class="anchor" aria-label="anchor" href="#arg-dim"></a></dt>
-<dd><p>Length-2 integer dimensions of the decoded matrix.</p></dd>
+<dd><p>Integer dimensions of the decoded tensor (any rank). Storage and
+<code>fmalloc_tensor_materialize()</code> handle any number of dimensions; the matrix
+products (<code>%*%</code>, <code><a href="https://rdrr.io/r/base/crossprod.html" class="external-link">crossprod()</a></code>, <code><a href="https://rdrr.io/r/base/crossprod.html" class="external-link">tcrossprod()</a></code>) require exactly 2.</p></dd>
 
 
 <dt id="arg-x">x<a class="anchor" aria-label="anchor" href="#arg-x"></a></dt>
