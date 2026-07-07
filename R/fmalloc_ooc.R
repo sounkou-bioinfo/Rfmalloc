@@ -68,18 +68,14 @@ fmalloc_matmul_ooc <- function(A, x, tile_mb = 256) {
     ans
 }
 
-# Total physical RAM in GB, or NA when it cannot be determined (non-Linux).
+# Total physical RAM in GB, or NA when it cannot be determined. Uses a
+# portable native query (POSIX sysconf, or BSD/macOS sysctl).
 .fmalloc_ram_gb <- function() {
-    tryCatch({
-        if (!file.exists("/proc/meminfo")) {
-            return(NA_real_)
-        }
-        line <- grep("^MemTotal:", readLines("/proc/meminfo"), value = TRUE)
-        if (length(line) != 1L) {
-            return(NA_real_)
-        }
-        as.numeric(sub("^MemTotal:\\s*([0-9]+).*", "\\1", line)) / 1024^2
-    }, error = function(e) NA_real_)
+    bytes <- tryCatch(.Call("rfm_phys_ram_bytes_impl"), error = function(e) NA_real_)
+    if (!is.numeric(bytes) || length(bytes) != 1L || is.na(bytes) || bytes <= 0) {
+        return(NA_real_)
+    }
+    bytes / 2^30
 }
 
 # Payload size (GB) at or above which a matrix product auto-selects the

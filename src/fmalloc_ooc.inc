@@ -10,6 +10,41 @@
 //==============================================================================
 
 #include <sys/mman.h>
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+#include <sys/sysctl.h>
+#endif
+
+// Total physical RAM in bytes, or NA_REAL if it cannot be determined.
+// Uses POSIX sysconf where available (Linux and most Unix), falling back to
+// the BSD/macOS sysctl HW memory query.
+extern "C" SEXP rfm_phys_ram_bytes_impl(void)
+{
+    double bytes = NA_REAL;
+#if defined(_SC_PHYS_PAGES) && defined(_SC_PAGESIZE)
+    long pages = sysconf(_SC_PHYS_PAGES);
+    long psz = sysconf(_SC_PAGESIZE);
+    if (pages > 0 && psz > 0) {
+        bytes = (double)pages * (double)psz;
+    }
+#endif
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+    if (!R_FINITE(bytes)) {
+#if defined(HW_MEMSIZE)
+        int mib[2] = {CTL_HW, HW_MEMSIZE};
+#elif defined(HW_PHYSMEM64)
+        int mib[2] = {CTL_HW, HW_PHYSMEM64};
+#else
+        int mib[2] = {CTL_HW, HW_PHYSMEM};
+#endif
+        uint64_t mem = 0;
+        size_t len = sizeof(mem);
+        if (sysctl(mib, 2, &mem, &len, nullptr, 0) == 0 && mem > 0) {
+            bytes = (double)mem;
+        }
+    }
+#endif
+    return Rf_ScalarReal(bytes);
+}
 
 static inline uintptr_t ooc_page_size(void)
 {
@@ -49,6 +84,36 @@ extern "C" SEXP rfm_vector_advise_impl(SEXP vector_x, SEXP advice_sexp)
         ooc_advise(vec->data, vec->bytes, advice);
     }
     return Rf_ScalarReal((double)vec->bytes);
+}
+
+// Fill an fmalloc raw vector by repeating a byte pattern. Useful for building
+// large typed-tensor payloads (e.g. a constant f16/quantized fill) without a
+// giant R intermediate. Returns the number of bytes written.
+extern "C" SEXP rfm_raw_fill_pattern_impl(SEXP vector_x, SEXP pattern_sexp)
+{
+    fm_vector *vec = maybe_vector_from_altrep(vector_x);
+    if (!vec || vec->type != RAWSXP) {
+        Rf_error("x must be an fmalloc raw vector");
+    }
+    if (TYPEOF(pattern_sexp) != RAWSXP || XLENGTH(pattern_sexp) == 0) {
+        Rf_error("pattern must be a non-empty raw vector");
+    }
+    if (!vec->runtime || !vec->runtime->info) {
+        Rf_error("fmalloc runtime is closed");
+    }
+
+    uint8_t *dst = static_cast<uint8_t *>(vector_data_or_dummy(vec));
+    const uint8_t *pat = RAW(pattern_sexp);
+    size_t plen = (size_t)XLENGTH(pattern_sexp);
+    size_t total = (size_t)vec->len;
+    for (size_t i = 0; i < total; i++) {
+        dst[i] = pat[i % plen];
+        if ((i & 0xFFFFFFF) == 0) {
+            R_CheckUserInterrupt();
+        }
+    }
+    vec->maybe_dirty = true;
+    return Rf_ScalarReal((double)total);
 }
 
 extern "C" SEXP rfm_matmul_ooc_impl(SEXP a_x, SEXP x_dense, SEXP tile_bytes_sexp)

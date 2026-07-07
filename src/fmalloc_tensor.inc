@@ -132,6 +132,8 @@ struct rfm_tensor_source {
     fm_runtime *runtime;
     R_xlen_t nrow;
     R_xlen_t ncol;
+    size_t payload_bytes;
+    bool fixed_geometry; // true when byte offset == block_index * bytes_per_block
 };
 
 static const rfm_tensor_codec *tensor_codec_from_sexp(SEXP codec_name)
@@ -179,6 +181,40 @@ static void tensor_source_from_args(SEXP payload, SEXP codec_name, SEXP dims_sex
                  (long long)needed, (long long)n_elems, src->codec->name,
                  (long long)vec->len);
     }
+
+    src->payload_bytes = (size_t)vec->len;
+    // A codec has fixed geometry (block b lives at byte b*bytes_per_block, so a
+    // panel's compressed byte range is computable and evictable) exactly when
+    // the payload is the predicted size. Self-indexing codecs like "alp" carry
+    // an offset table and store more, so this is false for them.
+    src->fixed_geometry = ((size_t)needed == (size_t)vec->len);
+}
+
+// Release the compressed source pages backing a decoded element range, so a
+// tensor whose payload exceeds RAM streams with a bounded resident set. Only
+// valid for fixed-geometry codecs; page alignment keeps shared edge blocks.
+static void tensor_evict_range(const rfm_tensor_source *src, R_xlen_t elem_off,
+                               R_xlen_t n_elems)
+{
+    if (!src->fixed_geometry || n_elems <= 0) {
+        return;
+    }
+    uint32_t ipb = src->codec->items_per_block;
+    uint32_t bpb = src->codec->bytes_per_block;
+    // Fully-covered blocks only: round the block start up, the end down.
+    R_xlen_t blk_start = (elem_off + ipb - 1) / ipb;
+    R_xlen_t blk_end = (elem_off + n_elems) / ipb;
+    if (blk_end <= blk_start) {
+        return;
+    }
+    size_t byte_start = (size_t)blk_start * bpb;
+    size_t byte_len = (size_t)(blk_end - blk_start) * bpb;
+    if (byte_start + byte_len > src->payload_bytes) {
+        return;
+    }
+    ooc_advise(const_cast<void *>(static_cast<const void *>(
+                   static_cast<const uint8_t *>(src->payload) + byte_start)),
+               byte_len, MADV_DONTNEED);
 }
 
 static int tensor_decode_range(const rfm_tensor_source *src, R_xlen_t elem_off,
@@ -230,10 +266,15 @@ static R_xlen_t tensor_panel_cols(const rfm_tensor_source *src, R_xlen_t panel_e
 
 extern "C" SEXP rfm_tensor_matmul_impl(SEXP payload, SEXP codec_name, SEXP dims_sexp,
                                        SEXP dense, SEXP typed_on_left_sexp,
-                                       SEXP panel_elems_sexp)
+                                       SEXP panel_elems_sexp, SEXP ooc_sexp)
 {
     rfm_tensor_source src;
     tensor_source_from_args(payload, codec_name, dims_sexp, &src);
+
+    bool ooc = Rf_asLogical(ooc_sexp) == TRUE;
+    if (ooc && src.payload) {
+        ooc_advise(const_cast<void *>(src.payload), src.payload_bytes, MADV_SEQUENTIAL);
+    }
 
     if (TYPEOF(dense) != REALSXP) {
         Rf_error("dense operand must be a double matrix");
@@ -306,6 +347,9 @@ extern "C" SEXP rfm_tensor_matmul_impl(SEXP payload, SEXP codec_name, SEXP dims_
             const double *beta = (p0 == 0) ? &zero : &one;
             F77_CALL(dgemm)("N", "N", &m, &n, &k, &one, scratch.data(), &lda,
                             REAL(dense) + p0, &ldb, beta, out, &m FCONE FCONE);
+            if (ooc) {
+                tensor_evict_range(&src, p0 * src.nrow, kb * src.nrow);
+            }
             R_CheckUserInterrupt();
         }
     } else {
@@ -321,6 +365,9 @@ extern "C" SEXP rfm_tensor_matmul_impl(SEXP payload, SEXP codec_name, SEXP dims_
             int ldb = k;
             F77_CALL(dgemm)("N", "N", &m, &n, &k, &one, REAL(dense), &lda,
                             scratch.data(), &ldb, &zero, out + j0 * dnrow, &m FCONE FCONE);
+            if (ooc) {
+                tensor_evict_range(&src, j0 * src.nrow, jb * src.nrow);
+            }
             R_CheckUserInterrupt();
         }
     }

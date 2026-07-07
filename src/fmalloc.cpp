@@ -4,7 +4,7 @@
 #include "fmalloc_vector.inc"
 #include "fmalloc_altrep.inc"
 #include "fmalloc_ops.inc"
+#include "fmalloc_ooc.inc"
 #include "fmalloc_tensor.inc"
 #include "fmalloc_alp.inc"
-#include "fmalloc_ooc.inc"
 #include "fmalloc_api.inc"

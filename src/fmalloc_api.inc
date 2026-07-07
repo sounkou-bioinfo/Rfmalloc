@@ -650,12 +650,14 @@ static const R_CallMethodDef CallEntries[] = {
     {"rfm_ops_dispatch", (DL_FUNC)&rfm_ops_dispatch, 4},
     {"rfm_matrix_ops_dispatch", (DL_FUNC)&rfm_matrix_ops_dispatch, 3},
     {"rfm_can_handle_ops_pair", (DL_FUNC)&rfm_can_handle_ops_pair, 3},
-    {"rfm_tensor_matmul_impl", (DL_FUNC)&rfm_tensor_matmul_impl, 6},
+    {"rfm_tensor_matmul_impl", (DL_FUNC)&rfm_tensor_matmul_impl, 7},
     {"rfm_tensor_materialize_impl", (DL_FUNC)&rfm_tensor_materialize_impl, 3},
     {"rfm_tensor_codec_info_impl", (DL_FUNC)&rfm_tensor_codec_info_impl, 1},
     {"rfm_tensor_codec_list_impl", (DL_FUNC)&rfm_tensor_codec_list_impl, 0},
     {"rfm_matmul_ooc_impl", (DL_FUNC)&rfm_matmul_ooc_impl, 3},
     {"rfm_vector_advise_impl", (DL_FUNC)&rfm_vector_advise_impl, 2},
+    {"rfm_phys_ram_bytes_impl", (DL_FUNC)&rfm_phys_ram_bytes_impl, 0},
+    {"rfm_raw_fill_pattern_impl", (DL_FUNC)&rfm_raw_fill_pattern_impl, 2},
     {"rfm_tensor_alp_encode_impl", (DL_FUNC)&rfm_tensor_alp_encode_impl, 2},
     {nullptr, nullptr, 0}
 };

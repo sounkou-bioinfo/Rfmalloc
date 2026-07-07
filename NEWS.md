@@ -51,12 +51,21 @@
   result exact vs the analytic reference.
 - `%*%` on an fmalloc matrix now auto-selects the out-of-core path when the
   left operand's payload reaches `getOption("Rfmalloc.ooc_threshold_gb")`
-  (default: half of physical RAM), tiling with
-  `getOption("Rfmalloc.ooc_tile_mb", 256)`; smaller products keep the in-core
-  BLAS path unchanged. Elementwise `Ops` and matrix reductions are left as-is:
-  they are already single-pass streaming, so forcing page eviction on them
-  would only regress the in-core case. `crossprod()`/`tcrossprod()` are not
-  auto-routed because their output can itself exceed RAM.
+  (default: half of physical RAM, detected portably via POSIX `sysconf` or
+  BSD/macOS `sysctl`), tiling with `getOption("Rfmalloc.ooc_tile_mb", 256)`;
+  smaller products keep the in-core BLAS path unchanged. Elementwise `Ops` and
+  matrix reductions are left as-is: they are already single-pass streaming, so
+  forcing page eviction on them would only regress the in-core case.
+  `crossprod()`/`tcrossprod()` are not auto-routed because their output can
+  itself exceed RAM.
+- Typed/compressed tensor matrix products stream out-of-core the same way:
+  above the OOC threshold, each column panel's compressed source pages are
+  released after decoding (fixed-geometry codecs such as `f16`/`bf16`/`f32`
+  and the quantized GGUF formats), so a tensor whose decoded `f64` form
+  exceeds RAM multiplies with a bounded resident set. Demonstrated on a matrix
+  that is 74.5 GB as `f64` (larger than RAM) stored as 18.6 GB of `f16`:
+  matrix-vector product at 0.13 GB peak resident memory, exact vs the analytic
+  reference. Adds `rfm_raw_fill_pattern_impl` for building large payloads.
 - Added typed fmalloc tensors: `create_fmalloc_tensor()` tags an fmalloc raw
   payload with a dtype codec (builtin `f64`/`f32`/`f16`/`bf16`; other packages
   register codecs through the new `Rfmalloc_register_tensor_codec` C-callable,

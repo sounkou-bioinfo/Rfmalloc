@@ -19,6 +19,12 @@
 #' double matrix. `fmalloc_tensor_codecs()` lists registered codec names, and
 #' `fmalloc_tensor_dtype()` returns a tensor's dtype tag.
 #'
+#' When a tensor's compressed payload reaches
+#' `getOption("Rfmalloc.ooc_threshold_gb")`, its matrix products stream
+#' out-of-core: each column panel's source pages are released after decoding
+#' (for fixed-geometry codecs), so a tensor whose decoded `f64` form exceeds
+#' RAM multiplies with a bounded resident set.
+#'
 #' @param payload An fmalloc raw vector holding the encoded matrix payload in
 #'   column-major order (first dimension fastest).
 #' @param dtype Codec name, e.g. `"f32"`, `"f16"`, `"bf16"`; for
@@ -215,10 +221,16 @@ print.fmalloc_tensor <- function(x, ...) {
         return(if (x_typed) mat %*% dense else dense %*% mat)
     }
 
+    # Out-of-core: when the compressed payload reaches the OOC threshold,
+    # release each panel's source pages after decoding so a tensor whose
+    # payload exceeds RAM streams from disk (fixed-geometry codecs only).
+    payload_gb <- length(unclass(tensor)) / 2^30
+    ooc <- payload_gb >= .fmalloc_ooc_threshold_gb()
+
     ans <- .Call(
         "rfm_tensor_matmul_impl", tensor,
         attr(tensor, "rfm_dtype"), tdims, dense, x_typed,
-        .fmalloc_tensor_panel_elems()
+        .fmalloc_tensor_panel_elems(), ooc
     )
     .fmalloc_apply_class(ans, type = "numeric", shape = "matrix")
 }

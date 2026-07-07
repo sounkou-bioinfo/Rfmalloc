@@ -81,4 +81,10 @@ exact-value patches and a raw escape hatch for incompressible chunks.
 \code{fmalloc_tensor_materialize()} decodes the whole tensor into an fmalloc
 double matrix. \code{fmalloc_tensor_codecs()} lists registered codec names, and
 \code{fmalloc_tensor_dtype()} returns a tensor's dtype tag.
+
+When a tensor's compressed payload reaches
+\code{getOption("Rfmalloc.ooc_threshold_gb")}, its matrix products stream
+out-of-core: each column panel's source pages are released after decoding
+(for fixed-geometry codecs), so a tensor whose decoded \code{f64} form exceeds
+RAM multiplies with a bounded resident set.
 }

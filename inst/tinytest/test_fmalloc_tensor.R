@@ -159,4 +159,40 @@ message("Testing typed fmalloc tensors and the panel-streaming matmul engine..."
         "must be an fmalloc raw vector")
 })()
 
+(function() {
+    message("  Test 7: forced out-of-core path matches the in-core result")
+    tmp <- tempfile(fileext = ".bin")
+    rt <- open_fmalloc(tmp, mode = "persistent")
+    on.exit({
+        cleanup_fmalloc(rt)
+        unlink(tmp)
+        options(Rfmalloc.ooc_threshold_gb = NULL, Rfmalloc.tensor_panel_elems = NULL)
+    }, add = TRUE)
+
+    set.seed(21)
+    vals <- round(rnorm(256 * 40), 3)
+    tf <- create_fmalloc_tensor(.f32_payload(rt, vals), "f32", c(256L, 40L))
+    mf <- matrix(fmalloc_tensor_materialize(tf)[], 256, 40)
+    b <- matrix(rnorm(40 * 3), 40, 3)
+    d <- matrix(rnorm(5 * 256), 5, 256)
+
+    incore_r <- tf %*% b
+    incore_l <- d %*% tf
+
+    # Force the OOC path (fixed-geometry f32 => per-panel eviction) with tiny panels.
+    options(Rfmalloc.ooc_threshold_gb = 0, Rfmalloc.tensor_panel_elems = 4096)
+    ooc_r <- tf %*% b
+    ooc_l <- d %*% tf
+    expect_equal(as.vector(ooc_r[]), as.vector(incore_r[]))
+    expect_equal(as.vector(ooc_l[]), as.vector(incore_l[]))
+    expect_equal(as.vector(ooc_r[]), as.vector(mf %*% b))
+
+    # Self-indexing ALP tensor: OOC forced, no eviction, still exact.
+    xa <- round(runif(2048 * 8, 0, 2), 3)
+    ma <- matrix(xa, 2048, 8)
+    ta <- as_fmalloc_tensor(ma, runtime = rt)
+    da <- matrix(rnorm(4 * 2048), 4, 2048)
+    expect_equal(as.vector((da %*% ta)[]), as.vector(da %*% ma))
+})()
+
 message("fmalloc tensor tests completed")
