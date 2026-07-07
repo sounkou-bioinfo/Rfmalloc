@@ -25,7 +25,11 @@ INCLUDES = -I. -Iggml-cpu -I../include
 # -include rggml_compat.h redirects stdio/stderr/abort/exit in the vendored
 # GGML sources to R-safe equivalents implemented in rggml_io.c (CRAN policy:
 # no direct console writes, no process-terminating calls from library code).
-DEFS = -DGGML_USE_CPU -DGGML_CPU_GENERIC -DGGML_R_PACKAGE -D_GNU_SOURCE \
+# -DNDEBUG compiles out C-library assert(); without it, macOS's assert()
+# expands to __assert_rtn, which R CMD check flags (compiled code must not call
+# process-terminating entry points). GGML's own GGML_ASSERT is separately
+# redirected via rggml_compat.h, so this only removes libc assert().
+DEFS = -DGGML_USE_CPU -DGGML_CPU_GENERIC -DGGML_R_PACKAGE -D_GNU_SOURCE -DNDEBUG \
        -DGGML_VERSION='"0.9.5"' -DGGML_COMMIT='"vendored-unknown"' \
        -include rggml_compat.h
 

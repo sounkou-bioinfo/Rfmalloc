@@ -1,6 +1,7 @@
 ^\.github$
 ^\.git$
 ^\.gitignore$
+^AGENTS\.md$
 ^src/.*\.o$
 ^src/.*\.so$
 ^src/symbols\.rds$
