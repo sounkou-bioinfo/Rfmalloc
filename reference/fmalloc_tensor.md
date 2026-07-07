@@ -87,7 +87,9 @@ character vector.
 
 `create_fmalloc_tensor()` tags an existing fmalloc raw payload.
 `as_fmalloc_tensor()` compresses a double vector/matrix into fmalloc
-storage with the builtin, lossless `"alp"` codec (Afroozeh et al.,
+storage with `dtype = "sparse"` (stores only the nonzeros of each chunk,
+for mostly-zero data such as single-cell counts) or the builtin,
+lossless `"alp"` codec (Afroozeh et al.,
 [doi:10.1145/3626717](https://doi.org/10.1145/3626717) ; scalar core
 adapted from the MIT-licensed zap implementation, see
 `inst/COPYRIGHTS`), storing decimal-scaled doubles as bit-packed
