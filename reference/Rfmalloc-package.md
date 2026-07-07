@@ -60,6 +60,10 @@ with fmalloc payload storage.
 
   In-place, by-reference mutation that bypasses copy-on-modify.
 
+- [`fmalloc_backend`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_backend.md):
+
+  Select a pluggable matrix-multiply backend (default R's BLAS).
+
 - [`list_fmalloc_allocations`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/list_fmalloc_allocations.md):
 
   List persistent allocation catalog records.

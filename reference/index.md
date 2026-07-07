@@ -36,6 +36,9 @@
   [`fmalloc_vector_length()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_api.md)
   [`fmalloc_vector_payload_ptr()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_api.md)
   : Public Rfmalloc API helpers
+- [`fmalloc_matmul_backend()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_backend.md)
+  [`fmalloc_matmul_backends()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_backend.md)
+  : Pluggable matrix-multiply backend
 - [`fmalloc_set()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_insitu.md)
   [`fmalloc_fill()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_insitu.md)
   [`fmalloc_add()`](https://sounkou-bioinfo.github.io/Rfmalloc/reference/fmalloc_insitu.md)
