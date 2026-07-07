@@ -1,62 +1,69 @@
+---
+output: github_document
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
 
 # Rggml
 
 <!-- badges: start -->
-
 [![R-CMD-check](https://github.com/sounkou-bioinfo/Rggml/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/sounkou-bioinfo/Rggml/actions/workflows/R-CMD-check.yaml)
 <!-- badges: end -->
 
 Rggml is a **carrier package**: it vendors the CPU backend of the
 [GGML](https://github.com/ggml-org/ggml) tensor library as a static
-library, installs its headers, and exposes GGML’s core tensor-context
-and matrix-multiply compute path through `R_RegisterCCallable()`
-C-callable entry points. It is **not** a modeling or ops API — the only
-R-level surface is `ggml_version()` and an internal smoke-test helper.
-The point of the package is for *other* R packages to link against it
-and drive GGML tensor math from their own C/C++ code, without each
-vendoring GGML themselves.
+library, installs its headers, and exposes GGML's core tensor-context and
+matrix-multiply compute path through `R_RegisterCCallable()` C-callable
+entry points. It is **not** a modeling or ops API — the only R-level
+surface is `ggml_version()` and an internal smoke-test helper. The point
+of the package is for *other* R packages to link against it and drive
+GGML tensor math from their own C/C++ code, without each vendoring GGML
+themselves.
 
-``` r
+```{r}
 library(Rggml)
 ggml_version()
-#> [1] "0.9.5"
 ```
 
-## What’s vendored
+## What's vendored
 
-A CPU-only, architecture-generic subset of GGML (~5,100 lines across ~35
-vendored `.c`/`.cpp`/`.h` files, see `inst/COPYRIGHTS` for the exact
+A CPU-only, architecture-generic subset of GGML (~5,100 lines across
+~35 vendored `.c`/`.cpp`/`.h` files, see `inst/COPYRIGHTS` for the exact
 file list and provenance): tensor/context/graph core, the backend
-abstraction, tensor-level quantize/dequantize (including K-quants such
-as `Q4_K`), and the CPU backend’s compute kernels. Built with
+abstraction, tensor-level quantize/dequantize (including K-quants such as
+`Q4_K`), and the CPU backend's compute kernels. Built with
 `-DGGML_CPU_GENERIC`: no SIMD compiler flags, no OpenMP, no hand-written
 x86 SIMD kernel files, no Vulkan/CUDA/Metal/BLAS/etc backends. This is a
-deliberate portability choice for a CRAN-facing package — correctness
-and buildability everywhere over raw speed. GGML’s own
-architecture-generic reference kernels still do the compute; they are
-just the scalar/portable code path rather than the
-AVX2/AVX-512/NEON-tuned one.
+deliberate portability choice for a CRAN-facing package — correctness and
+buildability everywhere over raw speed. GGML's own architecture-generic
+reference kernels still do the compute; they are just the scalar/portable
+code path rather than the AVX2/AVX-512/NEON-tuned one.
 
 The GGML sources were vendored via an existing R package,
 [`ggmlR`](https://github.com/Zabis13/ggmlR), which already carries the
-CRAN-compliance adaptations (stdio/abort redirection) GGML’s C code
-needs to run safely inside R. See `inst/COPYRIGHTS` for full attribution
-and license text (GGML and ggmlR are both MIT; Rggml’s own code is GPL
-(\>= 2)).
+CRAN-compliance adaptations (stdio/abort redirection) GGML's C code needs
+to run safely inside R. See `inst/COPYRIGHTS` for full attribution and
+license text (GGML and ggmlR are both MIT; Rggml's own code is
+GPL (>= 2)).
 
 **Vulkan** (or any GPU backend) is not built. A future addition would
 need: vendoring `ggml-vulkan.*` and the `vulkan-shaders/` sources, a
-`glslc`-based shader compilation step in `configure` (present in ggmlR’s
+`glslc`-based shader compilation step in `configure` (present in ggmlR's
 own `configure` as a reference), and `libvulkan-dev`/the Vulkan SDK at
-build time — none of which is CRAN-portable by default, which is why
-this first version is CPU-only.
+build time — none of which is CRAN-portable by default, which is why this
+first version is CPU-only.
 
 ## C-callable API
 
 Declared in the installed header `inst/include/Rggml.h`, registered from
 `src/rggml_init.c`, implemented in `src/rggml_api.c`:
 
-``` c
+```c
 /* version / identity */
 int            Rggml_api_version(void);
 const char    *Rggml_version(void);
@@ -107,28 +114,32 @@ resolves it via `R_GetCCallable()` and returns a function pointer, e.g.
 ### The `ggml_mul_mat()` convention (verified, not just asserted)
 
 If you load an R matrix directly into a GGML tensor with
-`ne = c(nrow(M), ncol(M))` pointing at `M`’s own raw column-major memory
+`ne = c(nrow(M), ncol(M))` pointing at `M`'s own raw column-major memory
 (no copy, no transpose — this is exactly the zero-copy path
 `Rggml_new_tensor(..., data)` is for), then:
 
-    ggml_mul_mat(ctx, A, B)  ==  crossprod(A, B)  ==  t(A) %*% B
+```
+ggml_mul_mat(ctx, A, B)  ==  crossprod(A, B)  ==  t(A) %*% B
+```
 
 where the result, read back the same way (dim `c(ncol(A), ncol(B))`), is
-always `GGML_TYPE_F32` regardless of the input types. This is exercised
-in `inst/tinytest/test_mul_mat.R` with hand-computed small cases and
-larger random matrices, through both the ggml-managed and the zero-copy
-tensor paths, driven entirely through the *registered* C-callables (via
+always `GGML_TYPE_F32` regardless of the input types. This is exercised in
+`inst/tinytest/test_mul_mat.R` with hand-computed small cases and larger
+random matrices, through both the ggml-managed and the zero-copy tensor
+paths, driven entirely through the *registered* C-callables (via
 `.Call()` into `src/rggml_test.c`, which itself only uses the
-`Rggml.h`/`R_GetCCallable()` path) — the same path a downstream
-`LinkingTo` package would use.
+`Rggml.h`/`R_GetCCallable()` path) — the same path a downstream `LinkingTo`
+package would use.
 
 ## How a downstream package uses it
 
-    # DESCRIPTION
-    Imports: Rggml
-    LinkingTo: Rggml
+```
+# DESCRIPTION
+Imports: Rggml
+LinkingTo: Rggml
+```
 
-``` c
+```c
 /* your_package_file.c */
 #include <Rggml.h>   /* pulls in ggml.h, ggml-alloc.h, ggml-backend.h, ggml-cpu.h too */
 
@@ -140,9 +151,9 @@ void do_something(void) {
 }
 ```
 
-No GGML re-vendoring, no linking against `Rggml.so` at the linker level
-— only `R_GetCCallable()` symbol resolution at run time (standard R
-C-callable convention, same as e.g. `Rfmalloc`/`Rgguf`).
+No GGML re-vendoring, no linking against `Rggml.so` at the linker level —
+only `R_GetCCallable()` symbol resolution at run time (standard R
+C-callable convention, same as e.g. `Rfmalloc`/`Rgguf`).
 
 ## Status
 
@@ -150,7 +161,7 @@ C-callable convention, same as e.g. `Rfmalloc`/`Rgguf`).
   cross-platform matrix (Linux + macOS) runs in CI, see the badge above.
 - `tinytest::test_package("Rggml")` — all tests pass, including the
   end-to-end `ggml_mul_mat()` proof above.
-- `OS_type: unix` — Linux and macOS. GGML’s own sources are portable
+- `OS_type: unix` — Linux and macOS. GGML's own sources are portable
   C/C++ with `#ifdef _WIN32` guards throughout, so a Windows build is
   plausible but not attempted or verified here; see `inst/ggml/Makefile`
   and `configure` if picking this up.
