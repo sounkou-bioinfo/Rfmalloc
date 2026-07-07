@@ -1,5 +1,19 @@
 # Rggml 0.1.0 (unreleased)
 
+- Added quantization C-callables (API version 4): `Rggml_quantize` wraps
+  `ggml_quantize_chunk()` so downstream packages can encode f32 rows into any
+  GGUF block format (the output is byte-compatible with GGUF tensor payloads),
+  and `Rggml_dequantize` wraps GGML's type-traits `to_float` - the
+  authoritative reference dequantizer, used by the Rfmalloc ecosystem to
+  cross-validate its codec decoders (this cross-validation caught and pinned a
+  Q4_K decode bug in Rgguf's vendored gguflib; see that package's NEWS).
+- Verified the full quantized-weight compute path over an external payload:
+  a `Q4_K` tensor pointed zero-copy at a heap buffer standing in for an
+  mmap'd GGUF payload, multiplied by dense F32 activations via
+  `ggml_mul_mat()` on the CPU backend, routes each weight row through the
+  runtime-SIMD-dispatched `vec_dot` (activations quantized to `Q8_K` on the
+  fly, as at llama.cpp inference) and tracks the true product to q4_K
+  accuracy (`test_mul_mat_q4k.R`).
 - Initial release. Rggml is a carrier package: it vendors a CPU-only,
   architecture-generic build of the 'GGML' tensor library as a static
   library (`inst/ggml/libggml.a`), installs its headers, and exposes GGML's

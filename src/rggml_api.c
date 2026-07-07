@@ -199,6 +199,34 @@ int Rggml_compute_mul_mat(struct ggml_context *ctx, ggml_backend_t backend,
     return 0;
 }
 
+size_t Rggml_quantize(enum ggml_type type, const float *src, void *dst,
+                      int64_t nrows, int64_t n_per_row)
+{
+    if (!src || !dst || nrows < 1 || n_per_row < 1) return 0;
+    /* Quantize `nrows` contiguous rows of `n_per_row` f32 values each into the
+     * type's block format (e.g. GGML_TYPE_Q4_K), writing to `dst`. `dst` must
+     * hold ggml_row_size(type, n_per_row) * nrows bytes. No importance matrix.
+     * Returns the number of bytes written (0 on bad arguments). The result is
+     * byte-compatible with a GGUF tensor of that type, i.e. a valid payload for
+     * an Rfmalloc typed tensor / a ggml tensor pointed at it zero-copy. */
+    return ggml_quantize_chunk(type, src, dst, 0, nrows, n_per_row, NULL);
+}
+
+int Rggml_dequantize(enum ggml_type type, const void *src, float *dst, int64_t n)
+{
+    /* Decode `n` elements (a whole number of blocks) of a quantized payload to
+     * f32 through GGML's own type-traits to_float - the authoritative reference
+     * dequantizer for every GGUF type. The caller must have initialized the CPU
+     * backend once (Rggml_backend_cpu_init) so the fp16 lookup table used to
+     * read block scales is populated. Returns 0 on success. */
+    if (!src || !dst || n < 1) return -1;
+    const struct ggml_type_traits *traits = ggml_get_type_traits(type);
+    if (!traits || !traits->to_float) return -2;
+    if (n % ggml_blck_size(type) != 0) return -3;
+    traits->to_float(src, dst, n);
+    return 0;
+}
+
 size_t Rggml_type_size(enum ggml_type type)
 {
     return ggml_type_size(type);

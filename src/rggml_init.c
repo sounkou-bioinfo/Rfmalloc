@@ -14,14 +14,16 @@
 
 SEXP RC_rggml_version(void);
 SEXP RC_rggml_test_mul_mat(SEXP A_sexp, SEXP B_sexp, SEXP zero_copy_sexp, SEXP use_blas_sexp);
+SEXP RC_rggml_test_mul_mat_q4k(SEXP A_sexp, SEXP B_sexp);
 SEXP RC_rggml_test_q4k_dot(SEXP nblocks_sexp);
 SEXP RC_rggml_bench_q4k_dot(SEXP nblocks_sexp, SEXP iters_sexp);
 
 static const R_CallMethodDef CallEntries[] = {
-    {"RC_rggml_version",       (DL_FUNC) &RC_rggml_version,       0},
-    {"RC_rggml_test_mul_mat",  (DL_FUNC) &RC_rggml_test_mul_mat,  4},
-    {"RC_rggml_test_q4k_dot",  (DL_FUNC) &RC_rggml_test_q4k_dot,  1},
-    {"RC_rggml_bench_q4k_dot", (DL_FUNC) &RC_rggml_bench_q4k_dot, 2},
+    {"RC_rggml_version",           (DL_FUNC) &RC_rggml_version,           0},
+    {"RC_rggml_test_mul_mat",      (DL_FUNC) &RC_rggml_test_mul_mat,      4},
+    {"RC_rggml_test_mul_mat_q4k",  (DL_FUNC) &RC_rggml_test_mul_mat_q4k,  2},
+    {"RC_rggml_test_q4k_dot",      (DL_FUNC) &RC_rggml_test_q4k_dot,      1},
+    {"RC_rggml_bench_q4k_dot",     (DL_FUNC) &RC_rggml_bench_q4k_dot,     2},
     {NULL, NULL, 0}
 };
 
@@ -53,6 +55,9 @@ static void register_c_callables(DllInfo *dll)
 
     R_RegisterCCallable("Rggml", "Rggml_mul_mat",                (DL_FUNC) Rggml_mul_mat);
     R_RegisterCCallable("Rggml", "Rggml_compute_mul_mat",        (DL_FUNC) Rggml_compute_mul_mat);
+
+    R_RegisterCCallable("Rggml", "Rggml_quantize",              (DL_FUNC) Rggml_quantize);
+    R_RegisterCCallable("Rggml", "Rggml_dequantize",            (DL_FUNC) Rggml_dequantize);
 
     R_RegisterCCallable("Rggml", "Rggml_type_size",              (DL_FUNC) Rggml_type_size);
     R_RegisterCCallable("Rggml", "Rggml_row_size",               (DL_FUNC) Rggml_row_size);

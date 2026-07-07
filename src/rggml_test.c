@@ -275,3 +275,129 @@ SEXP RC_rggml_test_mul_mat(SEXP A_sexp, SEXP B_sexp, SEXP zero_copy_sexp, SEXP u
     UNPROTECT(1);
     return result;
 }
+
+/*
+ * RC_rggml_test_mul_mat_q4k(A, B)
+ *
+ * The quantized analogue of RC_rggml_test_mul_mat's zero-copy path, and the
+ * exact call the Rfmalloc typed-GEMM bridge makes: the weight operand A is
+ * quantized to Q4_K into a *separate* heap buffer that stands in for an
+ * mmap'd GGUF q4_K payload, and a Q4_K tensor is pointed at it zero-copy
+ * (no_alloc context, no ggml-owned copy). The dense F32 activations B are the
+ * right operand. ggml_mul_mat() then contracts each Q4_K weight row against
+ * B's columns via GGML's type-traits vec_dot for Q4_K - i.e. through the
+ * runtime-SIMD-dispatched ggml_vec_dot_q4_K_q8_K (AVX2/NEON where staged) -
+ * quantizing B's columns to Q8_K on the fly, exactly as llama.cpp does at
+ * inference. This proves the full quantized weight -> compute path (not just
+ * the isolated dot) over an external payload.
+ *
+ * A: numeric weight matrix, nrow(A) = the contracted dimension k, which must
+ *    be a multiple of 256 (QK_K); ncol(A) = number of output features.
+ * B: numeric activation matrix, nrow(B) = k, ncol(B) = number of columns.
+ * Returns a numeric matrix of dim (ncol(A), ncol(B)) = crossprod(A, B) up to
+ * q4_K weight + q8_K activation quantization error (same convention as the
+ * F32 path). Column-major R storage maps a matrix's column r straight onto
+ * ggml row r (ne[0] = k contiguous), so no transpose is needed before
+ * quantization.
+ */
+SEXP RC_rggml_test_mul_mat_q4k(SEXP A_sexp, SEXP B_sexp)
+{
+    if (TYPEOF(A_sexp) != REALSXP || TYPEOF(B_sexp) != REALSXP) {
+        Rf_error("A and B must be numeric matrices");
+    }
+    SEXP dimA = Rf_getAttrib(A_sexp, R_DimSymbol);
+    SEXP dimB = Rf_getAttrib(B_sexp, R_DimSymbol);
+    if (Rf_length(dimA) != 2 || Rf_length(dimB) != 2) {
+        Rf_error("A and B must be matrices");
+    }
+    int64_t k  = INTEGER(dimA)[0];
+    int64_t nA = INTEGER(dimA)[1];
+    int64_t kB = INTEGER(dimB)[0];
+    int64_t nB = INTEGER(dimB)[1];
+    if (k != kB) {
+        Rf_error("nrow(A) must equal nrow(B)");
+    }
+    if (k % 256 != 0) {
+        Rf_error("nrow(A) must be a multiple of 256 (QK_K) to quantize weights to Q4_K; got %lld",
+                 (long long) k);
+    }
+
+    Rggml_context_create_fun    ctx_create      = Rggml_context_create_ptr();
+    Rggml_context_free_fun      ctx_free        = Rggml_context_free_ptr();
+    Rggml_new_tensor_fun        new_tensor      = Rggml_new_tensor_ptr();
+    Rggml_backend_cpu_init_fun  backend_init    = Rggml_backend_cpu_init_ptr();
+    Rggml_backend_free_fun      backend_free    = Rggml_backend_free_ptr();
+    Rggml_compute_mul_mat_fun   compute_mul_mat = Rggml_compute_mul_mat_ptr();
+    Rggml_tensor_overhead_fun   tensor_overhead = Rggml_tensor_overhead_ptr();
+    Rggml_graph_overhead_fun    graph_overhead  = Rggml_graph_overhead_ptr();
+
+    if (!ctx_create || !ctx_free || !new_tensor || !backend_init ||
+        !backend_free || !compute_mul_mat || !tensor_overhead || !graph_overhead) {
+        Rf_error("one or more Rggml C-callables were not found via R_GetCCallable()");
+    }
+
+    /* Initializing the CPU backend runs ggml_cpu_init(), which populates the
+     * fp16->fp32 table the q4_K dot needs to read block scales; without it the
+     * dot silently returns 0. */
+    ggml_backend_t backend = backend_init();
+    if (!backend) Rf_error("Rggml_backend_cpu_init failed");
+
+    R_xlen_t nElemA = (R_xlen_t) k * (R_xlen_t) nA;
+    R_xlen_t nElemB = (R_xlen_t) k * (R_xlen_t) nB;
+
+    /* Weights -> f32, then quantize to Q4_K into a heap buffer standing in for
+     * an mmap'd GGUF payload. Column-major A already lays out ggml row r (= A's
+     * column r) contiguously, which is exactly ggml_quantize_chunk's per-row
+     * expectation, so no transpose. */
+    float *af = (float *) R_alloc((size_t) nElemA, sizeof(float));
+    double *Ap = REAL(A_sexp);
+    for (R_xlen_t i = 0; i < nElemA; i++) af[i] = (float) Ap[i];
+
+    size_t qa_bytes = ggml_row_size(GGML_TYPE_Q4_K, k) * (size_t) nA;
+    void  *qa = malloc(qa_bytes > 0 ? qa_bytes : 1);
+    float *bf = (float *) malloc(sizeof(float) * (size_t) (nElemB > 0 ? nElemB : 1));
+    if (!qa || !bf) {
+        free(qa); free(bf);
+        backend_free(backend);
+        Rf_error("allocation failure preparing the Q4_K payload / activations");
+    }
+    ggml_quantize_chunk(GGML_TYPE_Q4_K, af, qa, 0, nA, k, NULL);
+
+    double *Bp = REAL(B_sexp);
+    for (R_xlen_t i = 0; i < nElemB; i++) bf[i] = (float) Bp[i];
+
+    size_t mem_size = (size_t) 4 * tensor_overhead() + graph_overhead(8) + 8192;
+    struct ggml_context *ctx = ctx_create(mem_size, /*no_alloc=*/1);
+    if (!ctx) {
+        free(qa); free(bf);
+        backend_free(backend);
+        Rf_error("Rggml_context_create (ggml_init) failed");
+    }
+
+    int64_t neA[2] = { k, nA };
+    int64_t neB[2] = { k, nB };
+    struct ggml_tensor *tA = new_tensor(ctx, GGML_TYPE_Q4_K, 2, neA, qa);
+    struct ggml_tensor *tB = new_tensor(ctx, GGML_TYPE_F32,  2, neB, bf);
+    if (!tA || !tB) {
+        ctx_free(ctx);
+        free(qa); free(bf);
+        backend_free(backend);
+        Rf_error("Rggml_new_tensor failed");
+    }
+
+    SEXP result = PROTECT(Rf_allocMatrix(REALSXP, (int) nA, (int) nB));
+    int rc = compute_mul_mat(ctx, backend, tA, tB, NULL, REAL(result));
+
+    ctx_free(ctx);
+    free(qa);
+    free(bf);
+    backend_free(backend);
+
+    if (rc != 0) {
+        UNPROTECT(1);
+        Rf_error("Rggml_compute_mul_mat (Q4_K) failed with status %d", rc);
+    }
+
+    UNPROTECT(1);
+    return result;
+}

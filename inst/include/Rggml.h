@@ -104,6 +104,23 @@ typedef int (*Rggml_compute_mul_mat_fun)(struct ggml_context *ctx, ggml_backend_
                                          struct ggml_tensor *a, struct ggml_tensor *b,
                                          float *out_f32, double *out_f64);
 
+/* -- quantization ------------------------------------------------------------- */
+
+/* Quantize `nrows` rows of `n_per_row` f32 values into `type`'s block format
+ * (e.g. GGML_TYPE_Q4_K); `dst` must hold Rggml_row_size(type, n_per_row) *
+ * nrows bytes. Returns bytes written. The output is byte-compatible with a
+ * GGUF tensor of that type. */
+typedef size_t (*Rggml_quantize_fun)(enum ggml_type type, const float *src, void *dst,
+                                     int64_t nrows, int64_t n_per_row);
+
+/* Decode `n` elements (a whole number of blocks) of a quantized payload to f32
+ * through GGML's type-traits to_float - the authoritative reference
+ * dequantizer for every GGUF type. The caller must have initialized the CPU
+ * backend once (Rggml_backend_cpu_init) so the fp16 table used to read block
+ * scales is populated. Returns 0 on success. */
+typedef int (*Rggml_dequantize_fun)(enum ggml_type type, const void *src,
+                                    float *dst, int64_t n);
+
 /* -- type/size introspection -------------------------------------------------- */
 
 typedef size_t (*Rggml_type_size_fun)(enum ggml_type type);
@@ -220,6 +237,16 @@ static inline Rggml_mul_mat_fun Rggml_mul_mat_ptr(void)
 static inline Rggml_compute_mul_mat_fun Rggml_compute_mul_mat_ptr(void)
 {
     return (Rggml_compute_mul_mat_fun) R_GetCCallable("Rggml", "Rggml_compute_mul_mat");
+}
+
+static inline Rggml_quantize_fun Rggml_quantize_ptr(void)
+{
+    return (Rggml_quantize_fun) R_GetCCallable("Rggml", "Rggml_quantize");
+}
+
+static inline Rggml_dequantize_fun Rggml_dequantize_ptr(void)
+{
+    return (Rggml_dequantize_fun) R_GetCCallable("Rggml", "Rggml_dequantize");
 }
 
 static inline Rggml_type_size_fun Rggml_type_size_ptr(void)

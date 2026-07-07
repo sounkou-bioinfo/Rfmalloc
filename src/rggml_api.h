@@ -14,7 +14,7 @@
 #include <ggml.h>
 #include <ggml-backend.h>
 
-#define RGGML_API_VERSION 2
+#define RGGML_API_VERSION 4
 
 #ifdef __cplusplus
 extern "C" {
@@ -50,6 +50,10 @@ struct ggml_tensor *Rggml_mul_mat(struct ggml_context *ctx, struct ggml_tensor *
 int Rggml_compute_mul_mat(struct ggml_context *ctx, ggml_backend_t backend,
                            struct ggml_tensor *a, struct ggml_tensor *b,
                            float *out_f32, double *out_f64);
+
+size_t Rggml_quantize(enum ggml_type type, const float *src, void *dst,
+                      int64_t nrows, int64_t n_per_row);
+int Rggml_dequantize(enum ggml_type type, const void *src, float *dst, int64_t n);
 
 size_t Rggml_type_size(enum ggml_type type);
 size_t Rggml_row_size(enum ggml_type type, int64_t ne);

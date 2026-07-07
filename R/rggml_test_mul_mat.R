@@ -23,3 +23,26 @@ rggml_test_mul_mat <- function(A, B, zero_copy = FALSE, backend = c("cpu", "blas
     storage.mode(B) <- "double"
     .Call("RC_rggml_test_mul_mat", A, B, isTRUE(zero_copy), identical(backend, "blas"))
 }
+
+#' (internal) Run a quantized (Q4_K) 'GGML' matmul through the C-callables
+#'
+#' Not exported; the quantized analogue of [rggml_test_mul_mat()] and the
+#' exact operation the Rfmalloc typed-GEMM bridge performs. The weight matrix
+#' \code{A} is quantized to \code{Q4_K} into a heap buffer standing in for an
+#' mmap'd 'GGUF' payload, wrapped zero-copy as a \code{Q4_K} tensor, and
+#' multiplied by the dense F32 activations \code{B}. \code{ggml_mul_mat()}
+#' contracts each \code{Q4_K} weight row against \code{B}'s columns through
+#' the runtime-SIMD-dispatched \code{ggml_vec_dot_q4_K_q8_K} (AVX2/NEON where
+#' staged), quantizing \code{B} to \code{Q8_K} on the fly as at inference.
+#'
+#' @param A Numeric weight matrix; \code{nrow(A)} (the contracted dimension)
+#'   must be a multiple of 256 (\code{QK_K}).
+#' @param B Numeric activation matrix with \code{nrow(B) == nrow(A)}.
+#' @return A numeric matrix, dim \code{c(ncol(A), ncol(B))}, equal to
+#'   \code{crossprod(A, B)} up to q4_K/q8_K quantization error.
+#' @keywords internal
+rggml_test_mul_mat_q4k <- function(A, B) {
+    storage.mode(A) <- "double"
+    storage.mode(B) <- "double"
+    .Call("RC_rggml_test_mul_mat_q4k", A, B)
+}
