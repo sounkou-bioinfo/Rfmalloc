@@ -68,6 +68,47 @@ fmalloc_matmul_ooc <- function(A, x, tile_mb = 256) {
     ans
 }
 
+#' @rdname fmalloc_matmul_ooc
+#' @export
+fmalloc_crossprod_ooc <- function(A, tile_mb = 256) {
+    if (!is_fmalloc_vector(A)) {
+        stop("A must be an fmalloc-backed matrix")
+    }
+    dims <- dim(A)
+    if (is.null(dims) || length(dims) != 2L) {
+        stop("A must be a matrix")
+    }
+    if (!is.double(.fmalloc_strip_class(A))) {
+        stop("A must be a numeric (double) matrix")
+    }
+    if (!is.numeric(tile_mb) || length(tile_mb) != 1L || !is.finite(tile_mb) ||
+        tile_mb <= 0) {
+        stop("tile_mb must be a single positive number")
+    }
+
+    ans <- .Call("rfm_crossprod_ooc_impl", A, as.double(tile_mb) * 2^20)
+    ans <- .fmalloc_apply_class(ans, type = "numeric", shape = "matrix")
+    cn <- dimnames(A)[[2L]]
+    if (!is.null(cn)) {
+        dimnames(ans) <- list(cn, cn)
+    }
+    ans
+}
+
+# TRUE when crossprod(X) should route out-of-core: X a large fmalloc double
+# matrix, single-argument (Gram matrix X'X).
+.fmalloc_crossprod_ooc_candidate <- function(x) {
+    if (!inherits(x, "fmalloc") || !is.double(x)) {
+        return(FALSE)
+    }
+    xd <- dim(x)
+    if (is.null(xd) || length(xd) != 2L) {
+        return(FALSE)
+    }
+    gb <- as.double(xd[1L]) * as.double(xd[2L]) * 8 / 2^30
+    gb >= .fmalloc_ooc_threshold_gb()
+}
+
 # Total physical RAM in GB, or NA when it cannot be determined. Uses a
 # portable native query (POSIX sysconf, or BSD/macOS sysctl).
 .fmalloc_ram_gb <- function() {

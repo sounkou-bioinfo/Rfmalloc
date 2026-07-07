@@ -67,6 +67,14 @@ NULL
 
 .fmalloc_crossprod_impl <- function(x, y = NULL) {
     .fmalloc_linalg_runtime(x, y)
+
+    # Large single-argument crossprod(X) = X'X streams out-of-core (the n x n
+    # result can itself exceed RAM). Two-argument or complex/logical cases use
+    # the in-core dispatch.
+    if (is.null(y) && !is.complex(x) && .fmalloc_crossprod_ooc_candidate(x)) {
+        return(fmalloc_crossprod_ooc(x, tile_mb = getOption("Rfmalloc.ooc_tile_mb", 256)))
+    }
+
     x0 <- .fmalloc_linalg_check_operand(x, "x")
     y0 <- if (is.null(y)) NULL else .fmalloc_linalg_check_operand(y, "y")
 

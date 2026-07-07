@@ -49,6 +49,15 @@
   resident set stays bounded by the tile budget. Demonstrated on a 62.6 GB
   matrix (equal to total RAM): peak resident memory 0.31 GB during the gemv,
   result exact vs the analytic reference.
+- Added `fmalloc_crossprod_ooc()` and out-of-core routing for `crossprod(X)`:
+  the Gram matrix `X'X` is computed as pairs of contiguous column panels of `X`
+  through BLAS `dgemm`, writing each block straight into the `n x n` fmalloc
+  result and releasing panels with `madvise`. Input residency stays ~two
+  panels (so `X` may exceed RAM) and the result is fmalloc-backed (so the
+  `n x n` Gram matrix may too) — the covariance/Gram operation behind PCA,
+  ridge, and GWAS on larger-than-RAM matrices. Single-argument `crossprod(X)`
+  on a real fmalloc matrix auto-routes above `Rfmalloc.ooc_threshold_gb`;
+  two-argument and complex cases keep the in-core path.
 - `%*%` on an fmalloc matrix now auto-selects the out-of-core path when the
   left operand's payload reaches `getOption("Rfmalloc.ooc_threshold_gb")`
   (default: half of physical RAM, detected portably via POSIX `sysconf` or

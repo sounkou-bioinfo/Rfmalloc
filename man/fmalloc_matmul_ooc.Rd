@@ -2,9 +2,12 @@
 % Please edit documentation in R/fmalloc_ooc.R
 \name{fmalloc_matmul_ooc}
 \alias{fmalloc_matmul_ooc}
+\alias{fmalloc_crossprod_ooc}
 \title{Out-of-core matrix product for fmalloc matrices larger than RAM}
 \usage{
 fmalloc_matmul_ooc(A, x, tile_mb = 256)
+
+fmalloc_crossprod_ooc(A, tile_mb = 256)
 }
 \arguments{
 \item{A}{An fmalloc-backed double matrix (\verb{m x n}).}

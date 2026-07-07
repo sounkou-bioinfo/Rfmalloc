@@ -247,3 +247,90 @@ extern "C" SEXP rfm_matmul_ooc_impl(SEXP a_x, SEXP x_dense, SEXP tile_bytes_sexp
     UNPROTECT(2);
     return ans;
 }
+
+// Out-of-core crossprod: C = X' X for a large column-major fmalloc double
+// matrix X (m x n), returning an n x n fmalloc matrix. X is consumed as pairs
+// of contiguous column panels: output block (i,j) = X[,i-panel]' X[,j-panel]
+// is computed with dgemm straight into C, then both panels' pages are
+// released. Input residency stays ~2 panels regardless of X's size, and the
+// n x n result is fmalloc-backed so it too may exceed RAM.
+extern "C" SEXP rfm_crossprod_ooc_impl(SEXP a_x, SEXP tile_bytes_sexp)
+{
+    fm_vector *a_vec = maybe_vector_from_altrep(a_x);
+    if (!a_vec || a_vec->type != REALSXP) {
+        Rf_error("X must be an fmalloc double matrix");
+    }
+    if (!a_vec->runtime || !a_vec->runtime->info) {
+        Rf_error("fmalloc runtime is closed");
+    }
+    SEXP adim = Rf_getAttrib(a_x, R_DimSymbol);
+    if (adim == R_NilValue || TYPEOF(adim) != INTSXP || XLENGTH(adim) != 2) {
+        Rf_error("X must be a matrix");
+    }
+    R_xlen_t m = (R_xlen_t)INTEGER(adim)[0];
+    R_xlen_t n = (R_xlen_t)INTEGER(adim)[1];
+    if (n > (R_xlen_t)std::numeric_limits<int>::max() ||
+        m > (R_xlen_t)std::numeric_limits<int>::max()) {
+        Rf_error("dimensions exceed the BLAS integer interface");
+    }
+    if (n > 0 && n > (R_xlen_t)std::numeric_limits<R_xlen_t>::max() / n) {
+        Rf_error("crossprod result is too large");
+    }
+
+    double tile_req = Rf_asReal(tile_bytes_sexp);
+    size_t tile_bytes = (!R_FINITE(tile_req) || tile_req < 1) ? (size_t)256 << 20
+                                                              : (size_t)tile_req;
+    R_xlen_t col_bytes = m * (R_xlen_t)sizeof(double);
+    R_xlen_t pw = col_bytes > 0 ? (R_xlen_t)(tile_bytes / (size_t)col_bytes) : n;
+    if (pw < 1) {
+        pw = 1;
+    }
+
+    fm_vector *c_vec = allocate_fm_vector(a_vec->runtime, REALSXP, n * n, true, false);
+    SEXP ans = PROTECT(fmalloc_new_altrep(c_vec));
+    SEXP cdim = PROTECT(Rf_allocVector(INTSXP, 2));
+    INTEGER(cdim)[0] = (int)n;
+    INTEGER(cdim)[1] = (int)n;
+    Rf_setAttrib(ans, R_DimSymbol, cdim);
+
+    if (n == 0) {
+        UNPROTECT(2);
+        return ans;
+    }
+
+    double *X = static_cast<double *>(vector_data_or_dummy(a_vec));
+    double *C = static_cast<double *>(vector_data_or_dummy(c_vec));
+
+    if (m == 0) {
+        memset(C, 0, (size_t)(n * n) * sizeof(double));
+        UNPROTECT(2);
+        return ans;
+    }
+
+    ooc_advise(X, (size_t)(m * n) * sizeof(double), OOC_SEQUENTIAL);
+
+    const double one = 1.0, zero = 0.0;
+    int mi = (int)m, nc = (int)n; // nc = ldc of the n x n result
+    // For each row-panel i of C, hold panel X[,i0:i1] resident and sweep the
+    // column panels j, writing each block C[i0:i1, j0:j1] = X[,i0:i1]'X[,j0:j1]
+    // straight into the result. Input residency stays ~2 panels.
+    for (R_xlen_t i0 = 0; i0 < n; i0 += pw) {
+        R_xlen_t iw = n - i0 < pw ? n - i0 : pw;
+        int ii = (int)iw;
+        for (R_xlen_t j0 = 0; j0 < n; j0 += pw) {
+            R_xlen_t jw = n - j0 < pw ? n - j0 : pw;
+            int jj = (int)jw;
+            F77_CALL(dgemm)("T", "N", &ii, &jj, &mi, &one,
+                            X + i0 * m, &mi, X + j0 * m, &mi, &zero,
+                            C + i0 + j0 * n, &nc FCONE FCONE);
+            if (j0 != i0) {
+                ooc_advise(X + j0 * m, (size_t)(jw * m) * sizeof(double), OOC_DONTNEED);
+            }
+            R_CheckUserInterrupt();
+        }
+        ooc_advise(X + i0 * m, (size_t)(iw * m) * sizeof(double), OOC_DONTNEED);
+    }
+
+    UNPROTECT(2);
+    return ans;
+}
