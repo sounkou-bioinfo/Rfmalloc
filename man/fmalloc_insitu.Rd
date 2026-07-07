@@ -4,11 +4,23 @@
 \alias{fmalloc_insitu}
 \alias{fmalloc_set}
 \alias{fmalloc_fill}
+\alias{fmalloc_add}
+\alias{fmalloc_sub}
+\alias{fmalloc_mul}
+\alias{fmalloc_div}
 \title{In-place (by-reference) mutation of fmalloc vectors}
 \usage{
 fmalloc_set(x, i, value)
 
 fmalloc_fill(x, value)
+
+fmalloc_add(x, y)
+
+fmalloc_sub(x, y)
+
+fmalloc_mul(x, y)
+
+fmalloc_div(x, y)
 }
 \arguments{
 \item{x}{An fmalloc-backed atomic vector (or matrix/array).}
@@ -17,14 +29,21 @@ fmalloc_fill(x, value)
 
 \item{value}{For \code{fmalloc_set()}, a vector of length 1 (recycled) or
 \code{length(i)}. For \code{fmalloc_fill()}, a single scalar.}
+
+\item{y}{For the arithmetic ops, a numeric scalar (recycled) or a vector of
+\code{length(x)}. \code{NA}/\code{NaN}/\code{Inf} follow IEEE double arithmetic (base R
+semantics).}
 }
 \value{
 \code{x}, invisibly, mutated in place.
 }
 \description{
 Modify an fmalloc-backed atomic vector \emph{in place}, writing straight through
-the backing store and deliberately bypassing R's copy-on-modify. This is the
-by-reference analogue of \code{x[i] <- value} / \code{x[] <- value}.
+the backing store and deliberately bypassing R's copy-on-modify.
+\code{fmalloc_set()}/\code{fmalloc_fill()} are the by-reference analogue of
+\code{x[i] <- value} / \code{x[] <- value}; \code{fmalloc_add()}/\code{fmalloc_sub()}/
+\code{fmalloc_mul()}/\code{fmalloc_div()} compute \verb{x <- x op y} in place (the
+accumulate-into-\code{x} pattern iterative algorithms need), for numeric vectors.
 }
 \details{
 Copy-on-modify is fatal at fmalloc scale: an ordinary \code{x[i] <- value} on a

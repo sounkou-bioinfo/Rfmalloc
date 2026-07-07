@@ -90,4 +90,38 @@ message("Testing in-place (by-reference) mutation...")
     expect_false(withVisible(fmalloc_fill(x, 1))$visible)
 })()
 
+(function() {
+    message("  Test 6: in-place arithmetic (add/sub/mul/div)")
+    tmp <- tempfile(fileext = ".bin")
+    rt <- open_fmalloc(tmp, mode = "scratch", size_gb = 0.2)
+    on.exit({ cleanup_fmalloc(rt); unlink(tmp) }, add = TRUE)
+
+    x <- create_fmalloc_vector("numeric", 5, runtime = rt)
+    fmalloc_fill(x, 10)
+    expect_identical(fmalloc_add(x, 5), x)            # returns x
+    expect_true(all(x[] == 15))
+    fmalloc_mul(x, c(1, 2, 3, 4, 5))                  # vector y
+    expect_identical(x[], c(15, 30, 45, 60, 75))
+    fmalloc_div(x, 5)
+    expect_identical(x[], c(3, 6, 9, 12, 15))
+    fmalloc_sub(x, 3)
+    expect_identical(x[], c(0, 3, 6, 9, 12))
+
+    # by-reference: aliasing sees arithmetic too
+    y <- x
+    fmalloc_add(x, 100)
+    expect_equal(y[], c(100, 103, 106, 109, 112))
+
+    # NA follows IEEE double semantics
+    fmalloc_fill(x, 1); fmalloc_add(x, NA_real_)
+    expect_true(all(is.na(x[])))
+
+    # validation
+    xi <- create_fmalloc_vector("integer", 3, runtime = rt)
+    expect_error(fmalloc_add(xi, 1), "numeric")       # double only
+    expect_error(fmalloc_add(x, c(1, 2)), "length 1 or length")
+    expect_error(fmalloc_mul(1:5, 2), "fmalloc-backed")
+    expect_false(withVisible(fmalloc_add(x, 0))$visible)
+})()
+
 message("in-place mutation tests completed")

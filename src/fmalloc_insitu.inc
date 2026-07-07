@@ -82,6 +82,46 @@ extern "C" SEXP rfm_set_in_place_impl(SEXP x, SEXP idx_sexp, SEXP values_sexp)
     return x;
 }
 
+// x <- x op y, in place, for a numeric (double) fmalloc vector. y is a scalar
+// (recycled) or length(x). op: 0 add, 1 sub, 2 mul, 3 div. NA/NaN/Inf follow
+// IEEE double arithmetic, matching base R.
+extern "C" SEXP rfm_inplace_op_impl(SEXP x, SEXP y_sexp, SEXP op_sexp)
+{
+    fm_vector *vec = insitu_writable_vector(x);
+    if (vec->type != REALSXP) {
+        Rf_error("in-place arithmetic requires a numeric (double) fmalloc vector");
+    }
+    int op = Rf_asInteger(op_sexp);
+    if (op < 0 || op > 3) {
+        Rf_error("invalid in-place arithmetic op");
+    }
+
+    SEXP y = PROTECT(Rf_coerceVector(y_sexp, REALSXP));
+    R_xlen_t ny = XLENGTH(y);
+    R_xlen_t len = vec->len;
+    if (ny != 1 && ny != len) {
+        UNPROTECT(1);
+        Rf_error("y must have length 1 or length(x)");
+    }
+
+    double *d = static_cast<double *>(vector_data_or_dummy(vec));
+    const double *yp = REAL(y);
+    bool scalar = (ny == 1);
+    double s = scalar ? yp[0] : 0.0;
+
+    switch (op) {
+    case 0: for (R_xlen_t i = 0; i < len; i++) d[i] += scalar ? s : yp[i]; break;
+    case 1: for (R_xlen_t i = 0; i < len; i++) d[i] -= scalar ? s : yp[i]; break;
+    case 2: for (R_xlen_t i = 0; i < len; i++) d[i] *= scalar ? s : yp[i]; break;
+    case 3: for (R_xlen_t i = 0; i < len; i++) d[i] /= scalar ? s : yp[i]; break;
+    default: break;
+    }
+
+    vec->maybe_dirty = true;
+    UNPROTECT(1);
+    return x;
+}
+
 // x[] <- value, in place: fill the whole vector with a scalar.
 extern "C" SEXP rfm_fill_in_place_impl(SEXP x, SEXP value_sexp)
 {

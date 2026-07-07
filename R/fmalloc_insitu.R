@@ -1,8 +1,11 @@
 #' In-place (by-reference) mutation of fmalloc vectors
 #'
 #' Modify an fmalloc-backed atomic vector *in place*, writing straight through
-#' the backing store and deliberately bypassing R's copy-on-modify. This is the
-#' by-reference analogue of `x[i] <- value` / `x[] <- value`.
+#' the backing store and deliberately bypassing R's copy-on-modify.
+#' `fmalloc_set()`/`fmalloc_fill()` are the by-reference analogue of
+#' `x[i] <- value` / `x[] <- value`; `fmalloc_add()`/`fmalloc_sub()`/
+#' `fmalloc_mul()`/`fmalloc_div()` compute `x <- x op y` in place (the
+#' accumulate-into-`x` pattern iterative algorithms need), for numeric vectors.
 #'
 #' Copy-on-modify is fatal at fmalloc scale: an ordinary `x[i] <- value` on a
 #' larger-than-RAM or persistent vector can duplicate the whole payload. These
@@ -25,6 +28,9 @@
 #' @param i Positive integer (1-based) linear indices to assign.
 #' @param value For `fmalloc_set()`, a vector of length 1 (recycled) or
 #'   `length(i)`. For `fmalloc_fill()`, a single scalar.
+#' @param y For the arithmetic ops, a numeric scalar (recycled) or a vector of
+#'   `length(x)`. `NA`/`NaN`/`Inf` follow IEEE double arithmetic (base R
+#'   semantics).
 #'
 #' @return `x`, invisibly, mutated in place.
 #'
@@ -66,3 +72,29 @@ fmalloc_fill <- function(x, value) {
     }
     invisible(.Call("rfm_fill_in_place_impl", x, value))
 }
+
+.fmalloc_inplace_op <- function(x, y, op) {
+    if (!is_fmalloc_vector(x)) {
+        stop("x must be an fmalloc-backed vector")
+    }
+    if (!is.numeric(y) || length(y) == 0L) {
+        stop("y must be a non-empty numeric vector")
+    }
+    invisible(.Call("rfm_inplace_op_impl", x, y, op))
+}
+
+#' @rdname fmalloc_insitu
+#' @export
+fmalloc_add <- function(x, y) .fmalloc_inplace_op(x, y, 0L)
+
+#' @rdname fmalloc_insitu
+#' @export
+fmalloc_sub <- function(x, y) .fmalloc_inplace_op(x, y, 1L)
+
+#' @rdname fmalloc_insitu
+#' @export
+fmalloc_mul <- function(x, y) .fmalloc_inplace_op(x, y, 2L)
+
+#' @rdname fmalloc_insitu
+#' @export
+fmalloc_div <- function(x, y) .fmalloc_inplace_op(x, y, 3L)

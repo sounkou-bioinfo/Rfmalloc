@@ -57,6 +57,9 @@
   they break value semantics by design: all bindings to the same vector
   observe the change, and for a persistent runtime the durable store is
   updated. Supported for atomic logical/integer/numeric/complex/raw vectors.
+  `fmalloc_add()`/`fmalloc_sub()`/`fmalloc_mul()`/`fmalloc_div()` compute
+  `x <- x op y` in place (numeric vectors), for the accumulate-into-`x` pattern
+  without per-step allocation.
 - Added `fmalloc_crossprod_ooc()` and out-of-core routing for `crossprod(X)`:
   the Gram matrix `X'X` is computed as pairs of contiguous column panels of `X`
   through BLAS `dgemm`, writing each block straight into the `n x n` fmalloc
