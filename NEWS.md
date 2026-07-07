@@ -66,11 +66,18 @@
   call to fall back to BLAS. Together with the tensor codec registry this makes
   the stack pluggable at both tiers — how bytes decode and what hardware
   multiplies — over fmalloc storage.
+- Added `fmalloc_sync()` to flush a persistent runtime's backing store to disk
+  (`msync`/`fsync`). Writes to the `MAP_SHARED` mapping (including in-place
+  mutations) are otherwise only written back asynchronously by the OS, so a
+  crash before writeback loses unsynced data; `fmalloc_sync()` is the explicit
+  durability barrier. No-op where `msync` is unavailable (Windows/Rtools).
 - Added in-place (by-reference) mutation: `fmalloc_set(x, i, value)` and
-  `fmalloc_fill(x, value)` write straight through the backing store, bypassing
-  R's copy-on-modify. This is essential at fmalloc scale — an ordinary
-  `x[i] <- value` can duplicate a larger-than-RAM or persistent payload. The
-  functions are deliberately explicit (never a silent `[<-` method) because
+  `fmalloc_fill(x, value)` write straight through the backing store, mutating
+  by reference regardless of sharing. (An ordinary `x[i] <- value` on an
+  *unshared* fmalloc vector already writes in place via the ALTREP data
+  pointer; the copy that hurts is R's copy-on-modify when the vector is
+  *shared* — these functions bypass it.) The functions are deliberately
+  explicit (never a silent `[<-` method) because
   they break value semantics by design: all bindings to the same vector
   observe the change, and for a persistent runtime the durable store is
   updated. Supported for atomic logical/integer/numeric/complex/raw vectors.

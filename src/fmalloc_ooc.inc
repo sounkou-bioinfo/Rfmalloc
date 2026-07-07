@@ -109,6 +109,37 @@ static void ooc_advise(void *addr, size_t bytes, ooc_advice_t advice)
 #endif
 }
 
+// Flush a runtime's backing store to disk. Writes to the MAP_SHARED mapping
+// (including in-place mutations) are otherwise only written back by the kernel
+// asynchronously, so a crash before writeback loses unsynced data; msync forces
+// the durability barrier. wait = TRUE uses MS_SYNC (blocks until written) plus
+// fsync for file metadata; FALSE schedules an asynchronous MS_ASYNC flush.
+// Returns the number of bytes flushed (0 where sync is unavailable, e.g.
+// Windows/Rtools, which relies on OS writeback).
+extern "C" SEXP rfm_sync_impl(SEXP runtime_xptr, SEXP wait_sexp)
+{
+    fm_runtime *runtime = runtime_from_xptr(runtime_xptr);
+    if (!runtime || !runtime->info) {
+        Rf_error("fmalloc runtime is closed");
+    }
+    int wait = Rf_asLogical(wait_sexp) == TRUE;
+    struct fm_info *info = runtime->info;
+    double flushed = 0.0;
+#if !defined(_WIN32)
+    if (info->mem && info->len > 0) {
+        if (msync(info->mem, info->len, wait ? MS_SYNC : MS_ASYNC) == 0) {
+            flushed = (double)info->len;
+        }
+        if (wait && info->fd >= 0) {
+            fsync(info->fd);
+        }
+    }
+#else
+    (void)wait;
+#endif
+    return Rf_ScalarReal(flushed);
+}
+
 // Evict (advice 0 = MADV_DONTNEED) or read-ahead-hint (1 = MADV_SEQUENTIAL,
 // 2 = MADV_WILLNEED) the whole payload of an fmalloc vector. Returns the
 // number of bytes advised. Mainly for benchmarking cold-cache behavior.

@@ -136,6 +136,37 @@ fmalloc_tcrossprod_ooc <- function(A, tile_mb = 256) {
     gb >= .fmalloc_ooc_threshold_gb()
 }
 
+#' Flush an fmalloc runtime's backing store to disk
+#'
+#' Writes to an fmalloc runtime (including in-place mutations via
+#' [fmalloc_set()] and friends) land in the OS page cache of the `MAP_SHARED`
+#' backing file. They survive a normal process exit, but until the kernel
+#' writes dirty pages back — which it does asynchronously — a crash or power
+#' loss can lose unsynced data, with no atomicity. `fmalloc_sync()` forces the
+#' durability barrier with `msync()` (and `fsync()`), so persistent data is on
+#' disk when it returns.
+#'
+#' This matters only for `persistent` runtimes where durability across an
+#' unclean shutdown is required; `scratch` runtimes are ephemeral by design.
+#' On platforms without `msync` (e.g. the Windows/Rtools toolchain) this is a
+#' no-op and returns 0, relying on OS writeback.
+#'
+#' @param runtime Runtime handle from [open_fmalloc()]; defaults to the runtime
+#'   established by [init_fmalloc()].
+#' @param wait If `TRUE` (default), block until the flush completes
+#'   (`MS_SYNC`); if `FALSE`, schedule an asynchronous flush (`MS_ASYNC`).
+#'
+#' @return The number of bytes flushed, invisibly.
+#'
+#' @export
+fmalloc_sync <- function(runtime = NULL, wait = TRUE) {
+    runtime <- .fmalloc_get_runtime(runtime)
+    if (!is.logical(wait) || length(wait) != 1L || is.na(wait)) {
+        stop("wait must be a single non-missing logical")
+    }
+    invisible(.Call("rfm_sync_impl", runtime, wait))
+}
+
 # Total physical RAM in GB, or NA when it cannot be determined. Uses a
 # portable native query (POSIX sysconf, or BSD/macOS sysctl).
 .fmalloc_ram_gb <- function() {

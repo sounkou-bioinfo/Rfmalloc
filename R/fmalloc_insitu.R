@@ -7,18 +7,23 @@
 #' `fmalloc_mul()`/`fmalloc_div()` compute `x <- x op y` in place (the
 #' accumulate-into-`x` pattern iterative algorithms need), for numeric vectors.
 #'
-#' Copy-on-modify is fatal at fmalloc scale: an ordinary `x[i] <- value` on a
-#' larger-than-RAM or persistent vector can duplicate the whole payload. These
-#' functions never copy — they update the durable store directly and return the
-#' same object invisibly.
+#' On an *unshared* fmalloc vector, an ordinary `x[i] <- value` already writes
+#' in place through the ALTREP data pointer — no copy — because the file-backed
+#' storage is exposed directly and this package controls duplication. The copy
+#' that hurts happens when the vector is *shared* (`y <- x`): R then duplicates
+#' the whole payload to preserve value semantics before modifying, which is
+#' catastrophic for a larger-than-RAM or persistent vector. These functions
+#' mutate by reference regardless of sharing — they never copy, updating the
+#' durable store directly and returning the same object invisibly.
 #'
 #' @section Aliasing (read this):
 #' Because there is no copy, all bindings to the same fmalloc vector observe the
 #' change. After `y <- x; fmalloc_set(x, 1, 5)`, `y[1]` is also `5` — `x` and
-#' `y` name the same backing store. This breaks R's usual value semantics *by
-#' design*; for a persistent runtime it is a feature (the durable data is
-#' updated). For this reason mutation is only ever done through these
-#' explicitly-named functions, never a silent `[<-` method.
+#' `y` name the same backing store, whereas ordinary `x[1] <- 5` would copy `x`
+#' (leaving `y` untouched). This breaks R's usual value semantics *by design*;
+#' for a persistent runtime it is a feature (the durable data is updated). For
+#' this reason mutation is only ever done through these explicitly-named
+#' functions, never a silent `[<-` method.
 #'
 #' Supported for fixed-width atomic vectors (logical, integer, numeric,
 #' complex, raw). Indices are 1-based linear positions (column-major for

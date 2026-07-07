@@ -124,4 +124,46 @@ message("Testing in-place (by-reference) mutation...")
     expect_false(withVisible(fmalloc_add(x, 0))$visible)
 })()
 
+(function() {
+    message("  Test 7: unshared x[i]<- is already in place; fmalloc_set aliases")
+    tmp <- tempfile(fileext = ".bin")
+    rt <- open_fmalloc(tmp, mode = "scratch", size_gb = 0.2)
+    on.exit({ cleanup_fmalloc(rt); unlink(tmp) }, add = TRUE)
+
+    # ordinary [<- on an UNSHARED fmalloc vector stays fmalloc-backed (no copy
+    # to a plain R vector) -- ALTREP writes through the data pointer in place
+    x <- create_fmalloc_vector("numeric", 5, runtime = rt)
+    x[] <- 1
+    x[2] <- 99
+    expect_true(is_fmalloc_vector(x))
+    expect_equal(x[2], 99)
+
+    # ordinary [<- on a SHARED vector copies (value semantics preserved)
+    y <- x
+    x[3] <- 42
+    expect_equal(y[3], 1)                 # y unchanged -> x was duplicated
+
+    # fmalloc_set mutates by reference even when shared (aliasing)
+    z <- x
+    fmalloc_set(x, 3, 7)
+    expect_equal(z[3], 7)                 # alias observes the change
+})()
+
+(function() {
+    message("  Test 8: fmalloc_sync flushes without error and returns bytes")
+    tmp <- tempfile(fileext = ".bin")
+    rt <- open_fmalloc(tmp, mode = "persistent")
+    on.exit({ cleanup_fmalloc(rt); unlink(tmp) }, add = TRUE)
+
+    x <- create_fmalloc_vector("integer", 8, runtime = rt)
+    fmalloc_fill(x, 5L)
+    n <- withVisible(fmalloc_sync(rt))
+    expect_false(n$visible)               # invisible
+    # on POSIX msync returns the mapped size (> 0); Windows no-op returns 0
+    expect_true(n$value >= 0)
+    expect_true({ fmalloc_sync(rt, wait = FALSE); TRUE })
+    # data still correct after sync
+    expect_true(all(x[] == 5L))
+})()
+
 message("in-place mutation tests completed")

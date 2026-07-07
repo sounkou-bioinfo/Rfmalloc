@@ -659,6 +659,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"rfm_crossprod_ooc_impl", (DL_FUNC)&rfm_crossprod_ooc_impl, 2},
     {"rfm_tcrossprod_ooc_impl", (DL_FUNC)&rfm_tcrossprod_ooc_impl, 2},
     {"rfm_vector_advise_impl", (DL_FUNC)&rfm_vector_advise_impl, 2},
+    {"rfm_sync_impl", (DL_FUNC)&rfm_sync_impl, 2},
     {"rfm_phys_ram_bytes_impl", (DL_FUNC)&rfm_phys_ram_bytes_impl, 0},
     {"rfm_raw_fill_pattern_impl", (DL_FUNC)&rfm_raw_fill_pattern_impl, 2},
     {"rfm_set_in_place_impl", (DL_FUNC)&rfm_set_in_place_impl, 3},

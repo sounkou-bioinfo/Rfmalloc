@@ -429,11 +429,14 @@ local({
 
 ## In-place mutation
 
-`fmalloc_set()`/`fmalloc_fill()` and `fmalloc_add()`/`sub()`/`mul()`/`div()`
-write straight through the backing store, bypassing R's copy-on-modify. This is
-essential at fmalloc scale (copying a larger-than-RAM payload on every `x[i] <-`
-is fatal) and deliberately by-reference: all bindings to the same vector observe
-the change, so these are explicit functions, never a silent `[<-`.
+On an *unshared* fmalloc vector, ordinary `x[i] <- value` already writes in
+place through the ALTREP data pointer (no copy — a benefit of the file-backed
+ALTREP design). The copy that hurts happens when the vector is *shared*
+(`y <- x`): R then duplicates the whole payload to preserve value semantics,
+which is catastrophic when it is larger than RAM. `fmalloc_set()`/
+`fmalloc_fill()` and `fmalloc_add()`/`sub()`/`mul()`/`div()` mutate by reference
+*regardless of sharing*, so all bindings observe the change — deliberately, and
+only ever through these explicit functions, never a silent `[<-`.
 
 ```{r}
 local({
