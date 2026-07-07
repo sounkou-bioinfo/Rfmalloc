@@ -1,0 +1,48 @@
+#' Rgguf: Read 'GGUF' Model Files into 'Rfmalloc'-Backed Arrays
+#'
+#' Rgguf reads 'GGUF' model files, the file format used by the 'llama.cpp'
+#' project to store large language model tensors and metadata, and exposes
+#' their tensors as \pkg{Rfmalloc}-backed, file-backed ALTREP matrices and
+#' arrays. Quantized tensor types supported by the vendored 'gguflib' parser
+#' are dequantized on demand as they are read.
+#'
+#' @section Main Functions:
+#' \describe{
+#'   \item{\code{\link{gguf_open}}}{Open a GGUF file and return a context handle.}
+#'   \item{\code{\link{gguf_metadata}}}{Read all metadata key-value pairs.}
+#'   \item{\code{\link{gguf_tensors}}}{List the tensor directory as a data frame.}
+#'   \item{\code{\link{gguf_tensor}}}{Read and dequantize a single tensor into an Rfmalloc-backed array.}
+#'   \item{\code{\link{gguf_import}}}{Read some or all tensors into a named list of Rfmalloc-backed arrays.}
+#'   \item{\code{\link{gguf_write_tensors}}}{Write a minimal GGUF file (F32 tensors), mainly for round-trip testing.}
+#' }
+#'
+#' @section Design:
+#' Allocation happens on the R side: tensor destinations are created with
+#' \code{Rfmalloc::create_fmalloc_matrix()}/\code{create_fmalloc_array()},
+#' which returns a properly classed, file-backed ALTREP object with
+#' \pkg{Rfmalloc}'s full \code{Ops}/matrix-product dispatch already working.
+#' Native code only ever fills that destination in place (dequantizing as it
+#' goes); it never allocates R vectors of tensor size itself.
+#'
+#' @section Known Limitations:
+#' \itemize{
+#'   \item Not every GGUF tensor type is dequantizable: the vendored
+#'         'gguflib' parser implements dequantization for \code{f32},
+#'         \code{f16}, \code{bf16}, \code{f64}, the plain integer types, and
+#'         the \code{q8_0}, \code{q4_0}, \code{q4_1}, \code{q2_k},
+#'         \code{q4_k}, and \code{q6_k} quantized block formats. Other
+#'         quantized formats (e.g. \code{q5_0}, \code{q5_1}, \code{q3_k},
+#'         \code{q5_k}, \code{q8_k}, and the \code{iq*} formats) are not
+#'         supported and \code{\link{gguf_tensor}} errors clearly for them.
+#'   \item The vendored 'gguflib' parser memory-maps GGUF files read/write,
+#'         so \code{\link{gguf_open}} requires the file to be writable even
+#'         when only reading tensors from it.
+#'   \item Dequantizing a quantized tensor type currently goes through an
+#'         intermediate \code{malloc()}'d float buffer (freed immediately
+#'         after widening to double); a future version could dequantize
+#'         block-by-block directly into the destination.
+#' }
+#'
+#' @keywords internal
+#' @useDynLib Rgguf, .registration = TRUE
+"_PACKAGE"

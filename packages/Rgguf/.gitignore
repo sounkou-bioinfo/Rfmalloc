@@ -1,0 +1,15 @@
+*.o
+*.so
+*.dll
+*.dylib
+src/*.o
+src/*.so
+src/symbols.rds
+*.Rcheck/
+*.tar.gz
+.Rhistory
+.RData
+.Rproj.user
+docs/
+README.html
+README.knit.md
