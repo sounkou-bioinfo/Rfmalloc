@@ -86,13 +86,25 @@ fmalloc_crossprod_ooc <- function(A, tile_mb = 256) {
         stop("tile_mb must be a single positive number")
     }
 
-    ans <- .Call("rfm_crossprod_ooc_impl", A, as.double(tile_mb) * 2^20)
-    ans <- .fmalloc_apply_class(ans, type = "numeric", shape = "matrix")
+    res <- .fmalloc_gram_ooc(A, tile_mb, colsums = FALSE)
+    ans <- res$gram
     cn <- dimnames(A)[[2L]]
     if (!is.null(cn)) {
         dimnames(ans) <- list(cn, cn)
     }
     ans
+}
+
+# X'X out-of-core, optionally returning colSums(X) accumulated in the same sweep.
+# The Gram kernel picks its blocking from the shape: when the n x n result fits
+# the tile budget it streams row blocks and reads X exactly once, and the column
+# sums then ride along for one add per element. Otherwise it falls back to column
+# panels (which must re-read X) and the sums cost a separate pass.
+.fmalloc_gram_ooc <- function(A, tile_mb = 256, colsums = FALSE) {
+    res <- .Call("rfm_crossprod_ooc_impl", A, as.double(tile_mb) * 2^20,
+                 isTRUE(colsums))
+    res$gram <- .fmalloc_apply_class(res$gram, type = "numeric", shape = "matrix")
+    res
 }
 
 #' @rdname fmalloc_matmul_ooc

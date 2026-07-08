@@ -39,14 +39,23 @@ fmalloc_pca <- function(X, k = 10L, center = TRUE) {
         stop("center must be a single logical")
     }
 
-    # Gram matrix G = X'X (n x n) -- out-of-core, backend-dispatched.
-    G <- matrix(crossprod(X)[], n, n)
+    # Gram matrix G = X'X (n x n), out-of-core and backend-dispatched. When the
+    # matrix is large enough to stream, the column sums ride along in the same
+    # sweep: centering otherwise costs a second full pass over X for a reduction
+    # whose inputs were already resident. In core, X is in the page cache and the
+    # extra pass is not worth a special path.
+    if (center && .fmalloc_crossprod_ooc_candidate(X)) {
+        res <- .fmalloc_gram_ooc(X, tile_mb = getOption("Rfmalloc.ooc_tile_mb", 256),
+                                 colsums = TRUE)
+        G <- matrix(res$gram[], n, n)
+        mu <- res$colsums / as.double(m)
+    } else {
+        G <- matrix(crossprod(X)[], n, n)
+        mu <- if (center) as.numeric(colMeans(X)) else NULL
+    }
 
     if (center) {
-        mu <- as.numeric(colMeans(X))          # native single-pass reduction
         G <- G - as.double(m) * tcrossprod(mu) # centered Gram: X'X - m mu mu'
-    } else {
-        mu <- NULL
     }
 
     ev <- eigen(G, symmetric = TRUE)

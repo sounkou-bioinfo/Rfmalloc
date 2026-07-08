@@ -194,3 +194,50 @@ message("Testing out-of-core column-tiled matrix products...")
 })()
 
 message("out-of-core matrix product tests completed")
+
+(function() {
+    message("  Test: Gram blocking is invisible, and the fused column sums are exact")
+    # crossprod(X) out-of-core chooses its blocking from the shape: row blocks
+    # (X read once) when the n x n result fits the tile budget, column panels
+    # (X re-read per panel) otherwise. Which one ran must not be observable, so
+    # the Gram may not depend on the tile budget, and the column sums accumulated
+    # during the sweep must equal the separate reduction they replace.
+    tmp <- tempfile(fileext = ".bin")
+    rt <- open_fmalloc(tmp, mode = "scratch", size_gb = 0.5)
+    on.exit({
+        cleanup_fmalloc(rt)
+        unlink(tmp)
+    }, add = TRUE)
+
+    shapes <- list(c(4000L, 16L),   # tall:       gram << tile, row blocks
+                   c(300L, 200L),   # wide:       gram > small tile, column panels
+                   c(500L, 1L),     # degenerate n
+                   c(1L, 8L))       # degenerate m
+    for (shape in shapes) {
+        m <- shape[1L]
+        n <- shape[2L]
+        X <- create_fmalloc_matrix("numeric", nrow = m, ncol = n, runtime = rt)
+        set.seed(11L)
+        xd <- matrix(rnorm(m * n), m, n)
+        X[] <- xd
+        gref <- crossprod(xd)
+        csref <- base::colSums(xd)
+
+        # 1/64 MB drives the block height down to a handful of rows, and pushes
+        # the 300x200 case onto the column-panel fallback.
+        for (tile in c(256, 1, 1 / 64)) {
+            r <- Rfmalloc:::.fmalloc_gram_ooc(X, tile_mb = tile, colsums = TRUE)
+            lab <- sprintf("m=%d n=%d tile=%g", m, n, tile)
+            expect_equal(matrix(r$gram[], n, n), gref, tolerance = 1e-8, info = lab)
+            # Long double accumulation in file order, so this is bitwise, not close.
+            expect_identical(r$colsums, csref, info = lab)
+        }
+
+        r0 <- Rfmalloc:::.fmalloc_gram_ooc(X, tile_mb = 1, colsums = FALSE)
+        expect_null(r0$colsums)
+        expect_equal(matrix(r0$gram[], n, n), gref, tolerance = 1e-8)
+        # The public wrapper is unchanged: still just the Gram matrix.
+        expect_equal(matrix(fmalloc_crossprod_ooc(X, tile_mb = 1)[], n, n),
+                     gref, tolerance = 1e-8)
+    }
+})()

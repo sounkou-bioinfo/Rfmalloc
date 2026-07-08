@@ -2,6 +2,28 @@
 
 ## 0.1.0 (unreleased)
 
+- Out-of-core `crossprod(X)` now picks its blocking from the shape, and no
+  longer re-reads `X` once per column panel. The old kernel held a column panel
+  of `X` resident and swept every other panel against it, so it moved
+  `ceil(n/pw) * |X|` bytes while doing a fixed `n^2 * m` flops - and `pw` shrinks
+  as `X` gets taller (`pw = tile_bytes / (m * 8)`), so the tall matrices this
+  path exists for were the worst case: `m = 1e7`, `n = 2000` and a 256 MB tile
+  gives `pw = 3`, i.e. 667 passes over a larger-than-RAM file. Measured at
+  constant flops, time tracked the pass count exactly (0.05s to 1.64s as the
+  tile shrank) at a flat ~5 GB/s, which is the signature of a kernel bound by
+  data movement rather than arithmetic. When the `n x n` result fits the tile
+  budget - the documented case for `fmalloc_pca()`, `n` moderate after feature
+  selection - it now accumulates `C += Xb'Xb` over row blocks and reads `X`
+  exactly once, holding the timing flat at 0.07s. Column panels remain for the
+  case they actually win, a Gram matrix too large to keep resident. Row blocking
+  preserves the order of the `k` summation, so the Gram is unchanged bit for bit.
+- `fmalloc_pca(center = TRUE)` no longer makes a separate pass over `X` for
+  `colMeans()`. The Gram sweep already has each block resident, so the column
+  sums cost one add per element on a pass that was being paid for anyway; they
+  are accumulated in `long double`, as R's own `colSums()` does, and are bitwise
+  equal to it. Centering an out-of-core PCA therefore costs one pass over `X`
+  instead of `ceil(n/pw) + 1`.
+
 - Fixed native `Ops` edge semantics to match base R for logical `&`/`|` with `NA` and numeric `/` by zero (`Inf`/`NaN` instead of forcing `NA`), and corrected mixed-type native `Ops` regression tests.
 - Optimized `[[` on fmalloc ALTREP vectors to bypass subset-copy for scalar extraction, removing a major per-element regression hotspot observed in scalar read loops.
 - Added version 2 C API exports for zero-copy native interoperability: `Rfmalloc_is_fmalloc_vector`, `Rfmalloc_vector_type`, `Rfmalloc_vector_length`, and `Rfmalloc_vector_payload_ptr`.

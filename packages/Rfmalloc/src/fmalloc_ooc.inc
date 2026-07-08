@@ -359,7 +359,23 @@ extern "C" SEXP rfm_tcrossprod_ooc_impl(SEXP a_x, SEXP tile_bytes_sexp)
 // is computed with dgemm straight into C, then both panels' pages are
 // released. Input residency stays ~2 panels regardless of X's size, and the
 // n x n result is fmalloc-backed so it too may exceed RAM.
-extern "C" SEXP rfm_crossprod_ooc_impl(SEXP a_x, SEXP tile_bytes_sexp)
+/* list(gram, colsums): colsums is NULL unless it was requested. Callers that
+ * only want the Gram matrix take [[1]]. */
+static SEXP crossprod_ooc_result(SEXP gram, SEXP colsums)
+{
+    SEXP out = PROTECT(Rf_allocVector(VECSXP, 2));
+    SET_VECTOR_ELT(out, 0, gram);
+    SET_VECTOR_ELT(out, 1, colsums);
+    SEXP nm = PROTECT(Rf_allocVector(STRSXP, 2));
+    SET_STRING_ELT(nm, 0, Rf_mkChar("gram"));
+    SET_STRING_ELT(nm, 1, Rf_mkChar("colsums"));
+    Rf_setAttrib(out, R_NamesSymbol, nm);
+    UNPROTECT(2);
+    return out;
+}
+
+extern "C" SEXP rfm_crossprod_ooc_impl(SEXP a_x, SEXP tile_bytes_sexp,
+                                       SEXP colsums_sexp)
 {
     fm_vector *a_vec = maybe_vector_from_altrep(a_x);
     if (!a_vec || a_vec->type != REALSXP) {
@@ -391,6 +407,11 @@ extern "C" SEXP rfm_crossprod_ooc_impl(SEXP a_x, SEXP tile_bytes_sexp)
         pw = 1;
     }
 
+    /* Column sums of X, accumulated in the same sweep as the Gram matrix when
+     * the blocking allows it. Returned alongside C so that a centered Gram
+     * (fmalloc_pca) costs one pass over X, not two. */
+    const bool want_colsums = (Rf_asLogical(colsums_sexp) == TRUE);
+
     fm_vector *c_vec = allocate_fm_vector(a_vec->runtime, REALSXP, n * n, true, false);
     SEXP ans = PROTECT(fmalloc_new_altrep(c_vec));
     SEXP cdim = PROTECT(Rf_allocVector(INTSXP, 2));
@@ -398,9 +419,25 @@ extern "C" SEXP rfm_crossprod_ooc_impl(SEXP a_x, SEXP tile_bytes_sexp)
     INTEGER(cdim)[1] = (int)n;
     Rf_setAttrib(ans, R_DimSymbol, cdim);
 
+    SEXP cs = PROTECT(want_colsums ? Rf_allocVector(REALSXP, n) : R_NilValue);
+    /* Accumulate in long double, as R's own colSums does, so that the fused sums
+     * agree bit for bit with the separate reduction the caller would otherwise
+     * have run: which path computed them must not be observable. n is moderate
+     * by construction here (the Gram is formed in memory). R_alloc is released
+     * when this .Call returns. */
+    long double *colsums = want_colsums
+        ? (long double *)R_alloc((size_t)n, sizeof(long double))
+        : nullptr;
+    if (colsums) {
+        for (R_xlen_t j = 0; j < n; j++) {
+            colsums[j] = 0.0L;
+        }
+    }
+
     if (n == 0) {
-        UNPROTECT(2);
-        return ans;
+        SEXP out = PROTECT(crossprod_ooc_result(ans, cs));
+        UNPROTECT(4);
+        return out;
     }
 
     double *X = static_cast<double *>(vector_data_or_dummy(a_vec));
@@ -408,32 +445,106 @@ extern "C" SEXP rfm_crossprod_ooc_impl(SEXP a_x, SEXP tile_bytes_sexp)
 
     if (m == 0) {
         memset(C, 0, (size_t)(n * n) * sizeof(double));
-        UNPROTECT(2);
-        return ans;
+        SEXP out = PROTECT(crossprod_ooc_result(ans, cs));
+        UNPROTECT(4);
+        return out;
     }
 
     ooc_advise(X, (size_t)(m * n) * sizeof(double), OOC_SEQUENTIAL);
 
     int mi = (int)m, nc = (int)n; // nc = ldc of the n x n result
-    // For each row-panel i of C, hold panel X[,i0:i1] resident and sweep the
-    // column panels j, writing each block C[i0:i1, j0:j1] = X[,i0:i1]'X[,j0:j1]
-    // straight into the result. Input residency stays ~2 panels.
-    for (R_xlen_t i0 = 0; i0 < n; i0 += pw) {
-        R_xlen_t iw = n - i0 < pw ? n - i0 : pw;
-        int ii = (int)iw;
-        for (R_xlen_t j0 = 0; j0 < n; j0 += pw) {
-            R_xlen_t jw = n - j0 < pw ? n - j0 : pw;
-            int jj = (int)jw;
-            rfm_gemm("T", "N", ii, jj, mi, 1.0, X + i0 * m, mi, X + j0 * m, mi,
-                     0.0, C + i0 + j0 * n, nc);
-            if (j0 != i0) {
-                ooc_advise(X + j0 * m, (size_t)(jw * m) * sizeof(double), OOC_DONTNEED);
+
+    /*
+     * Two blockings, opposite I/O tradeoffs. Both do n*n*m flops; what differs
+     * is how many times each byte crosses the memory bus, which is what this
+     * kernel is actually bound by (measured: time scales with the pass count at
+     * constant flops, at a flat ~5 GB/s).
+     *
+     *   row blocks     read X once, update the whole n x n C once per block
+     *   column panels  write each C block once, re-read all of X per i-panel
+     *
+     * So the choice is |X| vs |C|: stream the big one, keep the small one hot.
+     * When C fits the tile budget (the documented case for fmalloc_pca: n
+     * moderate after feature selection, m huge) row blocking moves ceil(n/pw)
+     * times less data. A tall X makes that ratio brutal, because pw shrinks as
+     * m grows: m = 1e7, n = 2000, 256 MB tile gives pw = 3, i.e. 667 passes.
+     */
+    const R_xlen_t gram_bytes = n * n * (R_xlen_t)sizeof(double);
+    if ((size_t)gram_bytes <= tile_bytes) {
+        /* Row blocks: C += Xb'Xb, Xb = X[i0:i1, ] (rb x n, leading dim m).
+         * Each element of X is read exactly once. C stays resident. */
+        R_xlen_t rb = (R_xlen_t)(tile_bytes / ((size_t)n * sizeof(double)));
+        if (rb < 1) {
+            rb = 1;
+        }
+        double beta = 0.0;
+        for (R_xlen_t i0 = 0; i0 < m; i0 += rb) {
+            R_xlen_t kw = m - i0 < rb ? m - i0 : rb;
+            if (colsums) {
+                /* Fused: the block's pages are resident for the gemm anyway, so
+                 * the column sums cost one add per element on a pass we are
+                 * already paying for. Summing i within j, blocks in order, is
+                 * the same association as a single sequential colSums. */
+                for (R_xlen_t j = 0; j < n; j++) {
+                    const double *col = X + j * m + i0;
+                    long double s = colsums[j];
+                    for (R_xlen_t i = 0; i < kw; i++) {
+                        s += col[i];
+                    }
+                    colsums[j] = s;
+                }
+            }
+            rfm_gemm("T", "N", nc, nc, (int)kw, 1.0, X + i0, mi, X + i0, mi,
+                     beta, C, nc);
+            beta = 1.0;
+            if (i0 + kw < m) {
+                for (R_xlen_t j = 0; j < n; j++) {
+                    ooc_advise(X + j * m + i0, (size_t)kw * sizeof(double),
+                               OOC_DONTNEED);
+                }
             }
             R_CheckUserInterrupt();
         }
-        ooc_advise(X + i0 * m, (size_t)(iw * m) * sizeof(double), OOC_DONTNEED);
+    } else {
+        /* Column panels: C too large to hold, so write each C block once and
+         * pay to re-read X. For each row-panel i of C, hold panel X[,i0:i1]
+         * resident and sweep the column panels j. Input residency ~2 panels. */
+        for (R_xlen_t i0 = 0; i0 < n; i0 += pw) {
+            R_xlen_t iw = n - i0 < pw ? n - i0 : pw;
+            int ii = (int)iw;
+            for (R_xlen_t j0 = 0; j0 < n; j0 += pw) {
+                R_xlen_t jw = n - j0 < pw ? n - j0 : pw;
+                int jj = (int)jw;
+                rfm_gemm("T", "N", ii, jj, mi, 1.0, X + i0 * m, mi, X + j0 * m, mi,
+                         0.0, C + i0 + j0 * n, nc);
+                if (j0 != i0) {
+                    ooc_advise(X + j0 * m, (size_t)(jw * m) * sizeof(double), OOC_DONTNEED);
+                }
+                R_CheckUserInterrupt();
+            }
+            ooc_advise(X + i0 * m, (size_t)(iw * m) * sizeof(double), OOC_DONTNEED);
+        }
+        if (colsums) {
+            /* No free ride here: X is read many times but never wholly resident
+             * in a shape we can reduce along. Take one honest extra pass. */
+            for (R_xlen_t j = 0; j < n; j++) {
+                const double *col = X + j * m;
+                long double s = 0.0L;
+                for (R_xlen_t i = 0; i < m; i++) {
+                    s += col[i];
+                }
+                colsums[j] = s;
+                R_CheckUserInterrupt();
+            }
+        }
     }
 
-    UNPROTECT(2);
-    return ans;
+    if (want_colsums) {
+        for (R_xlen_t j = 0; j < n; j++) {
+            REAL(cs)[j] = (double)colsums[j];
+        }
+    }
+    SEXP out = PROTECT(crossprod_ooc_result(ans, cs));
+    UNPROTECT(4);
+    return out;
 }
