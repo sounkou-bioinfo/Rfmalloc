@@ -519,3 +519,56 @@ SEXP RC_rggml_vulkan_info(void)
     UNPROTECT(2);
     return out;
 }
+
+/*
+ * RC_rggml_cpu_info() -> list(arch_kernels, simd_dispatch, sgemm, vulkan)
+ *
+ * Reports what configure actually compiled, read straight off the preprocessor
+ * symbols it put in PKG_CPPFLAGS. This exists because a build that silently
+ * misses its intended branch - GGML_CPU_GENERIC where NEON kernels were meant,
+ * the dgemm_ promotion where sgemm_ was meant - still compiles, still passes
+ * every numerical test, and is indistinguishable from the intended one. It is
+ * cheaper to make the build state observable than to audit disassembly.
+ */
+SEXP RC_rggml_cpu_info(void)
+{
+    static const char *const kernels =
+#ifdef RGGML_ARCH_ARM
+        "arm";
+#else
+        "generic";
+#endif
+    const Rboolean dispatch =
+#if defined(RGGML_SIMD_DISPATCH) && RGGML_SIMD_DISPATCH
+        TRUE;
+#else
+        FALSE;
+#endif
+    const Rboolean sgemm =
+#ifdef RGGML_HAVE_SGEMM
+        TRUE;
+#else
+        FALSE;
+#endif
+    const Rboolean vulkan =
+#ifdef RGGML_HAVE_VULKAN
+        TRUE;
+#else
+        FALSE;
+#endif
+
+    SEXP out = PROTECT(Rf_allocVector(VECSXP, 4));
+    SET_VECTOR_ELT(out, 0, Rf_mkString(kernels));
+    SET_VECTOR_ELT(out, 1, Rf_ScalarLogical(dispatch));
+    SET_VECTOR_ELT(out, 2, Rf_ScalarLogical(sgemm));
+    SET_VECTOR_ELT(out, 3, Rf_ScalarLogical(vulkan));
+
+    SEXP nm = PROTECT(Rf_allocVector(STRSXP, 4));
+    SET_STRING_ELT(nm, 0, Rf_mkChar("arch_kernels"));
+    SET_STRING_ELT(nm, 1, Rf_mkChar("simd_dispatch"));
+    SET_STRING_ELT(nm, 2, Rf_mkChar("sgemm"));
+    SET_STRING_ELT(nm, 3, Rf_mkChar("vulkan"));
+    Rf_setAttrib(out, R_NamesSymbol, nm);
+    UNPROTECT(2);
+    return out;
+}

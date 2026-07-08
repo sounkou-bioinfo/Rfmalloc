@@ -1,5 +1,16 @@
 # Rggml 0.1.0 (unreleased)
 
+- Added `rggml_cpu_info()`, reporting what `configure` actually compiled:
+  `arch_kernels` (`"arm"` for GGML's native NEON kernels, `"generic"` for the
+  portable ones), `simd_dispatch`, `sgemm`, `vulkan`. Every branch `configure`
+  can take is numerically correct, so no numerical test can tell them apart: a
+  build that silently fell back from the NEON kernels, or from `sgemm_` to the
+  `dgemm_` promotion, passes the whole suite. `test_cpu_info.R` now asserts on
+  this, including the invariant that `arch_kernels == "arm"` and
+  `simd_dispatch` are mutually exclusive (both define the canonical
+  `ggml_vec_dot_q4_K_q8_K`, and the linker would silently pick one), and that
+  real aarch64 CI runners land on `"arm"`.
+
 - **On aarch64, GGML's own hand-tuned NEON kernels are compiled in** instead of
   the portable scalar reference: 23 `vec_dot`s covering every quantized type,
   not just the one `q4_K` variant the SIMD dispatcher stages. NEON is a

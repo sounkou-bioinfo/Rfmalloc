@@ -83,11 +83,18 @@ here, not fetched.
 ## Update policy
 
 The vendored core stays at GGML **0.9.5** until there is a concrete reason to
-move - the next one being the **CUDA backend**. At that point GGML will be
-refreshed *directly from ggml-org / llama.cpp in-tree* at a pinned commit SHA
-(so the core version-matches the CUDA sources and is testable on real
-hardware), and these patches re-applied on top. `vendorggml.R` is the template
-for that: swap the pinned base, re-run, re-validate.
+move. `vendorggml.R` is the template for whenever that happens: swap the pinned
+base, re-run, re-validate.
+
+**Vulkan is the GPU backend, not a stepping stone to CUDA.** It is already
+vendored, version-matched to the core, and portable across AMD, Intel, NVIDIA
+and (via MoltenVK) Apple. CUDA buys NVIDIA-only hardware in exchange for `nvcc`,
+an arch-flag matrix, a multi-GB toolchain no CRAN builder has, and a second
+GPU code path to keep correct. It is worth adding only for measured throughput
+on NVIDIA that Vulkan cannot reach, and it would then be an *additional* opt-in
+backend behind the same device-buffer residency API the Vulkan work already
+built, not a replacement. That API (`Rggml_backend_alloc_ctx_tensors`,
+`_tensor_set`, `_tensor_get`) is what makes the two interchangeable.
 
 ## GPU path
 
@@ -98,7 +105,6 @@ is compiled only when `packages/Rggml/configure` is given `--with-vulkan`
 (never auto-detected: the largest generated shader TU is a 141 MB array literal
 that needs ~5 GB of RAM to compile, independent of `-O` level).
 
-CUDA is the remaining GPU route (NVIDIA-only, must come direct from ggml-org at
-a version matching the core). When it lands it goes in the same way: add its
-sources to `manifest.txt`, its build to `configure`, and any local edits to
-`patches/`.
+If CUDA is ever added it goes in the same way: its sources into `manifest.txt`,
+its build into `configure`, any local edits into `patches/`. See the update
+policy above for why it is not the default GPU route.

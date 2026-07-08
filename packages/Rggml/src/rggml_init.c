@@ -16,6 +16,7 @@ SEXP RC_rggml_version(void);
 SEXP RC_rggml_test_mul_mat(SEXP A_sexp, SEXP B_sexp, SEXP zero_copy_sexp, SEXP use_blas_sexp);
 SEXP RC_rggml_test_mul_mat_backend(SEXP A_sexp, SEXP B_sexp, SEXP backend_sexp);
 SEXP RC_rggml_vulkan_info(void);
+SEXP RC_rggml_cpu_info(void);
 SEXP RC_rggml_test_mul_mat_q4k(SEXP A_sexp, SEXP B_sexp);
 SEXP RC_rggml_test_q4k_dot(SEXP nblocks_sexp);
 SEXP RC_rggml_bench_q4k_dot(SEXP nblocks_sexp, SEXP iters_sexp);
@@ -25,6 +26,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"RC_rggml_test_mul_mat",      (DL_FUNC) &RC_rggml_test_mul_mat,      4},
     {"RC_rggml_test_mul_mat_backend", (DL_FUNC) &RC_rggml_test_mul_mat_backend, 3},
     {"RC_rggml_vulkan_info",       (DL_FUNC) &RC_rggml_vulkan_info,       0},
+    {"RC_rggml_cpu_info",          (DL_FUNC) &RC_rggml_cpu_info,          0},
     {"RC_rggml_test_mul_mat_q4k",  (DL_FUNC) &RC_rggml_test_mul_mat_q4k,  2},
     {"RC_rggml_test_q4k_dot",      (DL_FUNC) &RC_rggml_test_q4k_dot,      1},
     {"RC_rggml_bench_q4k_dot",     (DL_FUNC) &RC_rggml_bench_q4k_dot,     2},
