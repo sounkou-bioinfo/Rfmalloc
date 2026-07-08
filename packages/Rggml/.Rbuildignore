@@ -21,3 +21,5 @@
 ^README\.knit\.md$
 ^\.Rproj\.user$
 ^.*\.Rproj$
+^inst/ggml/ggml-vulkan/generated$
+^inst/ggml/ggml-vulkan/vulkan-shaders/vulkan-shaders-gen$

@@ -10,6 +10,28 @@ set -e
 
 echo "Configuring Rggml..."
 
+# --- Vulkan backend: OPT-IN, never auto-detected ------------------------------
+# GGML's Vulkan backend embeds 156 compiled SPIR-V shaders as C++ translation
+# units. Generating them takes ~30 s, and the largest (mul_mm, a 141 MB array
+# literal) needs ~5 GB of RAM to compile - regardless of -O level, because the
+# cost is the compiler parsing the literal, not optimizing it. Auto-enabling
+# that on any machine that happens to have glslc installed would be hostile to
+# CRAN builders and to ordinary installs, so Vulkan is enabled only on request:
+#
+#   install.packages("Rggml", configure.args = "--with-vulkan")
+#   R CMD INSTALL --configure-args=--with-vulkan .
+#   RGGML_VULKAN=1 R CMD INSTALL .
+#
+# Without it, nothing about the build changes and the CPU/BLAS backends are
+# unaffected.
+USE_VULKAN="${RGGML_VULKAN:-0}"
+for _arg in "$@"; do
+    case "$_arg" in
+        --with-vulkan)    USE_VULKAN=1 ;;
+        --without-vulkan) USE_VULKAN=0 ;;
+    esac
+done
+
 if [ ! -d "inst/ggml" ]; then
     echo "Error: vendored GGML source not found in inst/ggml"
     exit 1
@@ -93,8 +115,104 @@ if [ -z "$SIMD_EXTRA_OBJECTS" ]; then
 fi
 rm -f "$_probe_base" "$_probe_c" "${_probe_c}.out"
 
+# --- Vulkan backend (only when requested; see the note at the top) ------------
+# Mirrors ggmlR's proven, CRAN-accepted recipe: probe glslc's optional shader
+# features, build the shader generator, compile every .comp into an embedded
+# SPIR-V translation unit. The generated tree is a build artifact (cleaned by
+# ./cleanup), never vendored.
+VULKAN_OBJECTS=""
+VULKAN_CPPFLAGS=""
+VULKAN_LIBS=""
+if [ "$USE_VULKAN" = "1" ]; then
+    echo "Vulkan: requested (--with-vulkan / RGGML_VULKAN=1)"
+
+    # glslc: $GLSLC, then the Vulkan SDK, then PATH.
+    if [ -n "${GLSLC:-}" ] && [ -x "$GLSLC" ]; then
+        :
+    elif [ -n "${VULKAN_SDK:-}" ] && [ -x "$VULKAN_SDK/bin/glslc" ]; then
+        GLSLC="$VULKAN_SDK/bin/glslc"
+    else
+        GLSLC=`command -v glslc 2>/dev/null || true`
+    fi
+
+    HAVE_VULKAN_H="no"
+    if [ -f "/usr/include/vulkan/vulkan.h" ] || [ -n "${VULKAN_SDK:-}" ]; then
+        HAVE_VULKAN_H="yes"
+    elif command -v pkg-config >/dev/null 2>&1 && pkg-config --exists vulkan 2>/dev/null; then
+        HAVE_VULKAN_H="yes"
+    fi
+
+    if [ -z "$GLSLC" ] || [ "$HAVE_VULKAN_H" = "no" ]; then
+        echo "Error: Vulkan was requested but its build dependencies are missing." >&2
+        [ -z "$GLSLC" ] && echo "  missing: glslc (shader compiler)" >&2
+        [ "$HAVE_VULKAN_H" = "no" ] && echo "  missing: vulkan/vulkan.h (Vulkan headers)" >&2
+        echo "  Debian/Ubuntu: apt-get install libvulkan-dev glslc" >&2
+        echo "  Otherwise install the LunarG Vulkan SDK and export VULKAN_SDK." >&2
+        exit 1
+    fi
+    echo "Vulkan: glslc = $GLSLC"
+
+    if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists vulkan 2>/dev/null; then
+        VULKAN_CPPFLAGS=`pkg-config --cflags vulkan`
+        VULKAN_LIBS=`pkg-config --libs vulkan`
+    else
+        VULKAN_LIBS="-lvulkan"
+        if [ -n "${VULKAN_SDK:-}" ]; then
+            VULKAN_CPPFLAGS="-I${VULKAN_SDK}/include"
+            VULKAN_LIBS="-L${VULKAN_SDK}/lib $VULKAN_LIBS"
+        fi
+    fi
+
+    # Which optional shader features does *this* glslc understand? The generated
+    # shader set depends on the answer, so the same defines must reach both the
+    # generator and every compiled TU.
+    SHADERGEN_DEFINES=""
+    for _feat in coopmat coopmat2 integer_dot bfloat16; do
+        _test="ggml-vulkan/vulkan-shaders/feature-tests/${_feat}.comp"
+        if [ -f "$_test" ] && "$GLSLC" --target-env=vulkan1.2 -o /dev/null "$_test" >/dev/null 2>&1; then
+            echo "Vulkan: glslc supports $_feat"
+            _up=`echo "$_feat" | tr 'a-z' 'A-Z'`
+            SHADERGEN_DEFINES="$SHADERGEN_DEFINES -DGGML_VULKAN_${_up}_GLSLC_SUPPORT"
+        fi
+    done
+
+    ( cd ggml-vulkan/vulkan-shaders
+      echo "Vulkan: building shader generator"
+      $CXX -std=c++17 -O2 $SHADERGEN_DEFINES -o vulkan-shaders-gen vulkan-shaders-gen.cpp -pthread
+
+      # Always regenerate from scratch: the shader set depends on glslc's
+      # feature support, and a partial overwrite leaves orphan .cpp whose
+      # symbols the regenerated header no longer declares (undefined symbols
+      # at link time).
+      rm -rf ../generated
+      mkdir -p ../generated/spv
+      ./vulkan-shaders-gen --output-dir ../generated/spv \
+                           --target-hpp ../generated/ggml-vulkan-shaders.hpp
+      echo "Vulkan: compiling shaders (this takes a minute)"
+      for _shader in *.comp; do
+          ./vulkan-shaders-gen --glslc "$GLSLC" --source "`pwd`/$_shader" \
+              --output-dir ../generated/spv \
+              --target-hpp ../generated/ggml-vulkan-shaders.hpp \
+              --target-cpp "../generated/${_shader}.cpp"
+      done
+    )
+
+    # Only ggml-vulkan.cpp is a translation unit of its own; the other
+    # ggml-vulkan-*.cpp are #included into it (ggmlR's split), so they must not
+    # be compiled separately.
+    VULKAN_OBJECTS="ggml-vulkan/ggml-vulkan.o"
+    for _cpp in ggml-vulkan/generated/*.cpp; do
+        VULKAN_OBJECTS="$VULKAN_OBJECTS ${_cpp%.cpp}.o"
+    done
+    VULKAN_CPPFLAGS="$VULKAN_CPPFLAGS -DGGML_USE_VULKAN -Iggml-vulkan -Iggml-vulkan/generated $SHADERGEN_DEFINES"
+    echo "Vulkan: enabled (`ls ggml-vulkan/generated/*.cpp | wc -l` shader TUs)"
+else
+    echo "Vulkan: disabled (build with --with-vulkan to enable the GPU backend)"
+fi
+
 make clean >/dev/null 2>&1 || true
-if make SIMD_EXTRA_OBJECTS="$SIMD_EXTRA_OBJECTS" SIMD_DISPATCH_DEFS="$SIMD_DISPATCH_DEFS"; then
+if make SIMD_EXTRA_OBJECTS="$SIMD_EXTRA_OBJECTS" SIMD_DISPATCH_DEFS="$SIMD_DISPATCH_DEFS" \
+        VULKAN_OBJECTS="$VULKAN_OBJECTS" VULKAN_CPPFLAGS="$VULKAN_CPPFLAGS"; then
     echo "libggml.a built successfully"
 else
     echo "Error: failed to build libggml.a"
@@ -124,14 +242,29 @@ cat > src/Makevars << 'EOF'
 # libggml.a itself contains C++ object code (std::filesystem, exceptions,
 # etc. from ggml-backend*.cpp).
 
-PKG_CPPFLAGS = -I../inst/include
+PKG_CPPFLAGS = -I../inst/include @RGGML_VULKAN_DEF@
 # $(BLAS_LIBS) $(FLIBS) resolve the Fortran sgemm_ that our cblas shim
 # (inst/ggml/rggml_cblas.c) forwards GGML's BLAS backend to. -lggml precedes
-# them so its unresolved sgemm_ pulls from R's BLAS.
-PKG_LIBS = -L../inst/ggml -lggml $(BLAS_LIBS) $(FLIBS) -lpthread -ldl -lm
+# them so its unresolved sgemm_ pulls from R's BLAS. @VULKAN_LIBS@ is empty
+# unless configure was given --with-vulkan.
+PKG_LIBS = -L../inst/ggml -lggml @VULKAN_LIBS@ $(BLAS_LIBS) $(FLIBS) -lpthread -ldl -lm
 
 CXX_STD = CXX17
 EOF
+
+# Substituted here rather than expanded in the heredoc above, which is quoted so
+# that make's own $(BLAS_LIBS)/$(FLIBS) survive verbatim.
+RGGML_VULKAN_DEF=""
+[ "$USE_VULKAN" = "1" ] && RGGML_VULKAN_DEF="-DRGGML_HAVE_VULKAN"
+sed -i.bak -e "s|@VULKAN_LIBS@|$VULKAN_LIBS|" \
+           -e "s|@RGGML_VULKAN_DEF@|$RGGML_VULKAN_DEF|" src/Makevars && rm -f src/Makevars.bak
+
+# Drop stale objects from a previous configure. make compares timestamps, not
+# flags, so a src/*.o built before (say) --with-vulkan was added would survive
+# the flag change and silently produce a shared object that disagrees with the
+# src/Makevars we just wrote - e.g. Rggml_backend_vulkan_device_count compiled
+# from its no-Vulkan branch, reporting zero devices in a Vulkan-enabled build.
+rm -f src/*.o src/*.so
 
 echo "Configure completed successfully."
 echo "Created src/Makevars linking against inst/ggml/libggml.a."

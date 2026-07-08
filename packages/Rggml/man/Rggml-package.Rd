@@ -38,8 +38,9 @@ require.
 \seealso{
 Useful links:
 \itemize{
-  \item \url{https://github.com/sounkou-bioinfo/Rggml}
-  \item Report bugs at \url{https://github.com/sounkou-bioinfo/Rggml/issues}
+  \item \url{https://github.com/sounkou-bioinfo/Rfmalloc}
+  \item \url{https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/}
+  \item Report bugs at \url{https://github.com/sounkou-bioinfo/Rfmalloc/issues}
 }
 
 }

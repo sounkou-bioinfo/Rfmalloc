@@ -53,7 +53,7 @@ repo     <- normalizePath(file.path(here, "..", ".."))        # monorepo root
 ggml_dst <- file.path(repo, "packages", "Rggml", "inst", "ggml")
 inc_dst  <- file.path(repo, "packages", "Rggml", "inst", "include")
 cache    <- file.path(here, "cache")
-inc_headers <- c("ggml.h", "ggml-alloc.h", "ggml-backend.h", "ggml-cpu.h")
+inc_headers <- c("ggml.h", "ggml-alloc.h", "ggml-backend.h", "ggml-cpu.h", "ggml-vulkan.h")
 overlay_ggml <- c("Makefile", "ggml-blas.cpp", "cblas.h",
                   "rggml_cblas.c", "rggml_compat.h", "rggml_io.c")
 

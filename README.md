@@ -92,19 +92,29 @@ Because both PCA and inference dispatch their products through the
 **one** backend registry, a faster backend accelerates both at once,
 with no change to `fmalloc_pca()` or `rllm_generate()`:
 
-- **today** — R’s BLAS for dense products; GGML’s
+- **today, CPU** — R’s BLAS for dense products; GGML’s
   runtime-SIMD-dispatched quantized kernels (AVX2 on x86, NEON on
   aarch64, CPUID-selected — no non-portable flags) for quantized
   weights; both out-of-core.
-- **next: CUDA.** GGML’s CUDA backend will be compiled into `Rggml` when
-  `configure` autodetects `nvcc` (the same opt-in pattern as the BLAS
-  backend: no `nvcc` → nothing changes, CRAN/CI unaffected) and
-  registered as a matmul backend. Then `fmalloc_matmul_backend("cuda")`
-  makes the identical `fmalloc_pca(X)` and `rllm_generate(model, …)` run
-  their GEMMs on the GPU. The target is validated at the GGML level: the
-  same SmolLM2 `Q4_K_M` decodes at **~455 tok/s (~28× this CPU stack)**
-  on an RTX 5050 (compute capability 12.0) via upstream GGML CUDA.
-  Vulkan stays on the roadmap for non-NVIDIA GPUs.
+- **today, GPU: Vulkan.** GGML’s Vulkan backend is vendored and builds
+  into `Rggml` **on request** —
+  `install.packages("Rggml", configure.args =   "--with-vulkan")`,
+  needing `glslc` and the Vulkan headers. It is not auto-detected,
+  because GGML embeds 156 compiled SPIR-V shaders and the largest is a
+  141 MB array literal costing ~5 GB of RAM to compile. It runs on any
+  vendor’s GPU (NVIDIA, AMD, Intel). `rggml_vulkan_info()` reports what
+  it sees; a build without it reports zero devices rather than failing,
+  so callers can probe and fall back. Correctness is pinned against the
+  CPU backend, and can be exercised without a GPU at all through Mesa’s
+  software driver (`GGML_VK_ALLOW_CPU=1`).
+- **next: CUDA.** NVIDIA-only, and the fastest: the same SmolLM2
+  `Q4_K_M` decodes at **~455 tok/s (~28× this CPU stack)** on an RTX
+  5050 via upstream GGML CUDA. The device-buffer residency API the
+  Vulkan backend needed
+  (`Rggml_backend_alloc_ctx_tensors`/`tensor_set`/`tensor_get`) is
+  backend agnostic, so CUDA reuses it; what remains is vendoring
+  `ggml-cuda` at a version matching the core and adding `nvcc` rules to
+  the build.
 
 ## The packages
 

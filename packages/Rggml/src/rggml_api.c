@@ -21,6 +21,11 @@
 #include <ggml-backend.h>
 #include <ggml-cpu.h>
 #include <ggml-blas.h>
+/* RGGML_HAVE_VULKAN is put into PKG_CPPFLAGS by configure only when the package
+ * was built with --with-vulkan; libggml.a then contains the Vulkan backend. */
+#ifdef RGGML_HAVE_VULKAN
+#include <ggml-vulkan.h>
+#endif
 
 #include "rggml_api.h"
 
@@ -120,6 +125,79 @@ int Rggml_backend_graph_compute(ggml_backend_t backend, struct ggml_cgraph *cgra
 ggml_backend_t Rggml_backend_blas_init(void)
 {
     return ggml_backend_blas_init();
+}
+
+/*
+ * Vulkan backend (API version 7). Present unconditionally as a C-callable so
+ * downstream packages can probe for it at run time; it reports zero devices and
+ * refuses to initialize when Rggml was built without --with-vulkan. Freeing is
+ * the usual Rggml_backend_free().
+ */
+int Rggml_backend_vulkan_device_count(void)
+{
+#ifdef RGGML_HAVE_VULKAN
+    return ggml_backend_vk_get_device_count();
+#else
+    return 0;
+#endif
+}
+
+ggml_backend_t Rggml_backend_vulkan_init(int device)
+{
+#ifdef RGGML_HAVE_VULKAN
+    if (device < 0 || device >= ggml_backend_vk_get_device_count()) return NULL;
+    return ggml_backend_vk_init((size_t) device);
+#else
+    (void) device;
+    return NULL;
+#endif
+}
+
+/*
+ * Device-buffer residency (API version 7).
+ *
+ * The CPU and BLAS backends compute on ordinary host memory, so a tensor whose
+ * ->data points at an R buffer just works. A GPU backend does not: its tensors
+ * must live in device memory. These four wrap GGML's backend-agnostic path -
+ * allocate every tensor of a no_alloc context in one backend buffer, upload
+ * inputs, compute, download results - which is identical for CPU, BLAS and
+ * Vulkan. Free the buffer before the context.
+ */
+ggml_backend_buffer_t Rggml_backend_alloc_ctx_tensors(struct ggml_context *ctx,
+                                                       ggml_backend_t backend)
+{
+    if (!ctx || !backend) return NULL;
+    return ggml_backend_alloc_ctx_tensors(ctx, backend);
+}
+
+void Rggml_backend_buffer_free(ggml_backend_buffer_t buffer)
+{
+    if (buffer) ggml_backend_buffer_free(buffer);
+}
+
+void Rggml_backend_tensor_set(struct ggml_tensor *tensor, const void *data,
+                               size_t offset, size_t size)
+{
+    if (tensor && data) ggml_backend_tensor_set(tensor, data, offset, size);
+}
+
+void Rggml_backend_tensor_get(const struct ggml_tensor *tensor, void *data,
+                               size_t offset, size_t size)
+{
+    if (tensor && data) ggml_backend_tensor_get(tensor, data, offset, size);
+}
+
+int Rggml_backend_vulkan_device_description(int device, char *buf, size_t buf_size)
+{
+#ifdef RGGML_HAVE_VULKAN
+    if (!buf || buf_size == 0) return -1;
+    if (device < 0 || device >= ggml_backend_vk_get_device_count()) return -1;
+    ggml_backend_vk_get_device_description(device, buf, buf_size);
+    return 0;
+#else
+    (void) device; (void) buf; (void) buf_size;
+    return -1;
+#endif
 }
 
 void Rggml_backend_blas_set_n_threads(ggml_backend_t backend_blas, int n_threads)

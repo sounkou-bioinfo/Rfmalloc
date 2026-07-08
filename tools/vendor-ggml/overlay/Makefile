@@ -38,8 +38,15 @@ DEFS = -DGGML_USE_CPU -DGGML_CPU_GENERIC -DGGML_USE_BLAS -DGGML_R_PACKAGE -D_GNU
        -DGGML_VERSION='"0.9.5"' -DGGML_COMMIT='"vendored-unknown"' \
        -include rggml_compat.h
 
-ALL_CFLAGS   = $(CPPFLAGS) $(INCLUDES) $(DEFS) $(CFLAGS)
-ALL_CXXFLAGS = $(CPPFLAGS) $(INCLUDES) $(DEFS) $(CXXFLAGS) -std=gnu++17
+# Vulkan backend: empty unless ../../configure was run with --with-vulkan, in
+# which case it passes the objects (ggml-vulkan.o plus one TU per generated
+# SPIR-V shader) and the flags. -DGGML_USE_VULKAN must reach every TU, not just
+# the Vulkan ones: ggml-backend-reg.cpp registers the backend behind that define.
+VULKAN_OBJECTS ?=
+VULKAN_CPPFLAGS ?=
+
+ALL_CFLAGS   = $(CPPFLAGS) $(INCLUDES) $(DEFS) $(VULKAN_CPPFLAGS) $(CFLAGS)
+ALL_CXXFLAGS = $(CPPFLAGS) $(INCLUDES) $(DEFS) $(VULKAN_CPPFLAGS) $(CXXFLAGS) -std=gnu++17
 
 C_SOURCES = \
   ggml-private.c ggml-alloc.c \
@@ -64,7 +71,8 @@ SIMD_EXTRA_OBJECTS ?=
 SIMD_DISPATCH_DEFS ?=
 
 OBJECTS = $(C_SOURCES:.c=.o) $(CXX_SOURCES:.cpp=.o) rggml_io.o rggml_cblas.o \
-          cpu_features.o rggml_simd_dispatch.o $(SIMD_EXTRA_OBJECTS)
+          cpu_features.o rggml_simd_dispatch.o $(SIMD_EXTRA_OBJECTS) \
+          $(VULKAN_OBJECTS)
 
 .PHONY: all clean
 

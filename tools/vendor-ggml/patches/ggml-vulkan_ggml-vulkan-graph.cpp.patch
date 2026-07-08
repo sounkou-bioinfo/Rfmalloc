@@ -1,0 +1,14 @@
+--- a/ggml-vulkan/ggml-vulkan-graph.cpp	2026-05-21 22:46:51.000000000 +0200
++++ b/ggml-vulkan/ggml-vulkan-graph.cpp	2026-07-08 19:25:15.468075736 +0200
+@@ -833,7 +833,10 @@
+ 
+     ggml_backend_vk_buffer_context * bufctx = new ggml_backend_vk_buffer_context(ctx->device, std::move(dev_buffer), ctx->name);
+ 
+-    return ggml_backend_buffer_init(buft, ggml_backend_vk_buffer_interface, bufctx, size);
++    // by pointer: our ggml-backend-impl.h patch passes ggml_backend_buffer_i
++    // by pointer rather than by value (an ~88-byte POD passed by value across
++    // the extern "C" TU boundary silently crashed on Windows/MinGW).
++    return ggml_backend_buffer_init(buft, &ggml_backend_vk_buffer_interface, bufctx, size);
+ }
+ 
+ static size_t ggml_backend_vk_buffer_type_get_alignment(ggml_backend_buffer_type_t buft) {

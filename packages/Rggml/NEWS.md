@@ -1,5 +1,35 @@
 # Rggml 0.1.0 (unreleased)
 
+- Added the **Vulkan GPU backend** (API version 7), vendored from the same
+  pinned ggmlR tarball as the CPU core (so it version-matches it) through
+  `tools/vendor-ggml`. It is **opt-in at build time**, never auto-detected:
+
+  ```
+  install.packages("Rggml", configure.args = "--with-vulkan")
+  R CMD INSTALL --configure-args=--with-vulkan .
+  ```
+
+  Auto-detection would be hostile: GGML embeds 156 compiled SPIR-V shaders as
+  C++ translation units, and the largest (`mul_mm`, a 141 MB array literal)
+  needs ~5 GB of RAM to compile - independent of `-O` level, since the cost is
+  parsing the literal. `configure` probes `glslc`'s optional shader features
+  (coopmat, coopmat2, integer_dot, bfloat16), builds the shader generator, and
+  compiles the shader set those features imply; it errors out clearly if
+  `--with-vulkan` is given without `glslc`/Vulkan headers. Without the flag,
+  nothing about the build changes. New C-callables:
+  `Rggml_backend_vulkan_init`, `Rggml_backend_vulkan_device_count`, and
+  `Rggml_backend_vulkan_device_description`; they report zero devices instead
+  of failing when the backend was not built, so callers can probe and fall
+  back. R-level: `rggml_vulkan_info()`, `rggml_has_vulkan()`.
+- Added the **device-buffer residency C-callables** (API version 7):
+  `Rggml_backend_alloc_ctx_tensors`, `Rggml_backend_buffer_free`,
+  `Rggml_backend_tensor_set`, `Rggml_backend_tensor_get`. The CPU and BLAS
+  backends compute on host memory, so pointing a tensor at an R buffer works;
+  a GPU backend's tensors must live in device memory. These wrap GGML's
+  backend-agnostic path - allocate a no_alloc context's tensors into one
+  backend buffer, upload, compute, download - which is identical for CPU, BLAS
+  and Vulkan, and is what `test_vulkan.R` uses to assert the GPU backend
+  computes the same product as the CPU one.
 - Added **view and copy C-callables** (API version 6): `Rggml_view_1d`/
   `_2d`/`_3d` (byte offsets/strides, as in ggml) and `Rggml_cpy` - the
   building blocks of a KV cache: cpy nodes write new keys/values into views

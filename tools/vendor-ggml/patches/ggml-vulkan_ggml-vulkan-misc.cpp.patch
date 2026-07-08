@@ -1,0 +1,41 @@
+--- a/ggml-vulkan/ggml-vulkan-misc.cpp	2026-05-20 13:13:25.000000000 +0200
++++ b/ggml-vulkan/ggml-vulkan-misc.cpp	2026-07-08 19:44:20.287416999 +0200
+@@ -166,6 +166,19 @@
+     return ggml_vk_default_dispatcher_instance;
+ }
+ 
++// Rggml: upstream GGML deliberately refuses Vulkan devices that report
++// VK_PHYSICAL_DEVICE_TYPE_CPU ("This is probably not the device you want"), so a
++// software driver such as Mesa's lavapipe enumerates zero devices. That is the
++// right default, but it also means the Vulkan backend can never be exercised on
++// a machine without a GPU - including CI. Setting GGML_VK_ALLOW_CPU=1 opts in to
++// CPU-type Vulkan devices, purely so the backend's shaders, buffer residency and
++// kernels can be correctness-tested against a software driver. It is off unless
++// the variable is set, so default behaviour is byte-for-byte upstream's.
++static bool ggml_vk_allow_cpu_device() {
++    const char * s = getenv("GGML_VK_ALLOW_CPU");
++    return s != nullptr && s[0] != '\0' && s[0] != '0';
++}
++
+ static void ggml_vk_instance_init() {
+     if (vk_instance_initialized) {
+         return;
+@@ -297,7 +310,8 @@
+             new_driver.pNext = &new_id;
+             devices[i].getProperties2(&new_props);
+ 
+-            if ((new_props.properties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu || new_props.properties.deviceType == vk::PhysicalDeviceType::eIntegratedGpu) && ggml_vk_device_is_supported(devices[i])) {
++            if ((new_props.properties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu || new_props.properties.deviceType == vk::PhysicalDeviceType::eIntegratedGpu ||
++                 (ggml_vk_allow_cpu_device() && new_props.properties.deviceType == vk::PhysicalDeviceType::eCpu)) && ggml_vk_device_is_supported(devices[i])) {
+                 // Check if there are two physical devices corresponding to the same GPU
+                 auto old_device = std::find_if(
+                     vk_instance.device_indices.begin(),
+@@ -379,7 +393,7 @@
+         // If only CPU devices are available, return without devices.
+         if (vk_instance.device_indices.empty()) {
+             for (size_t i = 0; i < devices.size(); i++) {
+-                if (devices[i].getProperties().deviceType != vk::PhysicalDeviceType::eCpu) {
++                if (devices[i].getProperties().deviceType != vk::PhysicalDeviceType::eCpu || ggml_vk_allow_cpu_device()) {
+                     vk_instance.device_indices.push_back(i);
+                     break;
+                 }

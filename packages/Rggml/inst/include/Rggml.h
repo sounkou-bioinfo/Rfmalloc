@@ -166,6 +166,27 @@ typedef struct ggml_tensor *(*Rggml_cont_fun)(struct ggml_context *ctx,
 typedef struct ggml_tensor *(*Rggml_transpose_fun)(struct ggml_context *ctx,
                                                     struct ggml_tensor *a);
 
+/* -- Vulkan backend (API version 7) -------------------------------------------- */
+/* Always resolvable; reports 0 devices and refuses to init unless Rggml was
+ * built with --with-vulkan. Free with Rggml_backend_free(). */
+typedef int (*Rggml_backend_vulkan_device_count_fun)(void);
+typedef ggml_backend_t (*Rggml_backend_vulkan_init_fun)(int device);
+typedef int (*Rggml_backend_vulkan_device_description_fun)(int device, char *buf,
+                                                            size_t buf_size);
+
+/* -- device-buffer residency (API version 7) ----------------------------------- */
+/* The backend-agnostic allocate/upload/compute/download path. CPU and BLAS
+ * compute on host memory, but a GPU backend's tensors must live in device
+ * memory: allocate every tensor of a no_alloc context into one backend buffer,
+ * upload inputs, compute, download the result. Free the buffer before the ctx. */
+typedef ggml_backend_buffer_t (*Rggml_backend_alloc_ctx_tensors_fun)(struct ggml_context *ctx,
+                                                                      ggml_backend_t backend);
+typedef void (*Rggml_backend_buffer_free_fun)(ggml_backend_buffer_t buffer);
+typedef void (*Rggml_backend_tensor_set_fun)(struct ggml_tensor *tensor, const void *data,
+                                              size_t offset, size_t size);
+typedef void (*Rggml_backend_tensor_get_fun)(const struct ggml_tensor *tensor, void *data,
+                                              size_t offset, size_t size);
+
 /* -- views and copies (API version 6) ----------------------------------------- */
 /* Strided views into a tensor (offsets/strides in bytes, as in ggml) and the
  * copy op - the building blocks of a KV cache: cpy nodes write new K/V into
@@ -382,6 +403,41 @@ static inline Rggml_cont_fun Rggml_cont_ptr(void)
 static inline Rggml_transpose_fun Rggml_transpose_ptr(void)
 {
     return (Rggml_transpose_fun) R_GetCCallable("Rggml", "Rggml_transpose");
+}
+
+static inline Rggml_backend_vulkan_device_count_fun Rggml_backend_vulkan_device_count_ptr(void)
+{
+    return (Rggml_backend_vulkan_device_count_fun) R_GetCCallable("Rggml", "Rggml_backend_vulkan_device_count");
+}
+
+static inline Rggml_backend_vulkan_init_fun Rggml_backend_vulkan_init_ptr(void)
+{
+    return (Rggml_backend_vulkan_init_fun) R_GetCCallable("Rggml", "Rggml_backend_vulkan_init");
+}
+
+static inline Rggml_backend_vulkan_device_description_fun Rggml_backend_vulkan_device_description_ptr(void)
+{
+    return (Rggml_backend_vulkan_device_description_fun) R_GetCCallable("Rggml", "Rggml_backend_vulkan_device_description");
+}
+
+static inline Rggml_backend_alloc_ctx_tensors_fun Rggml_backend_alloc_ctx_tensors_ptr(void)
+{
+    return (Rggml_backend_alloc_ctx_tensors_fun) R_GetCCallable("Rggml", "Rggml_backend_alloc_ctx_tensors");
+}
+
+static inline Rggml_backend_buffer_free_fun Rggml_backend_buffer_free_ptr(void)
+{
+    return (Rggml_backend_buffer_free_fun) R_GetCCallable("Rggml", "Rggml_backend_buffer_free");
+}
+
+static inline Rggml_backend_tensor_set_fun Rggml_backend_tensor_set_ptr(void)
+{
+    return (Rggml_backend_tensor_set_fun) R_GetCCallable("Rggml", "Rggml_backend_tensor_set");
+}
+
+static inline Rggml_backend_tensor_get_fun Rggml_backend_tensor_get_ptr(void)
+{
+    return (Rggml_backend_tensor_get_fun) R_GetCCallable("Rggml", "Rggml_backend_tensor_get");
 }
 
 static inline Rggml_view_1d_fun Rggml_view_1d_ptr(void)

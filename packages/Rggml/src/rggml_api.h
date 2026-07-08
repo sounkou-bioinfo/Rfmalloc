@@ -14,7 +14,7 @@
 #include <ggml.h>
 #include <ggml-backend.h>
 
-#define RGGML_API_VERSION 6
+#define RGGML_API_VERSION 7
 
 #ifdef __cplusplus
 extern "C" {
@@ -42,6 +42,21 @@ int Rggml_backend_graph_compute(ggml_backend_t backend, struct ggml_cgraph *cgra
 
 ggml_backend_t Rggml_backend_blas_init(void);
 void Rggml_backend_blas_set_n_threads(ggml_backend_t backend_blas, int n_threads);
+
+/* Vulkan backend (API version 7); reports 0 devices unless built --with-vulkan */
+int Rggml_backend_vulkan_device_count(void);
+ggml_backend_t Rggml_backend_vulkan_init(int device);
+int Rggml_backend_vulkan_device_description(int device, char *buf, size_t buf_size);
+
+/* device-buffer residency (API version 7): the backend-agnostic
+ * allocate/upload/compute/download path, required by GPU backends */
+ggml_backend_buffer_t Rggml_backend_alloc_ctx_tensors(struct ggml_context *ctx,
+                                                       ggml_backend_t backend);
+void Rggml_backend_buffer_free(ggml_backend_buffer_t buffer);
+void Rggml_backend_tensor_set(struct ggml_tensor *tensor, const void *data,
+                               size_t offset, size_t size);
+void Rggml_backend_tensor_get(const struct ggml_tensor *tensor, void *data,
+                               size_t offset, size_t size);
 
 struct ggml_cgraph *Rggml_new_graph(struct ggml_context *ctx, size_t size);
 void Rggml_build_forward_expand(struct ggml_cgraph *cgraph, struct ggml_tensor *tensor);

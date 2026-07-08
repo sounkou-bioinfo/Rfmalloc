@@ -12,3 +12,5 @@ packages/*/README.html
 tools/vendor-ggml/cache/
 _site/
 packages/*/docs/
+packages/Rggml/inst/ggml/ggml-vulkan/generated/
+packages/Rggml/inst/ggml/ggml-vulkan/vulkan-shaders/vulkan-shaders-gen

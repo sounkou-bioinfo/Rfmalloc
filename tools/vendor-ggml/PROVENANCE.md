@@ -36,7 +36,7 @@ immutable CRAN artifact plus a small, documented patch set, both kept here.
 - 45 of those 52 files are byte-identical to stock ggmlR 0.7.8; the other 7 are
   our patches below.
 
-## patches/ — our 7 local edits, on top of stock 0.7.8
+## patches/ — our 9 local edits, on top of stock 0.7.8
 
 | patch | rationale |
 |---|---|
@@ -44,6 +44,8 @@ immutable CRAN artifact plus a small, documented patch set, both kept here.
 | `ggml-backend-meta.cpp` | make the per-device meta caches **never-destroyed heap singletons**, so C++ does not run their destructors at process exit in an order undefined relative to backend/driver teardown (faulted otherwise). |
 | `ggml-context.c`, `ggml-graph.c` | **NULL-guard** the results of `ggml_new_object` / `ggml_new_graph_custom`: on a too-small memory pool these return NULL, and the stock code dereferenced them → heap corruption / silent abort. |
 | `ggml-cpu/arch-fallback.h` | drop the `ggml_vec_dot_q4_K_q8_K_generic → ...` alias so our **runtime SIMD dispatcher** (`packages/Rggml/tools/simd/`) can own the canonical symbol and route to the staged AVX2/NEON variant. |
+| `ggml-vulkan/ggml-vulkan-graph.cpp` | one call site passes the buffer interface **by value**; our by-pointer patch above changes that signature, so it needs the `&`. (The other `ggml-vulkan-*.cpp` are `#include`d into `ggml-vulkan.cpp`, which is the only Vulkan TU compiled on its own.) |
+| `ggml-vulkan/ggml-vulkan-misc.cpp` | **`GGML_VK_ALLOW_CPU=1`** opts in to Vulkan devices reporting `VK_PHYSICAL_DEVICE_TYPE_CPU`. Upstream deliberately refuses them, so a software driver (Mesa lavapipe) enumerates nothing and the Vulkan backend cannot be correctness-tested on a machine without a GPU — including CI. Unset, behaviour is byte-for-byte upstream's. |
 
 ## overlay/ — files that are ours, not GGML's
 
@@ -63,9 +65,16 @@ refreshed *directly from ggml-org / llama.cpp in-tree* at a pinned commit SHA
 hardware), and these patches re-applied on top. `vendorggml.R` is the template
 for that: swap the pinned base, re-run, re-validate.
 
-## GPU path note
+## GPU path
 
-ggmlR 0.7.8 already vendors a complete `ggml-vulkan/` tree (with the
-shader-gen step). That is one viable route to a GPU backend for non-NVIDIA
-hardware; the NVIDIA route is CUDA direct from upstream. Either way the vendor
-recipe here is where a GPU source subset would be added to `manifest.txt`.
+The `ggml-vulkan/` tree (backend + 156 `.comp` shaders + the shader generator)
+**is vendored** — it comes from the same pinned tarball as the CPU core, so it
+version-matches it, and it is listed in `manifest.txt` like everything else. It
+is compiled only when `packages/Rggml/configure` is given `--with-vulkan`
+(never auto-detected: the largest generated shader TU is a 141 MB array literal
+that needs ~5 GB of RAM to compile, independent of `-O` level).
+
+CUDA is the remaining GPU route (NVIDIA-only, must come direct from ggml-org at
+a version matching the core). When it lands it goes in the same way: add its
+sources to `manifest.txt`, its build to `configure`, and any local edits to
+`patches/`.
