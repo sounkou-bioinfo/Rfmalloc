@@ -116,18 +116,64 @@ if $CC -mavx2 -mfma "$_probe_c" -o "${_probe_c}.out" >/dev/null 2>&1; then
     SIMD_EXTRA_OBJECTS="$SIMD_EXTRA_OBJECTS rggml_q4k_avx2.o"
     SIMD_DISPATCH_DEFS="$SIMD_DISPATCH_DEFS -DRGGML_HAVE_AVX2"
 fi
-# aarch64 (Apple Silicon macOS, ARM Linux/Graviton, Windows-on-ARM): NEON is a
-# mandatory baseline, so stage a -O3 NEON variant whenever the target is
-# aarch64 (no ISA flag or CPUID gate is needed for NEON there).
+# aarch64 (Apple Silicon, ARM Linux/Graviton, Windows-on-ARM): NEON is a
+# mandatory baseline, so we can compile GGML's own hand-tuned NEON kernels
+# (ggml-cpu/arch/arm/quants.c) unconditionally - no ISA flag, no CPUID gate, no
+# portability risk. They cover every quantized type, so they supersede both
+# GGML_CPU_GENERIC and our staged single-kernel dispatcher (which would in fact
+# duplicate the canonical ggml_vec_dot_q4_K_q8_K they define).
+GENERIC_DEFS="-DGGML_CPU_GENERIC"
+ARCH_OBJECTS=""
+DISPATCH_OBJECTS="cpu_features.o rggml_simd_dispatch.o"
 if $CC -dM -E -x c "$_probe_c" 2>/dev/null | grep -q '__aarch64__\|_M_ARM64'; then
-    echo "SIMD: aarch64 (NEON baseline) - staging NEON q4_K kernel variant"
-    SIMD_EXTRA_OBJECTS="$SIMD_EXTRA_OBJECTS rggml_q4k_neon.o"
-    SIMD_DISPATCH_DEFS="$SIMD_DISPATCH_DEFS -DRGGML_HAVE_NEON"
+    if [ -f ggml-cpu/arch/arm/quants.c ]; then
+        echo "SIMD: aarch64 - using GGML's native NEON kernels (all quantized types)"
+        GENERIC_DEFS=""
+        ARCH_OBJECTS="ggml-cpu/arch/arm/quants.o"
+        DISPATCH_OBJECTS=""
+    else
+        echo "SIMD: aarch64 (NEON baseline) - staging NEON q4_K kernel variant"
+        SIMD_EXTRA_OBJECTS="$SIMD_EXTRA_OBJECTS rggml_q4k_neon.o"
+        SIMD_DISPATCH_DEFS="$SIMD_DISPATCH_DEFS -DRGGML_HAVE_NEON"
+    fi
 fi
 if [ -z "$SIMD_EXTRA_OBJECTS" ]; then
     echo "SIMD: no staged variant for this toolchain - q4_K uses the scalar reference"
 fi
 rm -f "$_probe_base" "$_probe_c" "${_probe_c}.out"
+
+# --- Does R's BLAS actually provide single precision? -------------------------
+# GGML's BLAS backend calls cblas_sgemm; our shim (rggml_cblas.c) implements it
+# over the Fortran BLAS. But R only guarantees the DOUBLE routines: <R_ext/BLAS.h>
+# declares no single-precision entry points, and Windows' Rblas.dll exports no
+# sgemm_ at all. Most Linux reference BLAS builds do, which is why this went
+# unnoticed until the first Windows build failed to link. Probe, and let the shim
+# promote to dgemm_ when sgemm_ is missing.
+CBLAS_DEFS=""
+if [ -z "${RGGML_NO_SGEMM:-}" ]; then
+    _bl=`"${R_HOME}/bin/R" CMD config BLAS_LIBS 2>/dev/null`
+    _fl=`"${R_HOME}/bin/R" CMD config FLIBS 2>/dev/null`
+    _sg=`mktemp 2>/dev/null || echo "/tmp/rggml_sgemm_$$"`
+    cat > "${_sg}.c" <<'SGEOF'
+extern void sgemm_(const char *, const char *, const int *, const int *, const int *,
+                   const float *, const float *, const int *, const float *, const int *,
+                   const float *, float *, const int *);
+int main(void) {
+    int n = 1; float a = 0, b = 0, c = 0, al = 1, be = 0;
+    sgemm_("N", "N", &n, &n, &n, &al, &a, &n, &b, &n, &be, &c, &n);
+    return 0;
+}
+SGEOF
+    if $CC "${_sg}.c" -o "${_sg}.out" $_bl $_fl >/dev/null 2>&1; then
+        echo "BLAS: sgemm_ available - GGML's BLAS backend uses it directly"
+        CBLAS_DEFS="-DRGGML_HAVE_SGEMM"
+    else
+        echo "BLAS: no sgemm_ in R's BLAS - promoting to dgemm_ in the cblas shim"
+    fi
+    rm -f "$_sg" "${_sg}.c" "${_sg}.out"
+else
+    echo "BLAS: RGGML_NO_SGEMM set - forcing the dgemm_ promotion path"
+fi
 
 # --- Vulkan backend (only when requested; see the note at the top) ------------
 # Mirrors ggmlR's proven, CRAN-accepted recipe: probe glslc's optional shader
@@ -234,6 +280,8 @@ fi
 
 make clean >/dev/null 2>&1 || true
 if make SIMD_EXTRA_OBJECTS="$SIMD_EXTRA_OBJECTS" SIMD_DISPATCH_DEFS="$SIMD_DISPATCH_DEFS" \
+        GENERIC_DEFS="$GENERIC_DEFS" ARCH_OBJECTS="$ARCH_OBJECTS" \
+        DISPATCH_OBJECTS="$DISPATCH_OBJECTS" CBLAS_DEFS="$CBLAS_DEFS" \
         VULKAN_OBJECTS="$VULKAN_OBJECTS" VULKAN_CPPFLAGS="$VULKAN_CPPFLAGS"; then
     echo "libggml.a built successfully"
 else

@@ -14,15 +14,15 @@ as one commit and is validated as one unit.
   updating COPYRIGHTS)
 
 ## Layout
-- `packages/Rfmalloc` — substrate: file-backed ALTREP + fmalloc runtime, codec
+- `packages/Rfmalloc` - substrate: file-backed ALTREP + fmalloc runtime, codec
   registry + matmul backend registry (C API, see `inst/include/Rfmalloc.h`),
   panel matmul, OOC eviction, ALP/sparse codecs
-- `packages/Rgguf` — GGUF reader/writer; registers the quantized codecs with
+- `packages/Rgguf` - GGUF reader/writer; registers the quantized codecs with
   Rfmalloc; vendored gguflib (with local fixes - see its COPYRIGHTS)
-- `packages/Rggml` — vendored GGML static lib + C-callables; BLAS backend via
+- `packages/Rggml` - vendored GGML static lib + C-callables; BLAS backend via
   cblas→Fortran shim; runtime-SIMD kernels staged in `tools/simd` by configure
   (RsimdDispatch pattern: ISA flags never appear in R's recorded flags)
-- `packages/Rllm` — composition: registers Rggml as Rfmalloc's typed
+- `packages/Rllm` - composition: registers Rggml as Rfmalloc's typed
   (codec-aware) matmul backend; quantize/dequantize R surface; the LLM
   graph-builder lands here
 

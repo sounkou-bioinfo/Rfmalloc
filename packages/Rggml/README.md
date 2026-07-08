@@ -10,7 +10,7 @@ Rggml is a **carrier package**: it vendors the CPU backend of the
 [GGML](https://github.com/ggml-org/ggml) tensor library as a static
 library, installs its headers, and exposes GGML’s core tensor-context
 and matrix-multiply compute path through `R_RegisterCCallable()`
-C-callable entry points. It is **not** a modeling or ops API — the only
+C-callable entry points. It is **not** a modeling or ops API - the only
 R-level surface is `ggml_version()` and an internal smoke-test helper.
 The point of the package is for *other* R packages to link against it
 and drive GGML tensor math from their own C/C++ code, without each
@@ -31,11 +31,11 @@ abstraction, tensor-level quantize/dequantize (including K-quants such
 as `Q4_K`), the CPU backend’s compute kernels, and the **BLAS backend**.
 
 The CPU kernels are built with `-DGGML_CPU_GENERIC` (the portable
-scalar/reference path — no `-march` SIMD flags, no OpenMP, no
+scalar/reference path - no `-march` SIMD flags, no OpenMP, no
 hand-written x86 SIMD kernel files). But dense matrix products do
 **not** run scalar: GGML’s BLAS backend (`-DGGML_USE_BLAS`) offloads F32
 `mul_mat` to whatever BLAS the R build links against (reference
-`libRblas`, OpenBLAS, MKL, Accelerate, …) — BLAS is universal in R, so
+`libRblas`, OpenBLAS, MKL, Accelerate, …) - BLAS is universal in R, so
 this needs no extra system dependency. GGML’s BLAS backend is written
 against the C `cblas_sgemm` interface, which R does *not* guarantee (R
 guarantees only the Fortran `sgemm_`); Rggml bridges the gap with a
@@ -45,15 +45,15 @@ convention, linking `$(BLAS_LIBS) $(FLIBS)`.
 
 And the quantized dequant-dot path that BLAS cannot cover is **not**
 scalar either: the hot `q4_K x q8_K` vec-dot is compiled by `configure`
-into ISA-specific variants — `-mavx2 -mfma -O3` on x86 (including Intel
+into ISA-specific variants - `-mavx2 -mfma -O3` on x86 (including Intel
 macOS) and `-O3` NEON on aarch64 (Apple Silicon, ARM Linux/Graviton,
-Windows-on-ARM) — and a CPUID dispatcher (`tools/simd/`) picks the best
+Windows-on-ARM) - and a CPUID dispatcher (`tools/simd/`) picks the best
 at runtime, falling back to GGML’s scalar reference. This follows the
 [RsimdDispatch](https://github.com/sounkou-bioinfo/RsimdDispatch)
 strategy: the ISA flags live in `configure`, never in R’s recorded
 package flags, so R CMD check raises no “non-portable flags” NOTE, and a
 variant is only ever called after its ISA is confirmed at runtime
-(single `.so`, no `dlopen`). On x86 the AVX2 q4_K dot measures ~6–7x
+(single `.so`, no `dlopen`). On x86 the AVX2 q4_K dot measures ~6-7x
 faster than the scalar reference. More kernels (`q6_K`, `q8_0`) and
 hand-tuned intrinsics are the next steps.
 
@@ -88,7 +88,7 @@ compiled SPIR-V: `mul_mm.comp` is a 464-line GLSL *template* that the
 shader generator compiles into 1,214 variants (every dtype × alignment ×
 accumulator × cooperative-matrix combination), emitted as one C array
 per variant. The resulting `mul_mm.comp.cpp` is a 141 MB
-brace-initializer that costs ~5 GB of RAM to compile — identical at
+brace-initializer that costs ~5 GB of RAM to compile - identical at
 `-O0`, because the cost is the compiler *parsing* the literal. Enabling
 that on any machine that happens to have `glslc` installed would ambush
 CRAN builders; without the flag, nothing about the build changes.
@@ -173,7 +173,7 @@ resolves it via `R_GetCCallable()` and returns a function pointer, e.g.
 
 If you load an R matrix directly into a GGML tensor with
 `ne = c(nrow(M), ncol(M))` pointing at `M`’s own raw column-major memory
-(no copy, no transpose — this is exactly the zero-copy path
+(no copy, no transpose - this is exactly the zero-copy path
 `Rggml_new_tensor(..., data)` is for), then:
 
     ggml_mul_mat(ctx, A, B)  ==  crossprod(A, B)  ==  t(A) %*% B
@@ -184,7 +184,7 @@ in `inst/tinytest/test_mul_mat.R` with hand-computed small cases and
 larger random matrices, through both the ggml-managed and the zero-copy
 tensor paths, driven entirely through the *registered* C-callables (via
 `.Call()` into `src/rggml_test.c`, which itself only uses the
-`Rggml.h`/`R_GetCCallable()` path) — the same path a downstream
+`Rggml.h`/`R_GetCCallable()` path) - the same path a downstream
 `LinkingTo` package would use.
 
 ## How a downstream package uses it
@@ -205,20 +205,20 @@ void do_something(void) {
 }
 ```
 
-No GGML re-vendoring, no linking against `Rggml.so` at the linker level
-— only `R_GetCCallable()` symbol resolution at run time (standard R
-C-callable convention, same as e.g. `Rfmalloc`/`Rgguf`).
+No GGML re-vendoring, no linking against `Rggml.so` at the linker
+level - only `R_GetCCallable()` symbol resolution at run time (standard
+R C-callable convention, same as e.g. `Rfmalloc`/`Rgguf`).
 
 ## Status
 
-- `R CMD check` — clean (`Status: OK`, 0 warnings/notes) on Linux; the
+- `R CMD check` - clean (`Status: OK`, 0 warnings/notes) on Linux; the
   cross-platform matrix (Linux + macOS) runs in CI, see the badge above.
-- `tinytest::test_package("Rggml")` — all tests pass, including the
+- `tinytest::test_package("Rggml")` - all tests pass, including the
   end-to-end `ggml_mul_mat()` proof above.
 - **Platforms**: Linux, macOS and Windows. The Windows build goes
   through `configure.win`, which re-execs the one `configure` with
   `RGGML_WINDOWS=1` so the SIMD probe, the Vulkan shader pipeline and
   the `libggml.a` build are not duplicated; it writes `src/Makevars.win`
-  (no `-ldl` — Windows has no libdl) and finds the Vulkan SDK under its
+  (no `-ldl` - Windows has no libdl) and finds the Vulkan SDK under its
   Windows layout (`$VULKAN_SDK/Bin/glslc.exe`, `-lvulkan-1`). Verified
   by the `windows-latest` job in CI.

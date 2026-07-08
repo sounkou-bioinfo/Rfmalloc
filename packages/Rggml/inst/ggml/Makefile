@@ -34,7 +34,17 @@ INCLUDES = -I. -Iggml-cpu -I../include
 # -DGGML_USE_BLAS enables GGML's BLAS backend (ggml-blas.cpp). Its cblas_sgemm
 # calls are satisfied by our portable shim (cblas.h + rggml_cblas.c) forwarding
 # to R's Fortran sgemm_; the final Rggml.so links $(BLAS_LIBS) $(FLIBS).
-DEFS = -DGGML_USE_CPU -DGGML_CPU_GENERIC -DGGML_USE_BLAS -DGGML_R_PACKAGE -D_GNU_SOURCE -DNDEBUG \
+# On aarch64, ../../configure clears GENERIC_DEFS and passes ARCH_OBJECTS instead:
+# GGML's own hand-tuned NEON vec_dot kernels (ggml-cpu/arch/arm/quants.c) then
+# provide the canonical symbols, and arch-fallback.h's aarch64 section maps the
+# handful they don't implement onto the generic code. NEON is a mandatory
+# baseline on aarch64, so this needs no ISA flag and cannot break portability -
+# unlike arch/x86, whose kernels are gated on compile-time __AVX2__ and would
+# make the binary refuse to run on machines without it.
+GENERIC_DEFS ?= -DGGML_CPU_GENERIC
+ARCH_OBJECTS ?=
+
+DEFS = -DGGML_USE_CPU $(GENERIC_DEFS) -DGGML_USE_BLAS -DGGML_R_PACKAGE -D_GNU_SOURCE -DNDEBUG \
        -DGGML_VERSION='"0.9.5"' -DGGML_COMMIT='"vendored-unknown"' \
        -include rggml_compat.h
 
@@ -69,9 +79,12 @@ CXX_SOURCES = \
 SIMD_DIR = ../../tools/simd
 SIMD_EXTRA_OBJECTS ?=
 SIMD_DISPATCH_DEFS ?=
+# Emptied by configure on aarch64: GGML's arch/arm/quants.c already defines the
+# canonical ggml_vec_dot_q4_K_q8_K, which our dispatcher would duplicate.
+DISPATCH_OBJECTS ?= cpu_features.o rggml_simd_dispatch.o
 
 OBJECTS = $(C_SOURCES:.c=.o) $(CXX_SOURCES:.cpp=.o) rggml_io.o rggml_cblas.o \
-          cpu_features.o rggml_simd_dispatch.o $(SIMD_EXTRA_OBJECTS) \
+          $(DISPATCH_OBJECTS) $(SIMD_EXTRA_OBJECTS) $(ARCH_OBJECTS) \
           $(VULKAN_OBJECTS)
 
 .PHONY: all clean
@@ -90,11 +103,14 @@ $(STATICLIB): $(OBJECTS)
 rggml_io.o: rggml_io.c
 	$(CC) $(ALL_CFLAGS) $(R_INCLUDE_FLAGS) -DR_GGML_IO_IMPL -c $< -o $@
 
-# rggml_cblas.c implements cblas_sgemm() over Fortran sgemm_. It needs R's
+# rggml_cblas.c implements cblas_sgemm() over R's Fortran BLAS. It needs R's
 # headers (F77_NAME from <R_ext/RS.h>) but must NOT get the rggml_compat.h
 # redirections, so it is built with a plain flag set (INCLUDES gives it cblas.h).
+# CBLAS_DEFS carries -DRGGML_HAVE_SGEMM when ../../configure link-probed sgemm_
+# successfully; otherwise the shim promotes to dgemm_, which R always provides.
+CBLAS_DEFS ?=
 rggml_cblas.o: rggml_cblas.c
-	$(CC) $(CPPFLAGS) $(INCLUDES) $(R_INCLUDE_FLAGS) $(CFLAGS) -c $< -o $@
+	$(CC) $(CPPFLAGS) $(INCLUDES) $(R_INCLUDE_FLAGS) $(CBLAS_DEFS) $(CFLAGS) -c $< -o $@
 
 # --- SIMD runtime dispatch (sources under ../../tools/simd) ------------------
 # cpu_features.c: pure CPUID/runtime detection, no GGML or R dependencies.

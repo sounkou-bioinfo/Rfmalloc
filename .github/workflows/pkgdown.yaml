@@ -78,7 +78,7 @@ jobs:
           pandoc README.md \
             --standalone \
             --from=gfm \
-            --metadata title="Rfmalloc — out-of-core arrays for R" \
+            --metadata title="Rfmalloc: out-of-core arrays for R" \
             --include-in-header=tools/site/head.html \
             --output=_site/index.html
           ls -la _site

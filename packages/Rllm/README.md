@@ -10,7 +10,7 @@ Rllm is the **composition layer** of the
 [Rfmalloc](https://github.com/sounkou-bioinfo/Rfmalloc) out-of-core
 array stack: it wires (file-backed, memory-mapped storage), (GGUF model
 files as fmalloc tensors) and (vendored GGML compute with
-runtime-SIMD-dispatched quantized kernels) into LLM inference —
+runtime-SIMD-dispatched quantized kernels) into LLM inference -
 quantized weights stay in their GGUF encoding, memory-mapped from disk,
 and are never decoded to double on the compute path.
 
@@ -41,14 +41,15 @@ sqrt(sum((Y - X %*% W)^2) / sum((X %*% W)^2))        # q4_k-accurate
 
 ## Inference: bytes in, bytes out
 
-The model I/O boundary is **token ids and raw bytes** — never character
+The model I/O boundary is **token ids and raw bytes** - never character
 vectors in the core. `rllm_encode()`/`rllm_decode()` are edge codecs
 built from the GGUF’s own byte-level BPE metadata (no external
 tokenizer); `rawToChar()` is the caller’s interpretation. The same
 boundary serves byte-level, vision, or pure-codec models later.
 
 ``` r
-model <- rllm_gguf_model("SmolLM2-135M.Q4_K_M.gguf")
+rt <- Rfmalloc::open_fmalloc("weights.bin", size_gb = 2)   # the memory-mapped store
+model <- rllm_gguf_model("SmolLM2-135M.Q4_K_M.gguf", runtime = rt)
 model
 #> <rllm_model llama: 30 layers, n_embd 576, 9/3 heads, n_ff 1536,
 #>  vocab 49152; 272 tensors (q5_0/f32/q4_k/q8_0/q6_k)>
@@ -72,7 +73,7 @@ What the engine does:
   zero-copy.
 - `rllm_forward()` assembles the GGML graph (RMSNorm, RoPE, causal
   self-attention with GQA, SwiGLU) and computes it on the GGML CPU
-  backend through ’s C-callables — Rllm links no GGML itself.
+  backend through ’s C-callables - Rllm links no GGML itself.
 - `rllm_kv_cache()` allocates per-layer cache slabs, plain R memory or
   **fmalloc-backed** (the cache as a disk citizen: file-backed,
   evictable, and open to a quantized-cache codec later).
@@ -102,18 +103,22 @@ The hermetic tests write their synthetic GGUF models at test time with
 
 Today, inference runs on the **GGML CPU backend**:
 runtime-SIMD-dispatched quantized kernels (AVX2 on x86, NEON on aarch64,
-CPUID-selected at runtime — no non-portable flags recorded) with dense
+CPUID-selected at runtime - no non-portable flags recorded) with dense
 products offloadable to R’s BLAS.
 
-**CUDA is the next backend (roadmap — not implemented yet).** The plan
-follows the same pattern as ’s BLAS backend: ’s `configure` will
-**autodetect `nvcc`** — absent, nothing changes (CRAN/CI builds are
-unaffected); present, GGML’s CUDA backend is compiled in and exposed as
-a `Rggml_backend_cuda_init` C-callable, and Rllm gains a backend switch
-for forward/generate. The target is validated: the identical model and
-quantization decode at ~455 tokens/s (~28x this CPU stack) on an RTX
-5050 via upstream GGML CUDA. Vulkan remains on the long-term roadmap for
-non-NVIDIA GPUs.
+A **Vulkan GPU backend** ships in , opt-in at build time
+(`configure.args = "--with-vulkan"`; see `rggml_vulkan_info()`). It runs
+on any vendor’s GPU. Wiring it through
+`rllm_forward()`/`rllm_generate()` is the next step: the device-buffer
+residency API it needed
+(`Rggml_backend_alloc_ctx_tensors`/`tensor_set`/`tensor_get`) is backend
+agnostic, so the same code will drive CUDA.
+
+**CUDA is the fastest route and is not implemented yet.** The identical
+model and quantization decode at ~455 tokens/s (~28x this CPU stack) on
+an RTX 5050 via upstream GGML CUDA; what remains is vendoring
+`ggml-cuda` at a version matching the core and adding `nvcc` rules to
+the build.
 
 ## Install
 

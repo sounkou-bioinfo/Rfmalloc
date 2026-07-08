@@ -29,6 +29,17 @@
 args <- commandArgs(trailingOnly = TRUE)
 mode <- if (length(args) > 0) args[[1]] else "check"
 
+## --- pinned base #2: GGML's own hand-tuned NEON kernels ----------------------
+# ggmlR prunes ggml-cpu/arch/, so the aarch64 kernels must come straight from
+# ggml-org. We pin the *file's* sha256 rather than the tarball's: GitHub has
+# changed archive compression before, which silently breaks tarball checksums,
+# but the file content is what we actually vendor.
+ggml_org_tag  <- "v0.9.11"
+ggml_org_url  <- sprintf("https://github.com/ggml-org/ggml/archive/refs/tags/%s.tar.gz", ggml_org_tag)
+arm_rel_path  <- "src/ggml-cpu/arch/arm/quants.c"
+arm_dst_path  <- "ggml-cpu/arch/arm/quants.c"
+arm_sha       <- "0efbb89fca266a62b2c226bf7700317d80e95a47b2af97435ca92cac36763446"
+
 ## --- pinned base ------------------------------------------------------------
 ggmlr_ver <- "0.7.8"
 ggmlr_sha <- "f7f414729e389dce7320cfcfd5c63298382da00c436e3e5bc49bf33f067d0dc7"
@@ -112,6 +123,27 @@ manifest <- manifest[nzchar(manifest)]
 for (f in manifest) {
   dir.create(file.path(ggml_out, dirname(f)), showWarnings = FALSE, recursive = TRUE)
   stopifnot(file.copy(file.path(src, f), file.path(ggml_out, f), overwrite = TRUE))
+}
+
+message("copy GGML's aarch64 NEON kernels from ggml-org ", ggml_org_tag)
+{
+  tb2 <- file.path(cache, sprintf("ggml-%s.tar.gz", ggml_org_tag))
+  if (!file.exists(tb2)) {
+    dir.create(cache, showWarnings = FALSE, recursive = TRUE)
+    download.file(ggml_org_url, tb2, quiet = TRUE, mode = "wb")
+  }
+  w2 <- file.path(work, "ggml-org"); dir.create(w2, showWarnings = FALSE)
+  utils::untar(tb2, exdir = w2)
+  src2 <- list.files(w2, full.names = TRUE)[1]
+  arm_src <- file.path(src2, arm_rel_path)
+  if (!file.exists(arm_src)) stop("ggml-org ", ggml_org_tag, ": missing ", arm_rel_path)
+  got <- sha256(arm_src)
+  if (!identical(got, arm_sha)) {
+    stop(sprintf("%s sha256 mismatch\n  expected %s\n  got      %s", arm_rel_path, arm_sha, got))
+  }
+  dir.create(file.path(ggml_out, dirname(arm_dst_path)), showWarnings = FALSE, recursive = TRUE)
+  stopifnot(file.copy(arm_src, file.path(ggml_out, arm_dst_path), overwrite = TRUE))
+  message("  ", arm_dst_path, " (sha256 ", substr(got, 1, 12), "...)")
 }
 
 message("copy installed public headers")
