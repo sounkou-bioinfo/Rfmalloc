@@ -97,12 +97,12 @@ semantics).</p></dd>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
     <p>On an <em>unshared</em> fmalloc vector, an ordinary <code>x[i] &lt;- value</code> already writes
-in place through the ALTREP data pointer — no copy — because the file-backed
+in place through the ALTREP data pointer - no copy - because the file-backed
 storage is exposed directly and this package controls duplication. The copy
 that hurts happens when the vector is <em>shared</em> (<code>y &lt;- x</code>): R then duplicates
 the whole payload to preserve value semantics before modifying, which is
 catastrophic for a larger-than-RAM or persistent vector. These functions
-mutate by reference regardless of sharing — they never copy, updating the
+mutate by reference regardless of sharing - they never copy, updating the
 durable store directly and returning the same object invisibly.</p>
     </div>
     <div class="section level2">
@@ -110,7 +110,7 @@ durable store directly and returning the same object invisibly.</p>
 
 
 <p>Because there is no copy, all bindings to the same fmalloc vector observe the
-change. After <code>y &lt;- x; fmalloc_set(x, 1, 5)</code>, <code>y[1]</code> is also <code>5</code> — <code>x</code> and
+change. After <code>y &lt;- x; fmalloc_set(x, 1, 5)</code>, <code>y[1]</code> is also <code>5</code> - <code>x</code> and
 <code>y</code> name the same backing store, whereas ordinary <code>x[1] &lt;- 5</code> would copy <code>x</code>
 (leaving <code>y</code> untouched). This breaks R's usual value semantics <em>by design</em>;
 for a persistent runtime it is a feature (the durable data is updated). For

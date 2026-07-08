@@ -4,7 +4,7 @@ Writes to an fmalloc runtime (including in-place mutations via
 [`fmalloc_set()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_insitu.md)
 and friends) land in the OS page cache of the `MAP_SHARED` backing file.
 They survive a normal process exit, but until the kernel writes dirty
-pages back — which it does asynchronously — a crash or power loss can
+pages back - which it does asynchronously - a crash or power loss can
 lose unsynced data, with no atomicity. `fmalloc_sync()` forces the
 durability barrier with `msync()` (and `fsync()`), so persistent data is
 on disk when it returns.

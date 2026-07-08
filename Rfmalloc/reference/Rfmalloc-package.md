@@ -164,7 +164,7 @@ Useful links:
 
 - <https://github.com/sounkou-bioinfo/Rfmalloc>
 
-- <https://sounkou-bioinfo.github.io/Rfmalloc/>
+- <https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/>
 
 - Report bugs at <https://github.com/sounkou-bioinfo/Rfmalloc/issues>
 
