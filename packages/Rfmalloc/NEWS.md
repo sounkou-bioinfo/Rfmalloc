@@ -2,6 +2,23 @@
 
 ## 0.1.0 (unreleased)
 
+- Added the `"bed"` tensor codec: PLINK 1 genotypes at **2 bits each**, via
+  `fmalloc_bed()`. A `.bed` is already the storage we want, because SNP-major
+  layout stores each variant contiguously and fmalloc tensors are column-major,
+  so a variant *is* a column. Four times tighter than a one-byte-per-genotype
+  file-backed matrix, thirty-two times tighter than the doubles it decodes to
+  (500k samples x 800k variants: 100 GB, not 3.2 TB). Products against the
+  tensor decode bounded column panels and contract them with BLAS, so genotypes
+  are never materialized; `X %*% Omega` and `crossprod(X, Y)`, the two kernels a
+  randomized SVD needs, both work today.
+
+  No ABI change was needed. PLINK pads every variant to a byte boundary, so a
+  flat element index does not map affinely onto a byte offset unless
+  `nrow %% 4 == 0`; but the tensor matmul only ever decodes whole columns, so
+  `"bed"` registers as a *self-indexing* codec exactly as `"alp"` and `"sparse"`
+  already do, and works out its own offsets from a header. The padded case
+  (`nrow %% 4 != 0`) is what the round-trip test pins.
+
 - Out-of-core `crossprod(X)` now picks its blocking from the shape, and no
   longer re-reads `X` once per column panel. The old kernel held a column panel
   of `X` resident and swept every other panel against it, so it moved

@@ -656,6 +656,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"rfm_tensor_materialize_impl", (DL_FUNC)&rfm_tensor_materialize_impl, 3},
     {"rfm_tensor_codec_info_impl", (DL_FUNC)&rfm_tensor_codec_info_impl, 1},
     {"rfm_tensor_codec_list_impl", (DL_FUNC)&rfm_tensor_codec_list_impl, 0},
+    {"rfm_tensor_bed_encode_impl", (DL_FUNC)&rfm_tensor_bed_encode_impl, 2},
     {"rfm_matmul_ooc_impl", (DL_FUNC)&rfm_matmul_ooc_impl, 3},
     {"rfm_crossprod_ooc_impl", (DL_FUNC)&rfm_crossprod_ooc_impl, 3},
     {"rfm_tcrossprod_ooc_impl", (DL_FUNC)&rfm_tcrossprod_ooc_impl, 2},
@@ -684,6 +685,7 @@ void R_init_Rfmalloc(DllInfo *dll)
     tensor_register_builtin_codecs();
     tensor_register_alp_codec();
     tensor_register_sparse_codec();
+    tensor_register_bed_codec();
     R_registerRoutines(dll, nullptr, CallEntries, nullptr, nullptr);
     register_c_callables();
     R_useDynamicSymbols(dll, FALSE);

@@ -1,0 +1,68 @@
+library(tinytest)
+library(Rfmalloc)
+
+message("Testing the PLINK 1 .bed genotype codec (2 bits/genotype)...")
+
+(function() {
+    message("  Test 1: exact round-trip, including NA and a padded variant")
+    tmp <- tempfile(fileext = ".bin")
+    rt <- open_fmalloc(tmp, mode = "scratch", size_gb = 0.2)
+    on.exit({
+        cleanup_fmalloc(rt)
+        unlink(tmp)
+    }, add = TRUE)
+
+    expect_true("bed" %in% fmalloc_tensor_codecs())
+
+    set.seed(5L)
+    # nrow %% 4 == 1, so every variant carries three padding genotypes in its
+    # final byte: the case a flat element-to-byte mapping would get wrong.
+    m <- 1001L
+    n <- 40L
+    g <- matrix(sample(c(0L, 1L, 2L, NA_integer_), m * n, replace = TRUE,
+                       prob = c(0.4, 0.35, 0.2, 0.05)), m, n)
+    tn <- fmalloc_bed(g, runtime = rt)
+
+    expect_equal(dim(tn), c(m, n))
+    expect_identical(as.numeric(fmalloc_tensor_materialize(tn)), as.numeric(g))
+
+    # 2 bits per genotype, plus a 24-byte header. Never the 8 bytes of a double.
+    bits <- 8 * length(unclass(tn)) / (m * n)
+    expect_true(bits > 2 && bits < 2.02)
+
+    message("  Test 2: dosages outside 0/1/2/NA are rejected, not silently packed")
+    bad <- matrix(c(0L, 3L, 1L, 2L), 2L, 2L)
+    expect_error(fmalloc_bed(bad, runtime = rt), "dosage must be")
+    expect_error(fmalloc_bed(matrix(1.5, 2, 2), runtime = rt), "integer matrix")
+})()
+
+(function() {
+    message("  Test 3: products decode column panels, never the whole matrix")
+    tmp <- tempfile(fileext = ".bin")
+    rt <- open_fmalloc(tmp, mode = "scratch", size_gb = 0.5)
+    on.exit({
+        cleanup_fmalloc(rt)
+        unlink(tmp)
+    }, add = TRUE)
+
+    set.seed(9L)
+    m <- 3000L
+    n <- 250L
+    k <- 4L
+    # No missing values: NA would propagate through BLAS, as it should. Real
+    # pipelines impute or standardize first.
+    g <- matrix(sample(c(0L, 1L, 2L), m * n, replace = TRUE), m, n)
+    tn <- fmalloc_bed(g, runtime = rt)
+    gd <- matrix(as.numeric(g), m, n)
+
+    # Both orientations: X %*% Omega and t(X) %*% Y are exactly the two kernels
+    # a randomized SVD needs.
+    V <- matrix(rnorm(n * k), n, k)
+    expect_equal(matrix((tn %*% V)[], m, k), gd %*% V, tolerance = 1e-10)
+
+    W <- matrix(rnorm(m * k), m, k)
+    expect_equal(matrix(crossprod(tn, W)[], n, k), crossprod(gd, W), tolerance = 1e-10)
+
+    # The payload stays 2 bits/genotype; only panels ever become doubles.
+    expect_true(length(unclass(tn)) < m * n * 8 / 30)
+})()
