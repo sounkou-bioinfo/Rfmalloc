@@ -19,8 +19,9 @@ Description: Vendors the CPU backend of the 'GGML' tensor library
     addition.
 License: GPL (>= 2)
 Encoding: UTF-8
-SystemRequirements: GNU make, C++17
-OS_type: unix
+SystemRequirements: GNU make, C++17, 'glslc' and Vulkan headers (optional,
+    only for the '--with-vulkan' GPU backend; on Windows the LunarG Vulkan
+    SDK with VULKAN_SDK set)
 Biarch: false
 Depends:
     R (>= 4.4.0)

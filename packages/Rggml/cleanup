@@ -1,0 +1,5 @@
+#!/bin/sh
+rm -f src/Makevars src/*.o src/*.so
+rm -f inst/ggml/libggml.a inst/ggml/*.o inst/ggml/ggml-cpu/*.o
+rm -rf inst/ggml/ggml-vulkan/generated
+rm -f inst/ggml/ggml-vulkan/vulkan-shaders/vulkan-shaders-gen

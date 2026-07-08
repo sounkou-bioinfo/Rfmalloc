@@ -31,6 +31,10 @@ jobs:
           - {pkg: Rfmalloc, os: ubuntu-latest,  r: 'devel'}
           - {pkg: Rfmalloc, os: ubuntu-latest,  r: 'release'}
           - {pkg: Rfmalloc, os: ubuntu-latest,  r: 'oldrel-1'}
+          # Rggml now builds on Windows too (Rtools/MinGW: configure.win writes
+          # src/Makevars.win without -ldl). Rgguf/Rllm stay unix for now - Rgguf's
+          # vendored gguflib mmaps the GGUF file with no _WIN32 path.
+          - {pkg: Rggml,    os: windows-latest, r: 'release'}
           # Unix-only packages (OS_type: unix).
           - {pkg: Rgguf,    os: ubuntu-latest,  r: 'release'}
           - {pkg: Rgguf,    os: ubuntu-latest,  r: 'devel'}

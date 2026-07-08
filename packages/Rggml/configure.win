@@ -1,0 +1,14 @@
+#!/bin/sh
+# R runs this instead of ./configure on Windows (Rtools supplies sh, make, ar
+# and a MinGW toolchain). The build is the same on every platform, so rather
+# than maintain a second copy of the SIMD probe, the Vulkan shader pipeline and
+# the libggml.a build, delegate: ./configure branches on RGGML_WINDOWS to write
+# src/Makevars.win (no -ldl; Windows has no libdl) and to find the Vulkan SDK
+# under its Windows layout ($VULKAN_SDK/Bin/glslc.exe, -lvulkan-1).
+#
+# Vulkan stays opt-in here too:
+#     R CMD INSTALL --configure-args=--with-vulkan .
+# with the LunarG Vulkan SDK installed and VULKAN_SDK set.
+RGGML_WINDOWS=1
+export RGGML_WINDOWS
+exec sh ./configure "$@"
