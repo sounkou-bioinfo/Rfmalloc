@@ -34,7 +34,8 @@
 
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.1.0" id="rggml-010-unreleased">Rggml 0.1.0 (unreleased)<a class="anchor" aria-label="anchor" href="#rggml-010-unreleased"></a></h2>
-<ul><li>
+<ul><li><p><strong>Rggml now builds on Windows</strong> (Rtools/MinGW); <code>OS_type: unix</code> is gone. R runs <code>configure.win</code>, which re-execs the single <code>configure</code> with <code>RGGML_WINDOWS=1</code> rather than duplicating the SIMD probe, the Vulkan shader pipeline and the <code>libggml.a</code> build. The Windows branch writes <code>src/Makevars.win</code> without <code>-ldl</code> (Windows has no libdl) and locates the Vulkan SDK under its Windows layout (<code>$VULKAN_SDK/Bin/glslc.exe</code>, <code>-lvulkan-1</code>). A <code>windows-latest</code> CI job verifies it. The vendored GGML was already Windows-hardened: the by-pointer <code>ggml_backend_buffer_i</code> and never-destroyed-teardown-singleton patches exist precisely because passing that POD by value, and running those destructors at exit, crashed on Windows/MinGW.</p></li>
+<li>
 <p>Added the <strong>Vulkan GPU backend</strong> (API version 7), vendored from the same pinned ggmlR tarball as the CPU core (so it version-matches it) through <code>tools/vendor-ggml</code>. It is <strong>opt-in at build time</strong>, never auto-detected:</p>
 <pre><code>install.packages("Rggml", configure.args = "--with-vulkan")
 R CMD INSTALL --configure-args=--with-vulkan .</code></pre>
