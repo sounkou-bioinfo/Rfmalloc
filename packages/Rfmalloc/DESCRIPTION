@@ -1,5 +1,5 @@
 Package: Rfmalloc
-Title: Persistent ALTREP Vectors
+Title: Out-of-Core Arrays with Pluggable Codecs and Compute Backends
 Version: 0.1.0
 Authors@R: c(
     person(given = "Sounkou Mahamane", family = "Toure", email = "sounkoutoure@gmail.com", role = c("aut", "cre")),
@@ -7,11 +7,21 @@ Authors@R: c(
     person(given = "Wolfram", family = "Gloger", role = "cph", comment = "ptmalloc3"),
     person(given = "Free Software Foundation, Inc.", role = "cph", comment = "selected GNU C Library support files")
     )
-Description: Provides experimental file-backed, ALTREP-style vector allocation
-    for R using the 'fmalloc' library. The package supports persistent and
+Description: Computes on arrays that do not fit in memory. Vectors, matrices and
+    tensors are allocated inside a memory-mapped file through R's ALTREP
+    interface, backed by a patched copy of the 'fmalloc' allocator, so available
+    RAM becomes a speed gradient rather than a hard limit. Two plugin registries
+    sit on that substrate: a codec registry deciding how bytes are stored, from
+    lossless floating-point and sparse encodings to compressed and quantized
+    blocks, and a matrix-multiply backend registry deciding how products are
+    computed, defaulting to whatever 'BLAS' the R build links against. Matrix
+    products stream in bounded panels and release the pages they have consumed,
+    so operands larger than memory still multiply. A registered backend may
+    decline any product, in which case the default path answers it, so results
+    never depend on which backend is selected. Also provides persistent and
     scratch runtimes, durable reference-based serialization, explicit vector
-    lifecycle management, and multiple runtime handles for working with several
-    backing files in one R process.
+    lifecycle management, multiple runtime handles per session, and out-of-core
+    reductions and principal components for genomics-scale matrices.
 License: GPL (>= 2)
 Author: Sounkou Mahamane Toure [aut, cre], Kenichi Yasukata [cph] (fmalloc), Wolfram Gloger [cph] (ptmalloc3), Free Software Foundation, Inc. [cph] (selected GNU C Library support files)
 Maintainer: Sounkou Mahamane Toure <sounkoutoure@gmail.com>
