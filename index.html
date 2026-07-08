@@ -369,21 +369,31 @@ next</h2>
 at once, with no change to <code>fmalloc_pca()</code> or
 <code>rllm_generate()</code>:</p>
 <ul>
-<li><strong>today</strong> — R’s BLAS for dense products; GGML’s
+<li><strong>today, CPU</strong> — R’s BLAS for dense products; GGML’s
 runtime-SIMD-dispatched quantized kernels (AVX2 on x86, NEON on aarch64,
 CPUID-selected — no non-portable flags) for quantized weights; both
 out-of-core.</li>
-<li><strong>next: CUDA.</strong> GGML’s CUDA backend will be compiled
-into <code>Rggml</code> when <code>configure</code> autodetects
-<code>nvcc</code> (the same opt-in pattern as the BLAS backend: no
-<code>nvcc</code> → nothing changes, CRAN/CI unaffected) and registered
-as a matmul backend. Then <code>fmalloc_matmul_backend("cuda")</code>
-makes the identical <code>fmalloc_pca(X)</code> and
-<code>rllm_generate(model, …)</code> run their GEMMs on the GPU. The
-target is validated at the GGML level: the same SmolLM2
-<code>Q4_K_M</code> decodes at <strong>~455 tok/s (~28× this CPU
-stack)</strong> on an RTX 5050 (compute capability 12.0) via upstream
-GGML CUDA. Vulkan stays on the roadmap for non-NVIDIA GPUs.</li>
+<li><strong>today, GPU: Vulkan.</strong> GGML’s Vulkan backend is
+vendored and builds into <code>Rggml</code> <strong>on request</strong>
+—
+<code>install.packages("Rggml", configure.args =   "--with-vulkan")</code>,
+needing <code>glslc</code> and the Vulkan headers. It is not
+auto-detected, because GGML embeds 156 compiled SPIR-V shaders and the
+largest is a 141 MB array literal costing ~5 GB of RAM to compile. It
+runs on any vendor’s GPU (NVIDIA, AMD, Intel).
+<code>rggml_vulkan_info()</code> reports what it sees; a build without
+it reports zero devices rather than failing, so callers can probe and
+fall back. Correctness is pinned against the CPU backend, and can be
+exercised without a GPU at all through Mesa’s software driver
+(<code>GGML_VK_ALLOW_CPU=1</code>).</li>
+<li><strong>next: CUDA.</strong> NVIDIA-only, and the fastest: the same
+SmolLM2 <code>Q4_K_M</code> decodes at <strong>~455 tok/s (~28× this CPU
+stack)</strong> on an RTX 5050 via upstream GGML CUDA. The device-buffer
+residency API the Vulkan backend needed
+(<code>Rggml_backend_alloc_ctx_tensors</code>/<code>tensor_set</code>/<code>tensor_get</code>)
+is backend agnostic, so CUDA reuses it; what remains is vendoring
+<code>ggml-cuda</code> at a version matching the core and adding
+<code>nvcc</code> rules to the build.</li>
 </ul>
 <h2 id="the-packages">The packages</h2>
 <p>Four packages, one stack. Each links to its reference documentation;

@@ -17,7 +17,7 @@
   uses scale `is+0` for the low nibbles and `is+1` for the high
   nibbles). Since `Q4_K_M` is the most common real-model quantization,
   this affected `gguf_tensor(as = "numeric")` and
-  [`fmalloc_tensor_materialize()`](https://rdrr.io/pkg/Rfmalloc/man/fmalloc_tensor.html)
+  [`fmalloc_tensor_materialize()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_tensor.html)
   for typical GGUF files. All six registered quantized codecs (`q4_0`,
   `q4_1`, `q8_0`, `q2_k`, `q4_k`, `q6_k`) now decode **bit-identically**
   to GGML’s own type-traits `to_float` reference, verified by a new
@@ -28,7 +28,7 @@
   `gguf_import(as = "native")`) copy a 2-d tensor’s raw GGUF payload
   into fmalloc storage at its original density (e.g. 4.5 bits/weight for
   `q4_k`) and return an
-  [`Rfmalloc::fmalloc_tensor`](https://rdrr.io/pkg/Rfmalloc/man/fmalloc_tensor.html),
+  [`Rfmalloc::fmalloc_tensor`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_tensor.html),
   decoded in bounded panels only inside matrix products. Registers
   gguflib’s `q4_0`/`q4_1`/`q8_0`/`q2_k`/ `q4_k`/`q6_k` dequantizers as
   Rfmalloc tensor codecs (requires Rfmalloc C API version 4).
@@ -51,7 +51,7 @@
   to read and dequantize a single named tensor directly into an
   `Rfmalloc`-backed, file-backed ALTREP matrix/array of doubles: R
   allocates the destination via
-  [`Rfmalloc::create_fmalloc_matrix()`](https://rdrr.io/pkg/Rfmalloc/man/create_fmalloc_matrix.html)/[`create_fmalloc_array()`](https://rdrr.io/pkg/Rfmalloc/man/create_fmalloc_array.html),
+  [`Rfmalloc::create_fmalloc_matrix()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/create_fmalloc_matrix.html)/[`create_fmalloc_array()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/create_fmalloc_array.html),
   and native code fills it in place, so no ordinary R-sized copy of the
   tensor is ever materialized on the R heap.
 - Added

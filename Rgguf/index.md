@@ -19,7 +19,7 @@ Sanfilippo’s (antirez’s)
 Allocation happens on the R side, filling happens in C:
 
 1.  R allocates the destination with
-    [`Rfmalloc::create_fmalloc_matrix()`](https://rdrr.io/pkg/Rfmalloc/man/create_fmalloc_matrix.html)/[`create_fmalloc_array()`](https://rdrr.io/pkg/Rfmalloc/man/create_fmalloc_array.html),
+    [`Rfmalloc::create_fmalloc_matrix()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/create_fmalloc_matrix.html)/[`create_fmalloc_array()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/create_fmalloc_array.html),
     which returns a properly classed, file-backed ALTREP object —
     `Rfmalloc`’s `Ops`/matrix-product dispatch already works on it.
 2.  Native code locates the requested tensor in the memory-mapped GGUF
@@ -50,7 +50,7 @@ The example runs inside [`local()`](https://rdrr.io/r/base/eval.html) so
 its [`on.exit()`](https://rdrr.io/r/base/on.exit.html) cleanup stays
 scoped to the snippet while the README is rendered; in your own code,
 keep the runtime handle you need and call
-[`Rfmalloc::cleanup_fmalloc()`](https://rdrr.io/pkg/Rfmalloc/man/cleanup_fmalloc.html)
+[`Rfmalloc::cleanup_fmalloc()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/cleanup_fmalloc.html)
 when finished.
 
 ``` r
@@ -109,7 +109,7 @@ local({
 `gguf_tensor(as = "native")` skips dequantization at import: the
 tensor’s raw GGUF payload is copied into fmalloc storage at its original
 density (4.5 bits/weight for `q4_k`) and returned as an
-[`Rfmalloc::fmalloc_tensor`](https://rdrr.io/pkg/Rfmalloc/man/fmalloc_tensor.html).
+[`Rfmalloc::fmalloc_tensor`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_tensor.html).
 Matrix products against dense operands decode the payload in bounded,
 block-aligned panels streamed through BLAS `dgemm`, so the full double
 representation is never materialized. Rgguf registers gguflib’s `q4_0`,

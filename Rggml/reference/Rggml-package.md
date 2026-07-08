@@ -31,9 +31,11 @@ require.
 
 Useful links:
 
-- <https://github.com/sounkou-bioinfo/Rggml>
+- <https://github.com/sounkou-bioinfo/Rfmalloc>
 
-- Report bugs at <https://github.com/sounkou-bioinfo/Rggml/issues>
+- <https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/>
+
+- Report bugs at <https://github.com/sounkou-bioinfo/Rfmalloc/issues>
 
 ## Author
 

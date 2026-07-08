@@ -196,4 +196,7 @@ C-callable convention, same as e.g. `Rfmalloc`/`Rgguf`).
 
 - [`ggml_version()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/reference/ggml_version.md)
   : Vendored 'GGML' library version
+- [`rggml_vulkan_info()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/reference/rggml_vulkan_info.md)
+  [`rggml_has_vulkan()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/reference/rggml_vulkan_info.md)
+  : Vulkan GPU backend availability
 

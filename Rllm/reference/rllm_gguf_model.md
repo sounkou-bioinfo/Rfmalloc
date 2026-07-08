@@ -25,7 +25,7 @@ rllm_gguf_model(path, runtime = NULL, rope_mode = 0L)
 - runtime:
 
   Optional
-  [`Rfmalloc::open_fmalloc()`](https://rdrr.io/pkg/Rfmalloc/man/open_fmalloc.html)
+  [`Rfmalloc::open_fmalloc()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/open_fmalloc.html)
   runtime for the weight payloads; `NULL` uses Rfmalloc's default
   runtime.
 

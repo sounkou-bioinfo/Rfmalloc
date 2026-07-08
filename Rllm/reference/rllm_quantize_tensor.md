@@ -31,7 +31,7 @@ rllm_quantize_tensor(x, dtype = "q4_k", runtime = NULL)
 - runtime:
 
   Optional Rfmalloc runtime handle (see
-  [`Rfmalloc::open_fmalloc()`](https://rdrr.io/pkg/Rfmalloc/man/open_fmalloc.html));
+  [`Rfmalloc::open_fmalloc()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/open_fmalloc.html));
   if `NULL`, Rfmalloc's default runtime is used.
 
 ## Value
@@ -48,7 +48,7 @@ be a multiple of the codec's block size: 256 for the K-quants (`"q2_k"`,
 ## See also
 
 [`rllm_use_ggml()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_use_ggml.md),
-[`Rfmalloc::create_fmalloc_tensor()`](https://rdrr.io/pkg/Rfmalloc/man/fmalloc_tensor.html)
+[`Rfmalloc::create_fmalloc_tensor()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_tensor.html)
 
 ## Examples
 

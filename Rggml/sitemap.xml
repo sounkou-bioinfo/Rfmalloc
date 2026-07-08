@@ -8,5 +8,8 @@
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/reference/ggml_version.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/reference/index.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/reference/rggml_test_mul_mat.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/reference/rggml_test_mul_mat_q4k.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/reference/rggml_test_q4k_dot.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/reference/rggml_vulkan_info.html</loc></url>
 </urlset>
 
