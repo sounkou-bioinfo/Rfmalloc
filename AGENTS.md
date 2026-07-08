@@ -20,8 +20,13 @@ as one commit and is validated as one unit.
 - `packages/Rgguf` - GGUF reader/writer; registers the quantized codecs with
   Rfmalloc; vendored gguflib (with local fixes - see its COPYRIGHTS)
 - `packages/Rggml` - vendored GGML static lib + C-callables; BLAS backend via
-  cblas→Fortran shim; runtime-SIMD kernels staged in `tools/simd` by configure
-  (RsimdDispatch pattern: ISA flags never appear in R's recorded flags)
+  cblas→Fortran shim; opt-in Vulkan backend (`--with-vulkan`); on x86,
+  runtime-SIMD kernels staged in `tools/simd` by configure (RsimdDispatch
+  pattern: ISA flags never appear in R's recorded flags); on aarch64, GGML's
+  own NEON kernels instead (mandatory baseline, no dispatch needed). The
+  vendored tree is **generated** by `tools/vendor-ggml/vendorggml.R` from
+  pinned sources: never hand-edit `inst/ggml`, edit a patch and re-run
+  `vendorggml.R vendor`. CI enforces this (`vendored-ggml-matches-recipe`).
 - `packages/Rllm` - composition: registers Rggml as Rfmalloc's typed
   (codec-aware) matmul backend; quantize/dequantize R surface; the LLM
   graph-builder lands here
@@ -55,4 +60,7 @@ as one commit and is validated as one unit.
 - Tests are tinytest, in `packages/<pkg>/inst/tinytest/`.
 - READMEs: `README.Rmd` is the source where present; re-render to `README.md`.
 - CI is `.github/workflows/R-CMD-check.yaml` (per-package matrix + integration
-  job). Keep it green on every push; Rfmalloc alone also builds on Windows.
+  job). Keep it green on every push. Rfmalloc and Rggml also build on Windows;
+  all four are checked on aarch64 (`ubuntu-24.04-arm`, macOS Apple Silicon).
+- Prose is written without em dashes, anywhere: READMEs, DESCRIPTION, NEWS,
+  commit messages. Use a colon in a title, ` - ` mid-sentence.

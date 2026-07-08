@@ -1,5 +1,26 @@
 # Rggml 0.1.0 (unreleased)
 
+- **On aarch64, GGML's own hand-tuned NEON kernels are compiled in** instead of
+  the portable scalar reference: 23 `vec_dot`s covering every quantized type,
+  not just the one `q4_K` variant the SIMD dispatcher stages. NEON is a
+  mandatory baseline of the architecture, so `ggml-cpu/arch/arm/quants.c` needs
+  no ISA flag and cannot produce a binary that will not run on the machine that
+  built it; `configure` therefore drops `-DGGML_CPU_GENERIC` and skips the
+  dispatcher there (`arch/arm` defines the canonical symbols it would
+  duplicate). x86 keeps the dispatcher on purpose: `arch/x86`'s kernels are
+  selected by compile-time `#if defined(__AVX2__)`, so a `-mavx2` build of them
+  would *require* AVX2 at runtime - which is why GGML upstream needs
+  `GGML_CPU_ALL_VARIANTS` plus `dlopen` and we do not.
+- **Fixed a BLAS link failure on Windows** that was really a portability bug.
+  R guarantees only the **double-precision** BLAS: `<R_ext/BLAS.h>` declares no
+  single-precision routine and `Rblas.dll` exports no `sgemm_`. Most Linux
+  reference BLAS builds happen to export it, which is why the `cblas_sgemm`
+  shim linked here but not there. `configure` now link-probes `sgemm_` against
+  R's own `BLAS_LIBS`/`FLIBS`; where it is missing, the shim promotes its
+  operands to double, calls `dgemm_` (still an optimized BLAS), and demotes the
+  result - correct to float precision, with a naive triple loop only if the
+  temporaries cannot be allocated. Set `RGGML_NO_SGEMM=1` to force the promoted
+  path anywhere.
 - **Rggml now builds on Windows** (Rtools/MinGW); `OS_type: unix` is gone. R
   runs `configure.win`, which re-execs the single `configure` with
   `RGGML_WINDOWS=1` rather than duplicating the SIMD probe, the Vulkan shader
@@ -101,9 +122,9 @@
 - Enabled GGML's **BLAS backend** (`Rggml_backend_blas_init`,
   `Rggml_backend_blas_set_n_threads`): dense F32 `mul_mat` offloads to
   whatever BLAS the R build links against, since BLAS is universal in R.
-  GGML's backend calls the C `cblas_sgemm`, which R does not guarantee, so
+  GGML's backend calls the C `cblas_sgemm`, which R does not provide, so
   Rggml bridges it with a small portable shim (`inst/ggml/cblas.h` +
-  `rggml_cblas.c`) forwarding to Fortran `sgemm_` via `F77_NAME()`, linking
+  `rggml_cblas.c`) forwarding to the Fortran BLAS via `F77_NAME()`, linking
   `$(BLAS_LIBS) $(FLIBS)`. The BLAS backend is a drop-in `backend` for the
   existing `Rggml_compute_mul_mat`/`Rggml_backend_graph_compute` path.
 - Added `ggml_version()`, returning the vendored GGML library's own runtime
