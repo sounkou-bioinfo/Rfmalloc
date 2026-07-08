@@ -39,6 +39,8 @@
 - [`fmalloc_matmul_backend()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_backend.md)
   [`fmalloc_matmul_backends()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_backend.md)
   : Pluggable matrix-multiply backend
+- [`fmalloc_bed()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_bed.md)
+  : PLINK 1 genotypes as a 2-bit fmalloc tensor
 - [`fmalloc_colVars()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_colVars.md)
   [`fmalloc_rowVars()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_colVars.md)
   : Column / row variances of an fmalloc matrix
