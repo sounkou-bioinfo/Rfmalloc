@@ -51,17 +51,17 @@
 </h1></div>
 <!-- badges: start -->
 
-<p>Rfmalloc gives you <strong>the real R matrix, file-backed</strong> — a genuine ALTREP numeric vector/matrix whose storage lives in an <code>mmap</code>-ed file instead of the R heap, powered by a patched copy of <a href="https://github.com/yasukata/fmalloc" class="external-link">fmalloc</a>. Because it is the actual R object and not a proxy handle or a lazy file index, <code><a href="https://rdrr.io/r/base/dim.html" class="external-link">dim()</a></code>, <code>%*%</code>, <code><a href="https://rdrr.io/r/base/crossprod.html" class="external-link">crossprod()</a></code>, <code>Ops</code>, and subsetting just work — but the data can be larger than RAM, compressed on disk, mutated in place, and multiplied by a pluggable backend.</p>
+<p>Rfmalloc gives you <strong>the real R matrix, file-backed</strong> - a genuine ALTREP numeric vector/matrix whose storage lives in an <code>mmap</code>-ed file instead of the R heap, powered by a patched copy of <a href="https://github.com/yasukata/fmalloc" class="external-link">fmalloc</a>. Because it is the actual R object and not a proxy handle or a lazy file index, <code><a href="https://rdrr.io/r/base/dim.html" class="external-link">dim()</a></code>, <code>%*%</code>, <code><a href="https://rdrr.io/r/base/crossprod.html" class="external-link">crossprod()</a></code>, <code>Ops</code>, and subsetting just work - but the data can be larger than RAM, compressed on disk, mutated in place, and multiplied by a pluggable backend.</p>
 <p>The direction of the project is an <strong>out-of-core, compressed, in-place-mutable matrix stack</strong> built from three runtime-pluggable tiers over fmalloc storage:</p>
 <ul>
 <li>
-<strong>codecs</strong> — <em>how bytes decode</em>: builtin <code>f32</code>/<code>f16</code>/<code>bf16</code>, a lossless floating-point codec (<code>alp</code>), a <code>sparse</code> codec for mostly-zero data (single-cell counts), and quantized GGUF formats via <a href="https://github.com/sounkou-bioinfo/Rgguf" class="external-link">Rgguf</a> — all registered through a codec registry other packages can extend;</li>
+<strong>codecs</strong> - <em>how bytes decode</em>: builtin <code>f32</code>/<code>f16</code>/<code>bf16</code>, a lossless floating-point codec (<code>alp</code>), a <code>sparse</code> codec for mostly-zero data (single-cell counts), and quantized GGUF formats via <a href="https://github.com/sounkou-bioinfo/Rgguf" class="external-link">Rgguf</a> - all registered through a codec registry other packages can extend;</li>
 <li>
-<strong>backends</strong> — <em>what hardware multiplies</em>: the matrix products dispatch <code>dgemm</code> through a selectable backend (default R’s BLAS; downstream packages can register a GPU or out-of-core-aware kernel);</li>
+<strong>backends</strong> - <em>what hardware multiplies</em>: the matrix products dispatch <code>dgemm</code> through a selectable backend (default R’s BLAS; downstream packages can register a GPU or out-of-core-aware kernel);</li>
 <li>
-<strong>fmalloc</strong> — <em>where it lives</em>: file-backed, out-of-core, persistent, and mutable in place.</li>
+<strong>fmalloc</strong> - <em>where it lives</em>: file-backed, out-of-core, persistent, and mutable in place.</li>
 </ul>
-<p>Contrast with neighbours: this is not a lazy file index (<a href="https://vroom.r-lib.org" class="external-link">vroom</a>) and not a proxy class (<a href="https://cran.r-project.org/package=bigmemory" class="external-link">bigmemory</a>, <a href="https://privefl.github.io/bigstatsr/" class="external-link">bigstatsr</a> FBM, <a href="https://github.com/HervePerdry/houba" class="external-link">houba</a>) — it is the real ALTREP object that computes and compresses out of core.</p>
+<p>Contrast with neighbours: this is not a lazy file index (<a href="https://vroom.r-lib.org" class="external-link">vroom</a>) and not a proxy class (<a href="https://cran.r-project.org/package=bigmemory" class="external-link">bigmemory</a>, <a href="https://privefl.github.io/bigstatsr/" class="external-link">bigstatsr</a> FBM, <a href="https://github.com/HervePerdry/houba" class="external-link">houba</a>) - it is the real ALTREP object that computes and compresses out of core.</p>
 <p>Earlier prototypes explored R’s custom allocator / <code>Rf_allocVector3()</code> path (see Simon Urbanek’s <a href="https://gist.github.com/s-u/6712c97ca74181f5a1a5" class="external-link">proof-of-concept</a>). The patched fmalloc <code>malloc</code>/<code>free</code>/<code>realloc</code> layer is still built and installed for native consumers that use the C API or link against the bundled library.</p>
 <div class="section level2">
 <h2 id="current-status">Current Status<a class="anchor" aria-label="anchor" href="#current-status"></a>
@@ -80,13 +80,13 @@
 <p>Compression (typed tensors):</p>
 <ul>
 <li>
-<code><a href="reference/fmalloc_tensor.html">as_fmalloc_tensor()</a></code> stores a matrix under a codec — lossless <code>"alp"</code> for decimal-scaled doubles, <code>"sparse"</code> for mostly-zero (single-cell/count) data — and the compressed tensor still participates in the panel-streamed matrix products;</li>
+<code><a href="reference/fmalloc_tensor.html">as_fmalloc_tensor()</a></code> stores a matrix under a codec - lossless <code>"alp"</code> for decimal-scaled doubles, <code>"sparse"</code> for mostly-zero (single-cell/count) data - and the compressed tensor still participates in the panel-streamed matrix products;</li>
 <li>codecs are a registry (<code><a href="reference/fmalloc_tensor.html">fmalloc_tensor_codecs()</a></code>); downstream packages add their own (Rgguf registers the quantized GGUF formats).</li>
 </ul>
 <p>In-place mutation:</p>
 <ul>
 <li>
-<code><a href="reference/fmalloc_insitu.html">fmalloc_set()</a></code>, <code><a href="reference/fmalloc_insitu.html">fmalloc_fill()</a></code>, and <code><a href="reference/fmalloc_insitu.html">fmalloc_add()</a></code>/<code><a href="https://rdrr.io/r/base/grep.html" class="external-link">sub()</a></code>/<code>mul()</code>/<code>div()</code> write through the backing store, bypassing R’s copy-on-modify — essential when the payload is larger than RAM or persistent.</li>
+<code><a href="reference/fmalloc_insitu.html">fmalloc_set()</a></code>, <code><a href="reference/fmalloc_insitu.html">fmalloc_fill()</a></code>, and <code><a href="reference/fmalloc_insitu.html">fmalloc_add()</a></code>/<code><a href="https://rdrr.io/r/base/grep.html" class="external-link">sub()</a></code>/<code>mul()</code>/<code>div()</code> write through the backing store, bypassing R’s copy-on-modify - essential when the payload is larger than RAM or persistent.</li>
 </ul>
 <p>Native surface:</p>
 <ul>
@@ -413,7 +413,7 @@
 <div class="section level2">
 <h2 id="typed-tensors-and-alp-compression">Typed tensors and ALP compression<a class="anchor" aria-label="anchor" href="#typed-tensors-and-alp-compression"></a>
 </h2>
-<p>A typed tensor is an fmalloc raw payload in a foreign element encoding plus dtype/dims tags. It is genuinely n-dimensional — storage and <code><a href="reference/fmalloc_tensor.html">fmalloc_tensor_materialize()</a></code> handle any rank — while the matrix products, which decode the payload in bounded, block-aligned column panels streamed through <code>dgemm</code> (so the full double representation is never materialized), require exactly 2 dimensions. Codecs <code>f64</code>, <code>f32</code>, <code>f16</code>, and <code>bf16</code> are builtin; downstream packages register more through the C API (Rgguf adds the quantized GGUF formats).</p>
+<p>A typed tensor is an fmalloc raw payload in a foreign element encoding plus dtype/dims tags. It is genuinely n-dimensional - storage and <code><a href="reference/fmalloc_tensor.html">fmalloc_tensor_materialize()</a></code> handle any rank - while the matrix products, which decode the payload in bounded, block-aligned column panels streamed through <code>dgemm</code> (so the full double representation is never materialized), require exactly 2 dimensions. Codecs <code>f64</code>, <code>f32</code>, <code>f16</code>, and <code>bf16</code> are builtin; downstream packages register more through the C API (Rgguf adds the quantized GGUF formats).</p>
 <p>The builtin <code>"alp"</code> codec compresses decimal-scaled doubles losslessly (Afroozeh et al., ALP; scalar core adapted from the MIT-licensed <a href="https://github.com/coolbutuseless/zap" class="external-link">zap</a> implementation, see <code>inst/COPYRIGHTS</code>):</p>
 <div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
@@ -456,7 +456,7 @@
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; $product_matches_base</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
-<p>The <code>"sparse"</code> codec stores only the nonzeros of each chunk, for mostly-zero data such as single-cell counts — it compresses heavily and still multiplies through the panel engine:</p>
+<p>The <code>"sparse"</code> codec stores only the nonzeros of each chunk, for mostly-zero data such as single-cell counts - it compresses heavily and still multiplies through the panel engine:</p>
 <div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="va">sp_file</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
@@ -533,7 +533,7 @@
 <div class="section level2">
 <h2 id="in-place-mutation">In-place mutation<a class="anchor" aria-label="anchor" href="#in-place-mutation"></a>
 </h2>
-<p>On an <em>unshared</em> fmalloc vector, ordinary <code>x[i] &lt;- value</code> already writes in place through the ALTREP data pointer (no copy — a benefit of the file-backed ALTREP design). The copy that hurts happens when the vector is <em>shared</em> (<code>y &lt;- x</code>): R then duplicates the whole payload to preserve value semantics, which is catastrophic when it is larger than RAM. <code><a href="reference/fmalloc_insitu.html">fmalloc_set()</a></code>/ <code><a href="reference/fmalloc_insitu.html">fmalloc_fill()</a></code> and <code><a href="reference/fmalloc_insitu.html">fmalloc_add()</a></code>/<code><a href="https://rdrr.io/r/base/grep.html" class="external-link">sub()</a></code>/<code>mul()</code>/<code>div()</code> mutate by reference <em>regardless of sharing</em>, so all bindings observe the change — deliberately, and only ever through these explicit functions, never a silent <code>[&lt;-</code>.</p>
+<p>On an <em>unshared</em> fmalloc vector, ordinary <code>x[i] &lt;- value</code> already writes in place through the ALTREP data pointer (no copy - a benefit of the file-backed ALTREP design). The copy that hurts happens when the vector is <em>shared</em> (<code>y &lt;- x</code>): R then duplicates the whole payload to preserve value semantics, which is catastrophic when it is larger than RAM. <code><a href="reference/fmalloc_insitu.html">fmalloc_set()</a></code>/ <code><a href="reference/fmalloc_insitu.html">fmalloc_fill()</a></code> and <code><a href="reference/fmalloc_insitu.html">fmalloc_add()</a></code>/<code><a href="https://rdrr.io/r/base/grep.html" class="external-link">sub()</a></code>/<code>mul()</code>/<code>div()</code> mutate by reference <em>regardless of sharing</em>, so all bindings observe the change - deliberately, and only ever through these explicit functions, never a silent <code>[&lt;-</code>.</p>
 <div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="va">ip_file</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span></span>
@@ -560,7 +560,7 @@
 <h2 id="pluggable-matmul-backends">Pluggable matmul backends<a class="anchor" aria-label="anchor" href="#pluggable-matmul-backends"></a>
 </h2>
 <p>The matrix-product kernels dispatch their <code>dgemm</code> through a selectable backend. The default is R’s BLAS (itself user-swappable via <code>update-alternatives</code>, <code>LD_PRELOAD</code>, or FlexiBLAS). Downstream packages register an alternative (e.g. a GPU or out-of-core-aware GEMM) through the <code>Rfmalloc_register_matmul_backend</code> C-callable; selection is Rfmalloc-scoped, so base R’s <code>%*%</code> is unaffected.</p>
-<p>A backend can also register a <strong>codec-aware</strong> hook (<code>Rfmalloc_register_matmul_backend_ex</code>) that receives a compressed tensor’s <em>raw codec payload</em> and multiplies it by a dense operand without Rfmalloc decoding to <code>f64</code> first — so a quantized/device engine can multiply the compressed data natively (an fmalloc-mmap’d <code>q4_k</code> payload is byte-compatible with a <code>ggml</code> Q4_K tensor). A typed backend may decline a codec, in which case Rfmalloc falls back to the panel-decode path. Together the codec and backend registries make the stack pluggable at both tiers — how bytes decode and what hardware multiplies.</p>
+<p>A backend can also register a <strong>codec-aware</strong> hook (<code>Rfmalloc_register_matmul_backend_ex</code>) that receives a compressed tensor’s <em>raw codec payload</em> and multiplies it by a dense operand without Rfmalloc decoding to <code>f64</code> first - so a quantized/device engine can multiply the compressed data natively (an fmalloc-mmap’d <code>q4_k</code> payload is byte-compatible with a <code>ggml</code> Q4_K tensor). A typed backend may decline a codec, in which case Rfmalloc falls back to the panel-decode path. Together the codec and backend registries make the stack pluggable at both tiers - how bytes decode and what hardware multiplies.</p>
 <div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="reference/fmalloc_backend.html">fmalloc_matmul_backend</a></span><span class="op">(</span><span class="op">)</span>   <span class="co"># "blas" by default</span></span>
 <span><span class="co">#&gt; [1] "blas"</span></span>
@@ -1175,7 +1175,7 @@
 <h2 id="native-c-api-for-other-packages">Native C API for Other Packages<a class="anchor" aria-label="anchor" href="#native-c-api-for-other-packages"></a>
 </h2>
 <p>Rfmalloc installs <code>inst/include/Rfmalloc.h</code> and registers C-callable entry points with <code>R_RegisterCCallable()</code>. Downstream packages can add Rfmalloc to <code>LinkingTo</code> and <code>Imports</code>, include the header, and use the inline wrappers.</p>
-<p>The current native surface (API version 5) exposes runtime open/cleanup, vector creation, default-runtime lookup and synchronization, catalog listing, runtime/vector introspection, vector destruction, an API-version query, and the two extension registries: <code>Rfmalloc_register_tensor_codec</code> (plug an element encoding into the panel-streamed matrix products — <a href="https://github.com/sounkou-bioinfo/Rgguf" class="external-link">Rgguf</a> uses this for the quantized GGUF formats) and <code>Rfmalloc_register_matmul_backend</code> (plug a GEMM kernel behind the matrix products). Returned <code>SEXP</code> objects follow normal R API ownership rules.</p>
+<p>The current native surface (API version 5) exposes runtime open/cleanup, vector creation, default-runtime lookup and synchronization, catalog listing, runtime/vector introspection, vector destruction, an API-version query, and the two extension registries: <code>Rfmalloc_register_tensor_codec</code> (plug an element encoding into the panel-streamed matrix products - <a href="https://github.com/sounkou-bioinfo/Rgguf" class="external-link">Rgguf</a> uses this for the quantized GGUF formats) and <code>Rfmalloc_register_matmul_backend</code> (plug a GEMM kernel behind the matrix products). Returned <code>SEXP</code> objects follow normal R API ownership rules.</p>
 </div>
 <div class="section level2">
 <h2 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a>
@@ -1200,7 +1200,7 @@
 </ul>
 <p>Related work (memory-mapped / larger-than-RAM matrices in R):</p>
 <ul>
-<li>houba — memory-mapped vectors/matrices/arrays: <a href="https://github.com/HervePerdry/houba" class="external-link uri">https://github.com/HervePerdry/houba</a>
+<li>houba - memory-mapped vectors/matrices/arrays: <a href="https://github.com/HervePerdry/houba" class="external-link uri">https://github.com/HervePerdry/houba</a>
 </li>
 <li>bigstatsr / bigsnpr (FBM): <a href="https://privefl.github.io/bigstatsr/" class="external-link uri">https://privefl.github.io/bigstatsr/</a>, <a href="https://privefl.github.io/bigsnpr/" class="external-link uri">https://privefl.github.io/bigsnpr/</a>
 </li>

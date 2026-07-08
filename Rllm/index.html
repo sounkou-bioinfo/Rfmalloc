@@ -51,7 +51,7 @@
 </h1></div>
 <!-- badges: start -->
 
-<p>Rllm is the <strong>composition layer</strong> of the <a href="https://github.com/sounkou-bioinfo/Rfmalloc" class="external-link">Rfmalloc</a> out-of-core array stack: it wires (file-backed, memory-mapped storage), (GGUF model files as fmalloc tensors) and (vendored GGML compute with runtime-SIMD-dispatched quantized kernels) into LLM inference — quantized weights stay in their GGUF encoding, memory-mapped from disk, and are never decoded to double on the compute path.</p>
+<p>Rllm is the <strong>composition layer</strong> of the <a href="https://github.com/sounkou-bioinfo/Rfmalloc" class="external-link">Rfmalloc</a> out-of-core array stack: it wires (file-backed, memory-mapped storage), (GGUF model files as fmalloc tensors) and (vendored GGML compute with runtime-SIMD-dispatched quantized kernels) into LLM inference - quantized weights stay in their GGUF encoding, memory-mapped from disk, and are never decoded to double on the compute path.</p>
 <p>Two things live here:</p>
 <ol style="list-style-type: decimal">
 <li>a <strong>codec-aware matmul backend</strong>: <code>dense %*% quantized_fmalloc_tensor</code> runs natively in quantized space through GGML (registered with Rfmalloc’s backend registry and selected on load);</li>
@@ -76,9 +76,10 @@
 <div class="section level2">
 <h2 id="inference-bytes-in-bytes-out">Inference: bytes in, bytes out<a class="anchor" aria-label="anchor" href="#inference-bytes-in-bytes-out"></a>
 </h2>
-<p>The model I/O boundary is <strong>token ids and raw bytes</strong> — never character vectors in the core. <code><a href="reference/rllm_decode.html">rllm_encode()</a></code>/<code><a href="reference/rllm_decode.html">rllm_decode()</a></code> are edge codecs built from the GGUF’s own byte-level BPE metadata (no external tokenizer); <code><a href="https://rdrr.io/r/base/rawConversion.html" class="external-link">rawToChar()</a></code> is the caller’s interpretation. The same boundary serves byte-level, vision, or pure-codec models later.</p>
+<p>The model I/O boundary is <strong>token ids and raw bytes</strong> - never character vectors in the core. <code><a href="reference/rllm_decode.html">rllm_encode()</a></code>/<code><a href="reference/rllm_decode.html">rllm_decode()</a></code> are edge codecs built from the GGUF’s own byte-level BPE metadata (no external tokenizer); <code><a href="https://rdrr.io/r/base/rawConversion.html" class="external-link">rawToChar()</a></code> is the caller’s interpretation. The same boundary serves byte-level, vision, or pure-codec models later.</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">model</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rllm_gguf_model.html">rllm_gguf_model</a></span><span class="op">(</span><span class="st">"SmolLM2-135M.Q4_K_M.gguf"</span><span class="op">)</span></span>
+<code class="sourceCode R"><span><span class="va">rt</span> <span class="op">&lt;-</span> <span class="fu">Rfmalloc</span><span class="fu">::</span><span class="fu"><a href="https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/open_fmalloc.html" class="external-link">open_fmalloc</a></span><span class="op">(</span><span class="st">"weights.bin"</span>, size_gb <span class="op">=</span> <span class="fl">2</span><span class="op">)</span>   <span class="co"># the memory-mapped store</span></span>
+<span><span class="va">model</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rllm_gguf_model.html">rllm_gguf_model</a></span><span class="op">(</span><span class="st">"SmolLM2-135M.Q4_K_M.gguf"</span>, runtime <span class="op">=</span> <span class="va">rt</span><span class="op">)</span></span>
 <span><span class="va">model</span></span>
 <span><span class="co">#&gt; &lt;rllm_model llama: 30 layers, n_embd 576, 9/3 heads, n_ff 1536,</span></span>
 <span><span class="co">#&gt;  vocab 49152; 272 tensors (q5_0/f32/q4_k/q8_0/q6_k)&gt;</span></span>
@@ -93,7 +94,7 @@
 <li>
 <code><a href="reference/rllm_gguf_model.html">rllm_gguf_model()</a></code> reads hyperparameters from GGUF metadata and imports 2-d weights <strong>natively</strong> (still quantized) into fmalloc-backed storage; the forward pass points GGML tensors at those payloads zero-copy.</li>
 <li>
-<code><a href="reference/rllm_forward.html">rllm_forward()</a></code> assembles the GGML graph (RMSNorm, RoPE, causal self-attention with GQA, SwiGLU) and computes it on the GGML CPU backend through ’s C-callables — Rllm links no GGML itself.</li>
+<code><a href="reference/rllm_forward.html">rllm_forward()</a></code> assembles the GGML graph (RMSNorm, RoPE, causal self-attention with GQA, SwiGLU) and computes it on the GGML CPU backend through ’s C-callables - Rllm links no GGML itself.</li>
 <li>
 <code><a href="reference/rllm_kv_cache.html">rllm_kv_cache()</a></code> allocates per-layer cache slabs, plain R memory or <strong>fmalloc-backed</strong> (the cache as a disk citizen: file-backed, evictable, and open to a quantized-cache codec later).</li>
 <li>
@@ -116,8 +117,9 @@
 <div class="section level2">
 <h2 id="compute-backends-today-and-roadmap">Compute backends: today and roadmap<a class="anchor" aria-label="anchor" href="#compute-backends-today-and-roadmap"></a>
 </h2>
-<p>Today, inference runs on the <strong>GGML CPU backend</strong>: runtime-SIMD-dispatched quantized kernels (AVX2 on x86, NEON on aarch64, CPUID-selected at runtime — no non-portable flags recorded) with dense products offloadable to R’s BLAS.</p>
-<p><strong>CUDA is the next backend (roadmap — not implemented yet).</strong> The plan follows the same pattern as ’s BLAS backend: ’s <code>configure</code> will <strong>autodetect <code>nvcc</code></strong> — absent, nothing changes (CRAN/CI builds are unaffected); present, GGML’s CUDA backend is compiled in and exposed as a <code>Rggml_backend_cuda_init</code> C-callable, and Rllm gains a backend switch for forward/generate. The target is validated: the identical model and quantization decode at ~455 tokens/s (~28x this CPU stack) on an RTX 5050 via upstream GGML CUDA. Vulkan remains on the long-term roadmap for non-NVIDIA GPUs.</p>
+<p>Today, inference runs on the <strong>GGML CPU backend</strong>: runtime-SIMD-dispatched quantized kernels (AVX2 on x86, NEON on aarch64, CPUID-selected at runtime - no non-portable flags recorded) with dense products offloadable to R’s BLAS.</p>
+<p>A <strong>Vulkan GPU backend</strong> ships in , opt-in at build time (<code>configure.args = "--with-vulkan"</code>; see <code><a href="https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/reference/rggml_vulkan_info.html" class="external-link">rggml_vulkan_info()</a></code>). It runs on any vendor’s GPU. Wiring it through <code><a href="reference/rllm_forward.html">rllm_forward()</a></code>/<code><a href="reference/rllm_generate.html">rllm_generate()</a></code> is the next step: the device-buffer residency API it needed (<code>Rggml_backend_alloc_ctx_tensors</code>/<code>tensor_set</code>/<code>tensor_get</code>) is backend agnostic, so the same code will drive CUDA.</p>
+<p><strong>CUDA is the fastest route and is not implemented yet.</strong> The identical model and quantization decode at ~455 tokens/s (~28x this CPU stack) on an RTX 5050 via upstream GGML CUDA; what remains is vendoring <code>ggml-cuda</code> at a version matching the core and adding <code>nvcc</code> rules to the build.</p>
 </div>
 <div class="section level2">
 <h2 id="install">Install<a class="anchor" aria-label="anchor" href="#install"></a>

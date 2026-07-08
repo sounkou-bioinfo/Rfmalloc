@@ -51,15 +51,15 @@
 </h1></div>
 <!-- badges: start -->
 
-<p>Rgguf reads <a href="https://github.com/ggerganov/ggml/blob/master/docs/gguf.md" class="external-link">GGUF</a> model files — the format used by <a href="https://github.com/ggerganov/llama.cpp" class="external-link">llama.cpp</a> to store large language model tensors and metadata — and exposes their tensors directly as <a href="https://github.com/sounkou-bioinfo/Rfmalloc" class="external-link">Rfmalloc</a>-backed, file-backed ALTREP matrices and arrays, dequantizing quantized tensor types on demand as they are read.</p>
+<p>Rgguf reads <a href="https://github.com/ggerganov/ggml/blob/master/docs/gguf.md" class="external-link">GGUF</a> model files - the format used by <a href="https://github.com/ggerganov/llama.cpp" class="external-link">llama.cpp</a> to store large language model tensors and metadata - and exposes their tensors directly as <a href="https://github.com/sounkou-bioinfo/Rfmalloc" class="external-link">Rfmalloc</a>-backed, file-backed ALTREP matrices and arrays, dequantizing quantized tensor types on demand as they are read.</p>
 <p>GGUF parsing is done by a vendored, MIT-licensed copy of Salvatore Sanfilippo’s (antirez’s) <a href="https://github.com/antirez/gguf-tools" class="external-link">gguflib</a> (<code>src/gguflib.c</code>, <code>fp16.c</code>, <code>bf16.h</code>); see <code>inst/COPYRIGHTS</code> for full attribution.</p>
 <div class="section level2">
 <h2 id="design">Design<a class="anchor" aria-label="anchor" href="#design"></a>
 </h2>
 <p>Allocation happens on the R side, filling happens in C:</p>
 <ol style="list-style-type: decimal">
-<li>R allocates the destination with <code><a href="https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/create_fmalloc_matrix.html" class="external-link">Rfmalloc::create_fmalloc_matrix()</a></code>/<code><a href="https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/create_fmalloc_array.html" class="external-link">create_fmalloc_array()</a></code>, which returns a properly classed, file-backed ALTREP object — <code>Rfmalloc</code>’s <code>Ops</code>/matrix-product dispatch already works on it.</li>
-<li>Native code locates the requested tensor in the memory-mapped GGUF file and writes dequantized values directly into the destination’s <code>REAL()</code> payload (the ALTREP <code>Dataptr</code> exposes the file-backed <code>fmalloc</code> memory directly — no extra copy back into an ordinary R vector).</li>
+<li>R allocates the destination with <code><a href="https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/create_fmalloc_matrix.html" class="external-link">Rfmalloc::create_fmalloc_matrix()</a></code>/<code><a href="https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/create_fmalloc_array.html" class="external-link">create_fmalloc_array()</a></code>, which returns a properly classed, file-backed ALTREP object - <code>Rfmalloc</code>’s <code>Ops</code>/matrix-product dispatch already works on it.</li>
+<li>Native code locates the requested tensor in the memory-mapped GGUF file and writes dequantized values directly into the destination’s <code>REAL()</code> payload (the ALTREP <code>Dataptr</code> exposes the file-backed <code>fmalloc</code> memory directly - no extra copy back into an ordinary R vector).</li>
 </ol>
 <p>GGML/GGUF tensors store <code>dim[0]</code> as the fastest-varying (contiguous) dimension. R arrays are column-major (the first dimension varies fastest), so <code>dim[0]</code> maps directly onto R’s first dimension: <code>dim(gguf_tensor(x, name)) == c(dim[0], dim[1], ...)</code>, with no transposition needed. This is verified by a dedicated round-trip test (<code>inst/tinytest/test_gguf_roundtrip.R</code>).</p>
 </div>
@@ -165,7 +165,7 @@
 <p><code><a href="reference/gguf_tensor.html">gguf_tensor()</a></code>/<code><a href="reference/gguf_import.html">gguf_import()</a></code> dequantize:</p>
 <ul>
 <li>Direct/streamed (no intermediate buffer): <code>f32</code>, <code>f16</code>, <code>bf16</code>, <code>f64</code>, <code>i8</code>, <code>i16</code>, <code>i32</code>, <code>i64</code>.</li>
-<li>Via the vendored <code>gguflib</code>’s own <code>gguf_tensor_to_float()</code> (through a transient <code>malloc()</code>’d float buffer, freed immediately after widening to double — a known v1 memory cost): <code>q8_0</code>, <code>q4_0</code>, <code>q4_1</code>, <code>q2_k</code>, <code>q4_k</code>, <code>q6_k</code>.</li>
+<li>Via the vendored <code>gguflib</code>’s own <code>gguf_tensor_to_float()</code> (through a transient <code>malloc()</code>’d float buffer, freed immediately after widening to double - a known v1 memory cost): <code>q8_0</code>, <code>q4_0</code>, <code>q4_1</code>, <code>q2_k</code>, <code>q4_k</code>, <code>q6_k</code>.</li>
 </ul>
 <p>Other quantized formats (<code>q5_0</code>, <code>q5_1</code>, <code>q8_1</code>, <code>q3_k</code>, <code>q5_k</code>, <code>q8_k</code>, and the <code>iq*</code> formats) are not implemented by the vendored parser; <code><a href="reference/gguf_tensor.html">gguf_tensor()</a></code> errors clearly instead of guessing at them.</p>
 </div>

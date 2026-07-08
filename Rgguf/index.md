@@ -2,9 +2,9 @@
 
 Rgguf reads
 [GGUF](https://github.com/ggerganov/ggml/blob/master/docs/gguf.md) model
-files — the format used by
+files - the format used by
 [llama.cpp](https://github.com/ggerganov/llama.cpp) to store large
-language model tensors and metadata — and exposes their tensors directly
+language model tensors and metadata - and exposes their tensors directly
 as [Rfmalloc](https://github.com/sounkou-bioinfo/Rfmalloc)-backed,
 file-backed ALTREP matrices and arrays, dequantizing quantized tensor
 types on demand as they are read.
@@ -20,12 +20,12 @@ Allocation happens on the R side, filling happens in C:
 
 1.  R allocates the destination with
     [`Rfmalloc::create_fmalloc_matrix()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/create_fmalloc_matrix.html)/[`create_fmalloc_array()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/create_fmalloc_array.html),
-    which returns a properly classed, file-backed ALTREP object —
+    which returns a properly classed, file-backed ALTREP object -
     `Rfmalloc`’s `Ops`/matrix-product dispatch already works on it.
 2.  Native code locates the requested tensor in the memory-mapped GGUF
     file and writes dequantized values directly into the destination’s
     `REAL()` payload (the ALTREP `Dataptr` exposes the file-backed
-    `fmalloc` memory directly — no extra copy back into an ordinary R
+    `fmalloc` memory directly - no extra copy back into an ordinary R
     vector).
 
 GGML/GGUF tensors store `dim[0]` as the fastest-varying (contiguous)
@@ -159,7 +159,7 @@ dequantize:
   `i8`, `i16`, `i32`, `i64`.
 - Via the vendored `gguflib`’s own `gguf_tensor_to_float()` (through a
   transient `malloc()`’d float buffer, freed immediately after widening
-  to double — a known v1 memory cost): `q8_0`, `q4_0`, `q4_1`, `q2_k`,
+  to double - a known v1 memory cost): `q8_0`, `q4_0`, `q4_1`, `q2_k`,
   `q4_k`, `q6_k`.
 
 Other quantized formats (`q5_0`, `q5_1`, `q8_1`, `q3_k`, `q5_k`, `q8_k`,

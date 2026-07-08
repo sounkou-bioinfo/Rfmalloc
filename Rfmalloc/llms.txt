@@ -1,35 +1,35 @@
 # Rfmalloc
 
-Rfmalloc gives you **the real R matrix, file-backed** — a genuine ALTREP
+Rfmalloc gives you **the real R matrix, file-backed** - a genuine ALTREP
 numeric vector/matrix whose storage lives in an `mmap`-ed file instead
 of the R heap, powered by a patched copy of
 [fmalloc](https://github.com/yasukata/fmalloc). Because it is the actual
 R object and not a proxy handle or a lazy file index,
 [`dim()`](https://rdrr.io/r/base/dim.html), `%*%`,
 [`crossprod()`](https://rdrr.io/r/base/crossprod.html), `Ops`, and
-subsetting just work — but the data can be larger than RAM, compressed
+subsetting just work - but the data can be larger than RAM, compressed
 on disk, mutated in place, and multiplied by a pluggable backend.
 
 The direction of the project is an **out-of-core, compressed,
 in-place-mutable matrix stack** built from three runtime-pluggable tiers
 over fmalloc storage:
 
-- **codecs** — *how bytes decode*: builtin `f32`/`f16`/`bf16`, a
+- **codecs** - *how bytes decode*: builtin `f32`/`f16`/`bf16`, a
   lossless floating-point codec (`alp`), a `sparse` codec for
   mostly-zero data (single-cell counts), and quantized GGUF formats via
-  [Rgguf](https://github.com/sounkou-bioinfo/Rgguf) — all registered
+  [Rgguf](https://github.com/sounkou-bioinfo/Rgguf) - all registered
   through a codec registry other packages can extend;
-- **backends** — *what hardware multiplies*: the matrix products
+- **backends** - *what hardware multiplies*: the matrix products
   dispatch `dgemm` through a selectable backend (default R’s BLAS;
   downstream packages can register a GPU or out-of-core-aware kernel);
-- **fmalloc** — *where it lives*: file-backed, out-of-core, persistent,
+- **fmalloc** - *where it lives*: file-backed, out-of-core, persistent,
   and mutable in place.
 
 Contrast with neighbours: this is not a lazy file index
 ([vroom](https://vroom.r-lib.org)) and not a proxy class
 ([bigmemory](https://cran.r-project.org/package=bigmemory),
 [bigstatsr](https://privefl.github.io/bigstatsr/) FBM,
-[houba](https://github.com/HervePerdry/houba)) — it is the real ALTREP
+[houba](https://github.com/HervePerdry/houba)) - it is the real ALTREP
 object that computes and compresses out of core.
 
 Earlier prototypes explored R’s custom allocator / `Rf_allocVector3()`
@@ -70,8 +70,8 @@ Matrix computing:
 Compression (typed tensors):
 
 - [`as_fmalloc_tensor()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_tensor.md)
-  stores a matrix under a codec — lossless `"alp"` for decimal-scaled
-  doubles, `"sparse"` for mostly-zero (single-cell/count) data — and the
+  stores a matrix under a codec - lossless `"alp"` for decimal-scaled
+  doubles, `"sparse"` for mostly-zero (single-cell/count) data - and the
   compressed tensor still participates in the panel-streamed matrix
   products;
 - codecs are a registry
@@ -85,7 +85,7 @@ In-place mutation:
   [`fmalloc_fill()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_insitu.md),
   and
   [`fmalloc_add()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_insitu.md)/[`sub()`](https://rdrr.io/r/base/grep.html)/`mul()`/`div()`
-  write through the backing store, bypassing R’s copy-on-modify —
+  write through the backing store, bypassing R’s copy-on-modify -
   essential when the payload is larger than RAM or persistent.
 
 Native surface:
@@ -460,9 +460,9 @@ local({
 ## Typed tensors and ALP compression
 
 A typed tensor is an fmalloc raw payload in a foreign element encoding
-plus dtype/dims tags. It is genuinely n-dimensional — storage and
+plus dtype/dims tags. It is genuinely n-dimensional - storage and
 [`fmalloc_tensor_materialize()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_tensor.md)
-handle any rank — while the matrix products, which decode the payload in
+handle any rank - while the matrix products, which decode the payload in
 bounded, block-aligned column panels streamed through `dgemm` (so the
 full double representation is never materialized), require exactly 2
 dimensions. Codecs `f64`, `f32`, `f16`, and `bf16` are builtin;
@@ -519,7 +519,7 @@ local({
 ```
 
 The `"sparse"` codec stores only the nonzeros of each chunk, for
-mostly-zero data such as single-cell counts — it compresses heavily and
+mostly-zero data such as single-cell counts - it compresses heavily and
 still multiplies through the panel engine:
 
 ``` r
@@ -615,7 +615,7 @@ local({
 ## In-place mutation
 
 On an *unshared* fmalloc vector, ordinary `x[i] <- value` already writes
-in place through the ALTREP data pointer (no copy — a benefit of the
+in place through the ALTREP data pointer (no copy - a benefit of the
 file-backed ALTREP design). The copy that hurts happens when the vector
 is *shared* (`y <- x`): R then duplicates the whole payload to preserve
 value semantics, which is catastrophic when it is larger than RAM.
@@ -624,7 +624,7 @@ value semantics, which is catastrophic when it is larger than RAM.
 and
 [`fmalloc_add()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_insitu.md)/[`sub()`](https://rdrr.io/r/base/grep.html)/`mul()`/`div()`
 mutate by reference *regardless of sharing*, so all bindings observe the
-change — deliberately, and only ever through these explicit functions,
+change - deliberately, and only ever through these explicit functions,
 never a silent `[<-`.
 
 ``` r
@@ -663,12 +663,12 @@ Rfmalloc-scoped, so base R’s `%*%` is unaffected.
 A backend can also register a **codec-aware** hook
 (`Rfmalloc_register_matmul_backend_ex`) that receives a compressed
 tensor’s *raw codec payload* and multiplies it by a dense operand
-without Rfmalloc decoding to `f64` first — so a quantized/device engine
+without Rfmalloc decoding to `f64` first - so a quantized/device engine
 can multiply the compressed data natively (an fmalloc-mmap’d `q4_k`
 payload is byte-compatible with a `ggml` Q4_K tensor). A typed backend
 may decline a codec, in which case Rfmalloc falls back to the
 panel-decode path. Together the codec and backend registries make the
-stack pluggable at both tiers — how bytes decode and what hardware
+stack pluggable at both tiers - how bytes decode and what hardware
 multiplies.
 
 ``` r
@@ -1408,7 +1408,7 @@ vector creation, default-runtime lookup and synchronization, catalog
 listing, runtime/vector introspection, vector destruction, an
 API-version query, and the two extension registries:
 `Rfmalloc_register_tensor_codec` (plug an element encoding into the
-panel-streamed matrix products —
+panel-streamed matrix products -
 [Rgguf](https://github.com/sounkou-bioinfo/Rgguf) uses this for the
 quantized GGUF formats) and `Rfmalloc_register_matmul_backend` (plug a
 GEMM kernel behind the matrix products). Returned `SEXP` objects follow
@@ -1440,7 +1440,7 @@ In-place / by-reference mutation:
 
 Related work (memory-mapped / larger-than-RAM matrices in R):
 
-- houba — memory-mapped vectors/matrices/arrays:
+- houba - memory-mapped vectors/matrices/arrays:
   <https://github.com/HervePerdry/houba>
 - bigstatsr / bigsnpr (FBM): <https://privefl.github.io/bigstatsr/>,
   <https://privefl.github.io/bigsnpr/>
