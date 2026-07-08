@@ -10,3 +10,5 @@ packages/*/inst/ggml/libggml.a
 README.html
 packages/*/README.html
 tools/vendor-ggml/cache/
+_site/
+packages/*/docs/

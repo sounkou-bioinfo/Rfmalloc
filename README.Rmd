@@ -111,12 +111,16 @@ backend registry, a faster backend accelerates both at once, with no change to
 
 ## The packages
 
+Four packages, one stack. Each links to its reference documentation; the
+sources live under [`packages/`](https://github.com/sounkou-bioinfo/Rfmalloc/tree/main/packages)
+in this repository.
+
 | package | role |
 |---|---|
-| [`packages/Rfmalloc`](packages/Rfmalloc) | the substrate: file-backed ALTREP vectors/matrices/tensors, codec + backend registries, panel matmul, out-of-core eviction, `fmalloc_pca()`/`fmalloc_colVars()` for genomics-scale matrices |
-| [`packages/Rgguf`](packages/Rgguf) | GGUF model files: metadata, tensor directory, dequantized or **native (still-quantized)** imports into fmalloc storage |
-| [`packages/Rggml`](packages/Rggml) | compute carrier: vendored GGML with a BLAS backend (R's own BLAS via a `cblas`→Fortran shim) and runtime-SIMD-dispatched quantized kernels |
-| [`packages/Rllm`](packages/Rllm) | composition + inference: registers Rggml as Rfmalloc's codec-aware matmul backend, and builds the llama forward pass, KV cache, and byte-level generation |
+| [**Rfmalloc**](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/) | the substrate: file-backed ALTREP vectors/matrices/tensors, codec + backend registries, panel matmul, out-of-core eviction, `fmalloc_pca()`/`fmalloc_colVars()` for genomics-scale matrices |
+| [**Rgguf**](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/) | GGUF model files: metadata, tensor directory, dequantized or **native (still-quantized)** imports into fmalloc storage |
+| [**Rggml**](https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/) | compute carrier: vendored GGML with a BLAS backend (R's own BLAS via a `cblas`→Fortran shim) and runtime-SIMD-dispatched quantized kernels |
+| [**Rllm**](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/) | composition + inference: registers Rggml as Rfmalloc's codec-aware matmul backend, and builds the llama forward pass, KV cache, and byte-level generation |
 
 ## Install
 

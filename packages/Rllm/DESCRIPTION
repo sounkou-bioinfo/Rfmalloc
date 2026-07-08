@@ -34,5 +34,6 @@ RoxygenNote: 7.3.3
 OS_type: unix
 Depends:
     R (>= 4.4.0)
-URL: https://github.com/sounkou-bioinfo/Rfmalloc
+URL: https://github.com/sounkou-bioinfo/Rfmalloc,
+    https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/
 BugReports: https://github.com/sounkou-bioinfo/Rfmalloc/issues

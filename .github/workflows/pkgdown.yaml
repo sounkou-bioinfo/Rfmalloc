@@ -1,6 +1,14 @@
-# Builds the Rfmalloc pkgdown site from its monorepo subdirectory and deploys
-# it to this repo's gh-pages (same site URL as before the monorepo move).
-# Sites for the sibling packages are a follow-up (multi-site or one umbrella).
+# Builds the ecosystem documentation site and deploys it to gh-pages:
+#
+#   /            the monorepo landing page (rendered from README.md)
+#   /Rfmalloc/   \
+#   /Rgguf/       |  one pkgdown site per package
+#   /Rggml/       |
+#   /Rllm/       /
+#
+# Siblings are installed from THIS checkout with plain R CMD INSTALL (never
+# pak's solver, which would resolve the DESCRIPTIONs' Remotes refs against
+# GitHub main) so the docs describe the code in the commit being built.
 on:
   push:
     branches: [main, master]
@@ -16,7 +24,6 @@ permissions: read-all
 jobs:
   pkgdown:
     runs-on: ubuntu-latest
-    # Only restrict concurrency for non-PR jobs
     concurrency:
       group: pkgdown-${{ github.event_name != 'pull_request' || github.run_id }}
     env:
@@ -29,21 +36,58 @@ jobs:
       - uses: r-lib/actions/setup-pandoc@v2
 
       - uses: r-lib/actions/setup-r@v2
-
-      - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          working-directory: packages/Rfmalloc
-          extra-packages: any::pkgdown, local::.
-          needs: website
+          use-public-rspm: true
 
-      - name: Build site
-        run: pkgdown::build_site_github_pages(pkg = "packages/Rfmalloc", new_process = FALSE, install = FALSE)
+      - name: Install CRAN tooling
+        run: |
+          install.packages("pak", repos = sprintf("https://r-lib.github.io/p/pak/stable/%s/%s/%s", .Platform$pkgType, R.Version()$os, R.Version()$arch))
+          pak::pkg_install(c("any::pkgdown", "any::tinytest", "any::bench",
+                             "any::lobstr", "any::knitr", "any::rmarkdown"),
+                           ask = FALSE)
         shell: Rscript {0}
+
+      - name: Install the stack in dependency order (pkgdown needs them loadable)
+        run: |
+          for p in Rfmalloc Rggml Rgguf Rllm; do
+            echo "==== R CMD INSTALL packages/$p ===="
+            R CMD INSTALL "packages/$p" || exit 1
+          done
+        shell: bash
+
+      - name: Build one pkgdown site per package into _site/<pkg>
+        run: |
+          for (p in c("Rfmalloc", "Rggml", "Rgguf", "Rllm")) {
+            # must be absolute: pkgdown resolves a relative destination against
+            # the package directory, and normalizePath() cannot expand a path
+            # that does not exist yet.
+            dest <- file.path(getwd(), "_site", p)
+            message("==== pkgdown: ", p, " -> ", dest, " ====")
+            pkgdown::build_site(
+              pkg = file.path("packages", p),
+              new_process = FALSE, install = FALSE, preview = FALSE,
+              override = list(destination = dest)
+            )
+          }
+        shell: Rscript {0}
+
+      - name: Landing page from the monorepo README
+        run: |
+          mkdir -p _site
+          touch _site/.nojekyll
+          pandoc README.md \
+            --standalone \
+            --from=gfm \
+            --metadata title="Rfmalloc — out-of-core arrays for R" \
+            --include-in-header=tools/site/head.html \
+            --output=_site/index.html
+          ls -la _site
+        shell: bash
 
       - name: Deploy to GitHub pages 🚀
         if: github.event_name != 'pull_request'
         uses: JamesIves/github-pages-deploy-action@d92aa235d04922e8f08b40ce78cc5442fcfbfa2f # v4.8.0
         with:
-          clean: false
+          clean: true          # the site is fully regenerated; drop the old single-package layout
           branch: gh-pages
-          folder: packages/Rfmalloc/docs
+          folder: _site
