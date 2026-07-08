@@ -25,8 +25,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Rfmalloc: the substrate - full platform matrix (incl. Windows).
+          # Rfmalloc: the substrate - full platform matrix (incl. Windows + ARM).
+          # macos-latest is Apple Silicon (aarch64); ubuntu-24.04-arm covers
+          # Linux aarch64 (Graviton, Ampere, Pi). Together they turn "should
+          # build on ARM" into "does build on ARM".
           - {pkg: Rfmalloc, os: macos-latest,   r: 'release'}
+          - {pkg: Rfmalloc, os: ubuntu-24.04-arm, r: 'release'}
           - {pkg: Rfmalloc, os: windows-latest, r: 'release'}
           - {pkg: Rfmalloc, os: ubuntu-latest,  r: 'devel'}
           - {pkg: Rfmalloc, os: ubuntu-latest,  r: 'release'}
@@ -35,16 +39,19 @@ jobs:
           # src/Makevars.win without -ldl). Rgguf/Rllm stay unix for now - Rgguf's
           # vendored gguflib mmaps the GGUF file with no _WIN32 path.
           - {pkg: Rggml,    os: windows-latest, r: 'release'}
+          - {pkg: Rggml,    os: ubuntu-24.04-arm, r: 'release'}
           # Unix-only packages (OS_type: unix).
           - {pkg: Rgguf,    os: ubuntu-latest,  r: 'release'}
           - {pkg: Rgguf,    os: ubuntu-latest,  r: 'devel'}
           - {pkg: Rgguf,    os: macos-latest,   r: 'release'}
+          - {pkg: Rgguf,    os: ubuntu-24.04-arm, r: 'release'}
           - {pkg: Rggml,    os: ubuntu-latest,  r: 'release'}
           - {pkg: Rggml,    os: ubuntu-latest,  r: 'devel'}
           - {pkg: Rggml,    os: macos-latest,   r: 'release'}
           - {pkg: Rllm,     os: ubuntu-latest,  r: 'release'}
           - {pkg: Rllm,     os: ubuntu-latest,  r: 'devel'}
           - {pkg: Rllm,     os: macos-latest,   r: 'release'}
+          - {pkg: Rllm,     os: ubuntu-24.04-arm, r: 'release'}
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
