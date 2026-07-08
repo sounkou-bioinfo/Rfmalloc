@@ -18,11 +18,12 @@
 Source:
 [`DESCRIPTION`](https://github.com/sounkou-bioinfo/Rfmalloc/blob/main/DESCRIPTION)
 
-Toure S (2026). *Rfmalloc: Persistent ALTREP Vectors*. R package version
-0.1.0, <https://github.com/sounkou-bioinfo/Rfmalloc>.
+Toure S (2026). *Rfmalloc: Out-of-Core Arrays with Pluggable Codecs and
+Compute Backends*. R package version 0.1.0,
+<https://github.com/sounkou-bioinfo/Rfmalloc>.
 
     @Manual{,
-      title = {Rfmalloc: Persistent ALTREP Vectors},
+      title = {Rfmalloc: Out-of-Core Arrays with Pluggable Codecs and Compute Backends},
       author = {Sounkou Mahamane Toure},
       year = {2026},
       note = {R package version 0.1.0},
