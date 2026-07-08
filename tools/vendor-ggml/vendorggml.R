@@ -13,12 +13,12 @@
 #   base    : ggmlR <VER> source tarball from CRAN, SHA256-pinned. 45 of the 52
 #             vendored GGML files are byte-identical to it; ggmlR supplies the
 #             GGML 0.9.5 sources already split for CRAN + the stdio/abort shim.
-#   patches : patches/*.patch — our 7 local edits on top of stock ggmlR
+#   patches : patches/*.patch - our 9 local edits on top of stock ggmlR
 #             (Windows/MinGW by-pointer buffer iface, never-destroyed teardown
 #             singletons, NULL-guards against small-pool heap corruption, and
 #             the arch-fallback.h hook that lets our runtime SIMD dispatcher
 #             own the canonical q4_K vec_dot). Documented in PROVENANCE.md.
-#   overlay : overlay/* — files that are OURS, not GGML's (the Makefile, the
+#   overlay : overlay/* - files that are OURS, not GGML's (the Makefile, the
 #             BLAS backend + cblas->Fortran shim, the R-safe I/O shim).
 #
 # Usage (from anywhere):
@@ -183,7 +183,7 @@ if (mode == "check") {
   if (length(mism) == 0) {
     message("OK: committed vendored tree == vendorggml.R output")
   } else {
-    stop("MISMATCH — committed tree no longer equals the recipe:\n  ",
+    stop("MISMATCH - committed tree no longer equals the recipe:\n  ",
          paste(mism, collapse = "\n  "))
   }
 } else {

@@ -8,17 +8,17 @@
 #' accumulate-into-`x` pattern iterative algorithms need), for numeric vectors.
 #'
 #' On an *unshared* fmalloc vector, an ordinary `x[i] <- value` already writes
-#' in place through the ALTREP data pointer — no copy — because the file-backed
+#' in place through the ALTREP data pointer - no copy - because the file-backed
 #' storage is exposed directly and this package controls duplication. The copy
 #' that hurts happens when the vector is *shared* (`y <- x`): R then duplicates
 #' the whole payload to preserve value semantics before modifying, which is
 #' catastrophic for a larger-than-RAM or persistent vector. These functions
-#' mutate by reference regardless of sharing — they never copy, updating the
+#' mutate by reference regardless of sharing - they never copy, updating the
 #' durable store directly and returning the same object invisibly.
 #'
 #' @section Aliasing (read this):
 #' Because there is no copy, all bindings to the same fmalloc vector observe the
-#' change. After `y <- x; fmalloc_set(x, 1, 5)`, `y[1]` is also `5` — `x` and
+#' change. After `y <- x; fmalloc_set(x, 1, 5)`, `y[1]` is also `5` - `x` and
 #' `y` name the same backing store, whereas ordinary `x[1] <- 5` would copy `x`
 #' (leaving `y` untouched). This breaks R's usual value semantics *by design*;
 #' for a persistent runtime it is a feature (the durable data is updated). For

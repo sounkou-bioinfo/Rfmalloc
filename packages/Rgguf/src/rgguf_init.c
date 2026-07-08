@@ -29,6 +29,6 @@ void R_init_Rgguf(DllInfo *dll)
     R_registerRoutines(dll, NULL, CallEntries, NULL, NULL);
     R_useDynamicSymbols(dll, FALSE);
     /* Codec registration needs Rfmalloc's C-callables, which are only
-     * guaranteed to exist once its namespace is loaded — done from .onLoad,
+     * guaranteed to exist once its namespace is loaded - done from .onLoad,
      * not here, because DLL load order is not guaranteed at this point. */
 }

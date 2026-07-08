@@ -23,8 +23,8 @@ deviations), \code{rotation} (\verb{n x k} loadings), \code{x} (\verb{m x k} sco
 Principal component analysis of a large, file-backed fmalloc matrix,
 computed from the Gram matrix: \verb{G = X'X} via out-of-core \code{\link[=crossprod]{crossprod()}}, a
 truncated eigendecomposition of the (small) \verb{n x n} \code{G}, and the scores
-\verb{X V} via out-of-core \code{\%*\%}. Every heavy step — the Gram matrix and the
-projection — dispatches through the pluggable matrix-multiply backend (see
+\verb{X V} via out-of-core \code{\%*\%}. Every heavy step - the Gram matrix and the
+projection - dispatches through the pluggable matrix-multiply backend (see
 \link{fmalloc_backend}), so the same call runs on CPU BLAS today and on a
 registered GPU backend unchanged. \code{X} may exceed RAM: the Gram matrix and
 projection stream column tiles with a bounded resident set.

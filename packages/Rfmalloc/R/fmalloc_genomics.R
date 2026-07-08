@@ -3,8 +3,8 @@
 #' Principal component analysis of a large, file-backed fmalloc matrix,
 #' computed from the Gram matrix: `G = X'X` via out-of-core [crossprod()], a
 #' truncated eigendecomposition of the (small) `n x n` `G`, and the scores
-#' `X V` via out-of-core `%*%`. Every heavy step — the Gram matrix and the
-#' projection — dispatches through the pluggable matrix-multiply backend (see
+#' `X V` via out-of-core `%*%`. Every heavy step - the Gram matrix and the
+#' projection - dispatches through the pluggable matrix-multiply backend (see
 #' [fmalloc_backend]), so the same call runs on CPU BLAS today and on a
 #' registered GPU backend unchanged. `X` may exceed RAM: the Gram matrix and
 #' projection stream column tiles with a bounded resident set.

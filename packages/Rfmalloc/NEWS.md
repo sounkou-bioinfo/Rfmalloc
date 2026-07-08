@@ -43,12 +43,12 @@
   nonzeros of each 1024-element chunk, losslessly, and the resulting tensor
   participates in the panel-streamed matrix products like any other codec. At
   ~10% density it compresses ~6x versus dense `f64` while `%*%`/`crossprod`
-  stay exact — the storage layer for out-of-core single-cell/genomics matrices.
+  stay exact - the storage layer for out-of-core single-cell/genomics matrices.
 - Added a builtin, lossless `"alp"` tensor codec and `as_fmalloc_tensor()`:
   double vectors/matrices are compressed into fmalloc storage as bit-packed
   decimal-scaled integers in independently decodable 1024-value chunks
   (Afroozeh et al., ALP, \doi{10.1145/3626717}; scalar core adapted from the
-  MIT-licensed zap implementation — see `inst/COPYRIGHTS`), with exact-value
+  MIT-licensed zap implementation - see `inst/COPYRIGHTS`), with exact-value
   patches, a raw escape hatch for incompressible chunks, and
   division-by-exact-power-of-ten decoding so decimal-rounded data
   round-trips with few patches. Compressed tensors participate in the
@@ -61,16 +61,16 @@
   matrix (equal to total RAM): peak resident memory 0.31 GB during the gemv,
   result exact vs the analytic reference.
 - Added a genomics layer: `fmalloc_pca()` (out-of-core truncated PCA via the
-  Gram matrix — `crossprod()` + eigendecomposition + projection) and
+  Gram matrix - `crossprod()` + eigendecomposition + projection) and
   `fmalloc_colVars()`/`fmalloc_rowVars()` (variance reductions for
   highly-variable-feature selection). The heavy steps dispatch through the
   pluggable matrix-multiply backend, so single-cell PCA on a larger-than-RAM,
   compressed count matrix runs on CPU BLAS today and on a registered GPU
-  backend unchanged — the same call, composable across backends.
+  backend unchanged - the same call, composable across backends.
 - Extended the backend registry with a codec-aware *typed* hook (C API v6,
   `Rfmalloc_register_matmul_backend_ex`): a backend can register a
   `typed_gemm` that receives a compressed tensor's raw codec payload and dims
-  and multiplies it by a dense operand *without* Rfmalloc decoding to f64 —
+  and multiplies it by a dense operand *without* Rfmalloc decoding to f64 -
   enabling native quantized/on-device matmul (e.g. an fmalloc-mmap'd `q4_k`
   payload is byte-compatible with a ggml Q4_K tensor). A typed backend may
   decline a codec, in which case Rfmalloc falls back to the panel-decode path.
@@ -83,8 +83,8 @@
   `Rfmalloc_register_matmul_backend` C-callable (API version 5). Selection is
   Rfmalloc-scoped (base R's `%*%` is unaffected), and a backend may decline a
   call to fall back to BLAS. Together with the tensor codec registry this makes
-  the stack pluggable at both tiers — how bytes decode and what hardware
-  multiplies — over fmalloc storage.
+  the stack pluggable at both tiers - how bytes decode and what hardware
+  multiplies - over fmalloc storage.
 - Added `fmalloc_sync()` to flush a persistent runtime's backing store to disk
   (`msync`/`fsync`). Writes to the `MAP_SHARED` mapping (including in-place
   mutations) are otherwise only written back asynchronously by the OS, so a
@@ -95,7 +95,7 @@
   by reference regardless of sharing. (An ordinary `x[i] <- value` on an
   *unshared* fmalloc vector already writes in place via the ALTREP data
   pointer; the copy that hurts is R's copy-on-modify when the vector is
-  *shared* — these functions bypass it.) The functions are deliberately
+  *shared* - these functions bypass it.) The functions are deliberately
   explicit (never a silent `[<-` method) because
   they break value semantics by design: all bindings to the same vector
   observe the change, and for a persistent runtime the durable store is
@@ -114,7 +114,7 @@
   through BLAS `dgemm`, writing each block straight into the `n x n` fmalloc
   result and releasing panels with `madvise`. Input residency stays ~two
   panels (so `X` may exceed RAM) and the result is fmalloc-backed (so the
-  `n x n` Gram matrix may too) — the covariance/Gram operation behind PCA,
+  `n x n` Gram matrix may too) - the covariance/Gram operation behind PCA,
   ridge, and GWAS on larger-than-RAM matrices. Single-argument `crossprod(X)`
   on a real fmalloc matrix auto-routes above `Rfmalloc.ooc_threshold_gb`;
   two-argument and complex cases keep the in-core path.

@@ -20,7 +20,7 @@ The number of bytes flushed, invisibly.
 Writes to an fmalloc runtime (including in-place mutations via
 \code{\link[=fmalloc_set]{fmalloc_set()}} and friends) land in the OS page cache of the \code{MAP_SHARED}
 backing file. They survive a normal process exit, but until the kernel
-writes dirty pages back — which it does asynchronously — a crash or power
+writes dirty pages back - which it does asynchronously - a crash or power
 loss can lose unsynced data, with no atomicity. \code{fmalloc_sync()} forces the
 durability barrier with \code{msync()} (and \code{fsync()}), so persistent data is on
 disk when it returns.

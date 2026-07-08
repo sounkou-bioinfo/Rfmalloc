@@ -76,7 +76,7 @@ typedef int (*Rfmalloc_register_matmul_backend_fun)(const char *name,
  * Codec-aware (typed) backend hook (API version 6). Multiply a compressed
  * tensor by a dense double operand WITHOUT Rfmalloc decoding it to f64 first:
  * the backend receives the raw codec payload (byte-identical to how the codec
- * stored it — e.g. an fmalloc-mmap'd q4_k payload is a valid ggml Q4_K tensor)
+ * stored it - e.g. an fmalloc-mmap'd q4_k payload is a valid ggml Q4_K tensor)
  * and the dims, so a device/quantized engine can do native quantized matmul.
  * C = T x D when typed_on_left, else C = D x T. Return 0 if handled, non-zero
  * to decline (Rfmalloc then decodes panels and uses the dense gemm path).

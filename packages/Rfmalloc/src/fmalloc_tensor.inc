@@ -381,7 +381,7 @@ extern "C" SEXP rfm_tensor_matmul_impl(SEXP payload, SEXP codec_name, SEXP dims_
             R_CheckUserInterrupt();
         }
     } else {
-        // C[, j0:j1) = D x T[, j0:j1) — no accumulation across panels.
+        // C[, j0:j1) = D x T[, j0:j1) - no accumulation across panels.
         int m = (int)dnrow, k = (int)src.nrow;
         for (R_xlen_t j0 = 0; j0 < src.ncol; j0 += panel_cols) {
             R_xlen_t jb = src.ncol - j0 < panel_cols ? src.ncol - j0 : panel_cols;

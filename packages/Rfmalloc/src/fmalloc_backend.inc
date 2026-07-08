@@ -7,7 +7,7 @@
 // kernel, or an out-of-core-aware GEMM) through the Rfmalloc_register_matmul_-
 // backend C-callable and select it by name; a backend may decline a call
 // (return non-zero) to fall back to BLAS. This is Rfmalloc-scoped (base R's
-// %*% is unaffected) and needs no recompile of Rfmalloc — the same ergonomics
+// %*% is unaffected) and needs no recompile of Rfmalloc - the same ergonomics
 // as the tensor codec registry.
 //
 // Backend signature (by value for easy downstream implementation):
@@ -22,7 +22,7 @@ typedef int (*rfm_gemm_fn)(const char *transa, const char *transb,
 
 // Second-tier, codec-aware hook: multiply a compressed/typed tensor by a dense
 // double operand WITHOUT decoding it to f64 first. The backend receives the
-// raw codec payload (byte-identical to how the codec stored it — e.g. an
+// raw codec payload (byte-identical to how the codec stored it - e.g. an
 // fmalloc-mmap'd q4_k payload is a valid ggml Q4_K tensor) plus the dims, so a
 // device/quantized engine can do native quantized matmul and keep the weight
 // resident. C = T x D (typed_on_left) or D x T (else). Returns 0 if handled,

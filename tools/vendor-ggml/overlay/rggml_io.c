@@ -25,7 +25,7 @@
 #include <Rinternals.h>
 #include <R_ext/Print.h>
 
-/* Non-NULL sentinels for stderr/stdout — the actual pointer value is never
+/* Non-NULL sentinels for stderr/stdout - the actual pointer value is never
  * dereferenced; our wrappers ignore the stream argument entirely. */
 FILE * r_ggml_stderr_sentinel = (FILE *)1;
 FILE * r_ggml_stdout_sentinel = (FILE *)1;
@@ -119,7 +119,7 @@ void r_ggml_exit(int status) {
 }
 
 /*
- * User-facing error — R-catchable via tryCatch(), unlike abort().
+ * User-facing error - R-catchable via tryCatch(), unlike abort().
  */
 void r_ggml_error(const char *format, ...) {
     va_list args;

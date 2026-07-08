@@ -1629,7 +1629,7 @@ extern "C" SEXP rfm_can_handle_ops_pair(SEXP x, SEXP y, SEXP generic_sexp)
 }
 
 //==============================================================================
-// rfm_ops_dispatch — main entry point called from R
+// rfm_ops_dispatch - main entry point called from R
 //==============================================================================
 
 extern "C" SEXP rfm_ops_dispatch(SEXP op_name, SEXP e1, SEXP e2, SEXP unary_sexp)

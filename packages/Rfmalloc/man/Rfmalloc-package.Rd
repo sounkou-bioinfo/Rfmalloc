@@ -100,7 +100,7 @@ reference validation, and compaction of recovery metadata.
 Useful links:
 \itemize{
   \item \url{https://github.com/sounkou-bioinfo/Rfmalloc}
-  \item \url{https://sounkou-bioinfo.github.io/Rfmalloc/}
+  \item \url{https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/}
   \item Report bugs at \url{https://github.com/sounkou-bioinfo/Rfmalloc/issues}
 }
 

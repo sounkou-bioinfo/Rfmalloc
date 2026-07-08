@@ -24,6 +24,7 @@ it with \code{\link[=rllm_use_ggml]{rllm_use_ggml()}}. Build quantized tensors w
 Useful links:
 \itemize{
   \item \url{https://github.com/sounkou-bioinfo/Rfmalloc}
+  \item \url{https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/}
   \item Report bugs at \url{https://github.com/sounkou-bioinfo/Rfmalloc/issues}
 }
 

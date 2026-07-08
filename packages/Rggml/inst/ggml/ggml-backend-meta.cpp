@@ -216,7 +216,7 @@ ggml_backend_dev_t ggml_backend_meta_device(
     //
     // NEVER-DESTROYED SINGLETONS (ggmlR): both caches live on the heap via a
     // leaked static pointer, so C++ does NOT run their destructors at process
-    // exit. Same rationale as meta_bufts_map() below — on a multi-GPU run these
+    // exit. Same rationale as meta_bufts_map() below - on a multi-GPU run these
     // hold per-device Vulkan-backed contexts, and destroying them during
     // __run_exit_handlers (in an order undefined relative to the Vulkan/driver
     // teardown) faulted. The OS reclaims the memory at exit. Explicit cleanup on
@@ -360,7 +360,7 @@ bool ggml_backend_buft_is_meta(ggml_backend_buffer_type_t buft) {
 // is a leaked static, so C++ does NOT run ~map at process exit. This is
 // deliberate: on a multi-GPU run the cached buffer types transitively reference
 // per-device Vulkan state, and the C-runtime's exit-time static destruction
-// order (~map here vs the Vulkan/driver teardown) is undefined — running ~map
+// order (~map here vs the Vulkan/driver teardown) is undefined - running ~map
 // then faulted (SIGSEGV in ~map during __run_exit_handlers, only after several
 // devices had been touched: the classic static-destruction-order fiasco). The
 // map's memory is reclaimed by the OS at exit; nothing is actually leaked in a

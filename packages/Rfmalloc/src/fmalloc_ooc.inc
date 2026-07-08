@@ -18,7 +18,7 @@
 #include <sys/sysctl.h>
 #endif
 
-// madvise()/MADV_* are POSIX but absent on some platforms — the OOC path still
+// madvise()/MADV_* are POSIX but absent on some platforms - the OOC path still
 // works there, just without per-tile eviction.
 #if defined(MADV_DONTNEED) && defined(MADV_SEQUENTIAL) && !defined(_WIN32)
 #  define RFM_HAVE_MADVISE 1
@@ -85,7 +85,7 @@ static inline uintptr_t ooc_page_size(void)
 }
 
 // Advise the kernel about a payload range (best-effort; a no-op on platforms
-// without madvise). Failures are ignored — they are expected for non-mmap or
+// without madvise). Failures are ignored - they are expected for non-mmap or
 // unaligned edge cases.
 static void ooc_advise(void *addr, size_t bytes, ooc_advice_t advice)
 {

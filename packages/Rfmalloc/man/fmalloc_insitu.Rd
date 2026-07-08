@@ -47,18 +47,18 @@ accumulate-into-\code{x} pattern iterative algorithms need), for numeric vectors
 }
 \details{
 On an \emph{unshared} fmalloc vector, an ordinary \code{x[i] <- value} already writes
-in place through the ALTREP data pointer — no copy — because the file-backed
+in place through the ALTREP data pointer - no copy - because the file-backed
 storage is exposed directly and this package controls duplication. The copy
 that hurts happens when the vector is \emph{shared} (\code{y <- x}): R then duplicates
 the whole payload to preserve value semantics before modifying, which is
 catastrophic for a larger-than-RAM or persistent vector. These functions
-mutate by reference regardless of sharing — they never copy, updating the
+mutate by reference regardless of sharing - they never copy, updating the
 durable store directly and returning the same object invisibly.
 }
 \section{Aliasing (read this)}{
 
 Because there is no copy, all bindings to the same fmalloc vector observe the
-change. After \verb{y <- x; fmalloc_set(x, 1, 5)}, \code{y[1]} is also \code{5} — \code{x} and
+change. After \verb{y <- x; fmalloc_set(x, 1, 5)}, \code{y[1]} is also \code{5} - \code{x} and
 \code{y} name the same backing store, whereas ordinary \code{x[1] <- 5} would copy \code{x}
 (leaving \code{y} untouched). This breaks R's usual value semantics \emph{by design};
 for a persistent runtime it is a feature (the durable data is updated). For
