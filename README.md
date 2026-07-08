@@ -65,6 +65,67 @@ dim(pca$x)                          # cell scores in the top PC space
 #> [1] 3000    6
 ```
 
+### Someone else’s algorithm, our storage (runs at render time)
+
+`bigPCAcpp` and `bigPLSR` link bigmemory;
+[`pcaone`](https://github.com/Zilong-Li/PCAoneR) takes an
+`Eigen::Map<MatrixXd>`. All three consume a bare `double*`. An fmalloc
+ALTREP matrix *is* a `double*`, into an mmap. So a randomized SVD
+written by somebody who has never heard of this package runs out-of-core
+over it, unchanged, with no copy:
+
+``` r
+library(pcaone)                       # not ours: Li et al. 2023, randomized SVD
+
+rt2 <- open_fmalloc(tempfile(fileext = ".bin"), size_gb = 3)
+m <- 2e6L; n <- 40L
+G <- create_fmalloc_matrix("numeric", nrow = m, ncol = n, runtime = rt2)
+set.seed(1); for (j in seq_len(n)) G[, j] <- rnorm(m)   # 610 MB, on disk
+
+invisible(gc(reset = TRUE))
+sv_mapped <- pcaone(G, k = 5)$d                         # straight off the mmap
+peak_mapped <- gc()["Vcells", "max used"] * 8 / 2^20
+
+invisible(gc(reset = TRUE))
+sv_heap <- pcaone(matrix(G[], m, n), k = 5)$d           # an ordinary R matrix
+peak_heap <- gc()["Vcells", "max used"] * 8 / 2^20
+
+round(c(payload_MB    = m * n * 8 / 2^20,
+        peak_heap_MB  = peak_heap,          # pays for the payload
+        peak_mmap_MB  = peak_mapped))       # does not
+#>   payload_MB peak_heap_MB peak_mmap_MB 
+#>          610          697           86
+identical(sv_mapped, sv_heap)               # and the answer is the same one
+#> [1] TRUE
+```
+
+The payload never enters the R heap. Nothing in `pcaone` knows why.
+
+That is the deal for anything already written against a pointer. Where
+it stops working is where no pointer can exist: **compressed** data.
+Nobody can hand `pcaone` a pointer into a PLINK `.bed`, because a
+genotype there is two bits, not eight bytes. That is what the codec
+registry is for, and it is the only thing it is for:
+
+``` r
+rt3 <- open_fmalloc(tempfile(fileext = ".bin"), size_gb = 1)
+set.seed(2)
+# 5000 samples x 1000 variants of dosages (0/1/2), SNP-major like a real .bed
+g  <- matrix(sample(c(0L, 1L, 2L), 5e6, replace = TRUE), 5000, 1000)
+tn <- fmalloc_bed(g, runtime = rt3)          # 2 bits per genotype, memory-mapped
+
+c(bits_per_genotype = 8 * length(unclass(tn)) / length(g),
+  vs_double         = length(g) * 8 / length(unclass(tn)))
+#> bits_per_genotype         vs_double 
+#>          2.000038         31.999386
+
+# Products decode bounded column panels and hand them to BLAS. The genotypes are
+# never materialized as doubles; these two kernels are what a randomized SVD needs.
+Omega <- matrix(rnorm(1000 * 5), 1000, 5)
+max(abs(matrix((tn %*% Omega)[], 5000, 5) - matrix(as.numeric(g), 5000, 1000) %*% Omega))
+#> [1] 0
+```
+
 ### LLM: bytes in, bytes out
 
 A GGUF model’s weights are memory-mapped and stay quantized; the
