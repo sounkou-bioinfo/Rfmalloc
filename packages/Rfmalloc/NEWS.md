@@ -2,6 +2,21 @@
 
 ## 0.1.0 (unreleased)
 
+- `fmalloc_bed_standardize()` bakes per-variant standardization into a `"bed"`
+  tensor in one streaming pass, so every later decode returns standardized,
+  mean-imputed genotypes with no genotype ever materialized as a double and no
+  second pass. Decode, mean-imputation (the missing code maps to the variant
+  mean, hence to 0 after centering), centering and scaling collapse into one
+  four-entry lookup table per variant, built once from the variant's mean and
+  sd and applied on the same sweep the matmul's first panel decode already
+  takes. `scale = "sd"` matches `scale()` on the mean-imputed matrix to floating
+  point (max abs diff 4e-16 on 2000 x 120); `scale = "binomial"` uses
+  `sqrt(2 p (1 - p))`, `p = mean/2`, the allele-frequency scaling of GRM /
+  SmartPCA / GCTA. Monomorphic variants standardize to 0, not `NaN`. Products
+  against the standardized tensor are then centered-and-scaled genotype inputs,
+  so a randomized SVD over `tn %*% Omega` and `crossprod(tn, .)` converges to
+  the dense standardized SVD - genotype PCA with the genotypes still at 2 bits.
+
 - Added the `"bed"` tensor codec: PLINK 1 genotypes at **2 bits each**, via
   `fmalloc_bed()`. A `.bed` is already the storage we want, because SNP-major
   layout stores each variant contiguously and fmalloc tensors are column-major,
