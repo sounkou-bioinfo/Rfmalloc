@@ -110,7 +110,7 @@ is for:
 ```{r bed, message = FALSE}
 rt3 <- open_fmalloc(tempfile(fileext = ".bin"), size_gb = 1)
 set.seed(2)
-# 5000 samples x 1000 variants of dosages (0/1/2), SNP-major like a real .bed
+# 5000 samples x 1000 variants of hardcalls (0/1/2), SNP-major like a real .bed
 g  <- matrix(sample(c(0L, 1L, 2L), 5e6, replace = TRUE), 5000, 1000)
 tn <- fmalloc_bed(g, runtime = rt3)          # 2 bits per genotype, memory-mapped
 
@@ -130,6 +130,25 @@ cleanup_fmalloc(rt2)
 ```{r cleanup_bed, include = FALSE}
 cleanup_fmalloc(rt3)
 ```
+
+That codec is one of a family, and the family divides along a real line. `fmalloc_bed`
+stores PLINK hardcalls at 2 bits, `fmalloc_dosage` stores fractional dosages at
+1 byte, and both **fuse** per-variant centering and scaling into the decode: one
+lookup-table read per genotype does decode, mean-imputation (a missing call maps
+to the variant mean, hence to 0 after centering, so imputation is free) and
+standardization at once. `fmalloc_bed_standardize()` therefore turns a genotype
+panel into a PCA-ready standardized matrix with no genotype ever expanded to a
+double. That is the **numeric** side, and it is what the matmul codec ABI serves.
+
+Phase and multiallelic data are not numbers, so they get a different interface.
+`fmalloc_haplotypes` stores phased haplotypes at 1 bit each and is deliberately
+**not** a matmul codec: it is a sibling over the same file-backed storage, with
+typed accessors instead of decode-to-double, and it feeds haplotype HMMs like
+[`kalis`](https://kalis.louisaslett.com/) (Li and Stephens local ancestry)
+losslessly, the way `pcaone` consumes the numeric side. Two access interfaces,
+one storage substrate. And `Rpgen` brings a native PLINK2 `.pgen` reader in C
+(it vendors pgenlib, GPL-3), so both interfaces can be fed from the on-disk
+format that carries genotypes, dosages, phase and multiple alleles at once.
 
 ### LLM: bytes in, bytes out
 
@@ -186,16 +205,17 @@ backend registry, a faster backend accelerates both at once, with no change to
 
 ## The packages
 
-Four packages, one stack. Each links to its reference documentation; the
+Five packages, one stack. Each links to its reference documentation; the
 sources live under [`packages/`](https://github.com/sounkou-bioinfo/Rfmalloc/tree/main/packages)
 in this repository.
 
 | package | role |
 |---|---|
-| [**Rfmalloc**](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/) | the substrate: file-backed ALTREP vectors/matrices/tensors, codec + backend registries, panel matmul, out-of-core eviction, `fmalloc_pca()`/`fmalloc_colVars()` for genomics-scale matrices |
+| [**Rfmalloc**](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/) | the substrate: file-backed ALTREP vectors/matrices/tensors, codec + backend registries, panel matmul, out-of-core eviction, `fmalloc_pca()`, and the genotype codecs (`bed`/`dosage`/`haplotypes`) with fused standardization |
 | [**Rgguf**](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/) | GGUF model files: metadata, tensor directory, dequantized or **native (still-quantized)** imports into fmalloc storage |
 | [**Rggml**](https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/) | compute carrier: vendored GGML with a BLAS backend (R's own BLAS via a `cblas`→Fortran shim) and runtime-SIMD-dispatched quantized kernels |
 | [**Rllm**](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/) | composition + inference: registers Rggml as Rfmalloc's codec-aware matmul backend, and builds the llama forward pass, KV cache, and byte-level generation |
+| [**Rpgen**](https://github.com/sounkou-bioinfo/Rfmalloc/tree/main/packages/Rpgen) | genomics I/O: a native PLINK2 `.pgen` reader in C (vendored pgenlib, GPL-3) exposing the C-callable API pgenlibr lacks, the on-disk source the genotype codecs pack from |
 
 ## Install
 
@@ -208,10 +228,11 @@ install.packages("Rllm",
 
 or a GitHub subdir ref: `pak::pak("sounkou-bioinfo/Rfmalloc/packages/Rllm")`.
 
-`Rfmalloc` and `Rggml` build on Linux, macOS and Windows; `Rgguf` and `Rllm`
-are Unix-only for now (Rgguf's vendored GGUF parser memory-maps the file with no
-Windows path). All four are verified on ARM in CI: Apple Silicon and Linux
-aarch64.
+`Rfmalloc` and `Rggml` build on Linux, macOS and Windows; `Rgguf`, `Rllm` and
+`Rpgen` are Unix-only for now (Rgguf's vendored GGUF parser memory-maps the file
+with no Windows path; Rpgen's vendored pgenlib Windows build is verified upstream
+by pgenlibr and is a follow-up here). All five are verified on ARM in CI: Apple
+Silicon and Linux aarch64.
 
 ## Correctness discipline
 
