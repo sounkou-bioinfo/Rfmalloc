@@ -29,7 +29,6 @@ Remotes:
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 SystemRequirements: GNU make
-OS_type: unix
 URL: https://github.com/sounkou-bioinfo/Rfmalloc,
     https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/
 Depends:

@@ -233,11 +233,12 @@ install.packages("Rllm",
 or a GitHub subdir ref:
 `pak::pak("sounkou-bioinfo/Rfmalloc/packages/Rllm")`.
 
-`Rfmalloc` and `Rggml` build on Linux, macOS and Windows; `Rgguf`,
-`Rllm` and `Rpgen` are Unix-only for now (Rgguf’s vendored GGUF parser
-memory-maps the file with no Windows path; Rpgen’s vendored pgenlib
-Windows build is verified upstream by pgenlibr and is a follow-up here).
-All five are verified on ARM in CI: Apple Silicon and Linux aarch64.
+All five packages target Linux, macOS and Windows (Rtools), and all five
+are verified on ARM in CI: Apple Silicon and Linux aarch64. On Windows,
+Rgguf’s vendored GGUF parser maps files through a small
+`CreateFileMapping` shim in place of `mmap`, and Rpgen’s vendored
+pgenlib builds with the same `Makevars.win` that carries pgenlibr on
+CRAN.
 
 ## Correctness discipline
 

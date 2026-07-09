@@ -1,7 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <sys/mman.h>
+#ifdef _WIN32
+#  include "rgguf_win_mman.h"
+#else
+#  include <sys/mman.h>
+#endif
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <errno.h>

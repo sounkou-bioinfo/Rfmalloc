@@ -60,6 +60,12 @@ jobs:
           - {pkg: Rpgen,    os: ubuntu-latest,  r: 'devel'}
           - {pkg: Rpgen,    os: macos-latest,   r: 'release'}
           - {pkg: Rpgen,    os: ubuntu-24.04-arm, r: 'release'}
+          # Windows/Rtools: Rgguf's gguflib mmap is shimmed to CreateFileMapping;
+          # Rpgen's vendored pgenlib already ships Makevars.win (pgenlibr proves
+          # it on CRAN); Rllm has no Unix-only C of its own.
+          - {pkg: Rgguf,    os: windows-latest, r: 'release'}
+          - {pkg: Rllm,     os: windows-latest, r: 'release'}
+          - {pkg: Rpgen,    os: windows-latest, r: 'release'}
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}

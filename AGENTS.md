@@ -61,7 +61,7 @@ as one commit and is validated as one unit.
 - Tests are tinytest, in `packages/<pkg>/inst/tinytest/`.
 - READMEs: `README.Rmd` is the source where present; re-render to `README.md`.
 - CI is `.github/workflows/R-CMD-check.yaml` (per-package matrix + integration
-  job). Keep it green on every push. Rfmalloc and Rggml also build on Windows;
+  job). Keep it green on every push. All five packages target Windows (Rtools);
   all five are checked on aarch64 (`ubuntu-24.04-arm`, macOS Apple Silicon).
 - Prose is written without em dashes, anywhere: READMEs, DESCRIPTION, NEWS,
   commit messages. Use a colon in a title, ` - ` mid-sentence.
