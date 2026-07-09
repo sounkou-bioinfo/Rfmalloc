@@ -6,7 +6,6 @@
 ^src/.*\.so$
 ^src/symbols\.rds$
 ^src/Makevars$
-^src/Makevars\.win$
 ^src/libPLINK2\.a$
 ^src/libPGZSTD\.a$
 ^src/libPGDEFLATE\.a$

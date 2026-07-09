@@ -22,9 +22,9 @@ The CRAN package
 headers, declares no `LinkingTo`, and registers no `R_RegisterCCallable`
 entry points. Nothing else can call its readers from C. Rpgen vendors
 the same library and registers a C-callable surface (`Rpgen_open_info`,
-and the genotype readers as they land), which is the whole point: the
-Rfmalloc side reads `.pgen` in C and writes into memory-mapped storage,
-with no round trip through an R matrix.
+`Rpgen_read_hardcalls`, `Rpgen_read_dosages`), which is the whole point:
+the Rfmalloc side reads `.pgen` in C and writes into memory-mapped
+storage, with no round trip through an R matrix.
 
 ## Provenance and license
 
@@ -41,7 +41,7 @@ LGPL / MIT / BSD attribution of `pgenlib`, `zstd`, `libdeflate` and
 ## Usage
 
 `rpgen_info()` opens a `.pgen` and reports its sample and variant
-counts, straight from the header. This example runs against the small
+counts, straight from the header. These examples run against the small
 `chr21_phase3_start.pgen` fixture that ships with the package:
 
 ``` r
@@ -54,9 +54,33 @@ rpgen_info(pgen)
 #> [1] 485
 ```
 
-The counts are cross-checked against `pgenlibr` reading the same file in
-the package’s own tests, so the native open sequence is pinned to the
+The counts, and every genotype and dosage read below, are cross-checked
+against `pgenlibr` reading the same file in the package’s own tests
+(bit-exact, no tolerance), so the native reader is pinned to the
 reference implementation.
+
+`rpgen_dosage()` and `rpgen_bed()` read the genotypes in C and pack them
+straight into Rfmalloc’s genotype codecs, so the whole path from a
+`.pgen` on disk to principal components never materializes a dense
+double genotype matrix:
+
+``` r
+library(Rfmalloc)
+rt <- open_fmalloc(tempfile(fileext = ".bin"), mode = "scratch", size_gb = 1)
+
+dose <- rpgen_dosage(pgen, runtime = rt)   # 1 byte/dosage, read from .pgen in C
+c(payload_bytes = length(unclass(dose)),
+  vs_double     = prod(dim(dose)) * 8 / length(unclass(dose)))
+#> payload_bytes     vs_double 
+#>  1.214464e+06  7.999842e+00
+
+# Standardization (per-variant centre and scale, missing -> mean) is baked into
+# the codec's decode, so PCA runs over the compressed tensor with center = FALSE.
+std <- fmalloc_dosage_standardize(dose, runtime = rt)
+pca <- fmalloc_pca(std, k = 5, center = FALSE)
+round(pca$sdev, 2)
+#> [1] 2.73 2.55 2.21 2.08 1.94
+```
 
 ## Installation
 

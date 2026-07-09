@@ -7,6 +7,14 @@
 #  include <sys/mman.h>
 #endif
 #include <fcntl.h>
+
+/* GGUF is a binary format. On Windows the CRT opens files in text mode by
+ * default, which mangles binary payloads through CRLF translation; O_BINARY
+ * (and the "b" fopen modifier below) suppress that. Both are no-ops on POSIX,
+ * where O_BINARY is not defined. */
+#ifndef O_BINARY
+#  define O_BINARY 0
+#endif
 #include <sys/stat.h>
 #include <errno.h>
 #include <unistd.h>
@@ -115,7 +123,7 @@ uint64_t gguf_value_len(uint32_t type, union gguf_value *val) {
 
 /* Open a GGUF file and return a parsing context. */
 gguf_ctx *gguf_open(const char *filename) {
-    int fd = open(filename,O_RDWR|O_APPEND);
+    int fd = open(filename,O_RDWR|O_APPEND|O_BINARY);
     if (fd == -1) return NULL;
 
     /* Mapping successful. We can create our context object. */
@@ -453,7 +461,7 @@ gguf_ctx *gguf_create(const char *filename, int flags) {
     hdr.tensor_count = 0;
     hdr.metadata_kv_count = 0;
 
-    FILE *fp = fopen(filename, flags & GGUF_OVERWRITE ? "w" : "wx");
+    FILE *fp = fopen(filename, flags & GGUF_OVERWRITE ? "wb" : "wbx");
     if (fp == NULL) return NULL;
     if (fwrite(&hdr,1,sizeof(hdr),fp) != sizeof(hdr)) {
         fclose(fp);
