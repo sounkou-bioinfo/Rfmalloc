@@ -538,12 +538,12 @@ href="https://sounkou-bioinfo.r-universe.dev">r-universe</a>:</p>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">repos =</span> <span class="fu">c</span>(<span class="st">&quot;https://sounkou-bioinfo.r-universe.dev&quot;</span>, <span class="fu">getOption</span>(<span class="st">&quot;repos&quot;</span>)))</span></code></pre></div>
 <p>or a GitHub subdir ref:
 <code>pak::pak("sounkou-bioinfo/Rfmalloc/packages/Rllm")</code>.</p>
-<p><code>Rfmalloc</code> and <code>Rggml</code> build on Linux, macOS
-and Windows; <code>Rgguf</code>, <code>Rllm</code> and
-<code>Rpgen</code> are Unix-only for now (Rgguf’s vendored GGUF parser
-memory-maps the file with no Windows path; Rpgen’s vendored pgenlib
-Windows build is verified upstream by pgenlibr and is a follow-up here).
-All five are verified on ARM in CI: Apple Silicon and Linux aarch64.</p>
+<p>All five packages target Linux, macOS and Windows (Rtools), and all
+five are verified on ARM in CI: Apple Silicon and Linux aarch64. On
+Windows, Rgguf’s vendored GGUF parser maps files through a small
+<code>CreateFileMapping</code> shim in place of <code>mmap</code>, and
+Rpgen’s vendored pgenlib builds with the same <code>Makevars.win</code>
+that carries pgenlibr on CRAN.</p>
 <h2 id="correctness-discipline">Correctness discipline</h2>
 <p>Every quantized codec decoder is pinned
 <strong>bit-identical</strong> to GGML’s reference
