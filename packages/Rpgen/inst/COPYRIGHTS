@@ -69,30 +69,93 @@ Under tools/include/ (built into src/libPLINK2.a):
 Deliberately NOT vendored (pgenlib write path, out of scope for a reader):
   pgenlib's variant *writer* (PgenWriter and friends) is not part of the
   pgenlibr 0.6.2 vendored subset either, so it is not present to vendor.
+  (Milestone 4a below adds this after all - pgenlib_write.cc/.h - because
+  VcfToPgen() needs a writer; it comes from the second vendoring source
+  documented next, not from pgenlibr.)
+
+Milestone 4a: plink2's VCF/BCF/BGEN/Oxford import closure (VcfToPgen())
+--------------------------------------------------------------------------
+Reads a VCF by calling plink2's own importer rather than a from-scratch
+htslib-based reader, so the same vendored closure also covers BCF/BGEN/
+Oxford for a later milestone. Vendored from a second, independent source
+(NOT the pgenlibr tarball above, which is read-only): plink-ng itself, at a
+pinned commit.
+
+Upstream project (same project as pgenlib above, different subset)
+  plink-ng, https://github.com/chrchang/plink-ng
+  Copyright (C) 2005-2026 Shaun Purcell, Christopher Chang.
+  Commit a81e38220b16e3907bdcedbe6ce39b273e001e13, fetched as GitHub's
+  per-commit tarball, SHA256-pinned in
+  ../../tools/vendor-plink2-import/vendorplink2import.R (see that tool's
+  PROVENANCE.md for the full file list, why each file is needed, and how the
+  closure was verified to compile+link by actually building it).
+  License: plink2's *program* code (as opposed to the pgenlib *library* code
+  above) is GNU General Public License, version 3 or later - see "Verbatim
+  upstream GPL-3 notice" below. This is a second, independently-licensed
+  vendored component, distinct from pgenlib's LGPL (>= 3) license (see "Why
+  Rpgen is GPL-3" above) - both are compatible with Rpgen's own GPL-3.
+
+  `Rscript tools/vendor-plink2-import/vendorplink2import.R check` re-derives
+  this subset and asserts it still equals the recipe.
+
+What was vendored (built into src/libPLINK2.a alongside the pgenlib read
+subset above):
+
+  Program-level plink2 sources (tools/include/, GPL-3 - note: NOT under
+  tools/include/include/, since plink2's program files #include each other
+  without an "include/" prefix - see the vendoring tool's PROVENANCE.md):
+    plink2_import.cc/.h (VcfToPgen(), BcfToPgen(), OxGenToPgen(),
+    OxBgenToPgen(), OxHapslegendToPgen()), plink2_common.cc/.h,
+    plink2_cmdline.cc/.h (patched, see below), plink2_pvar.cc/.h,
+    plink2_psam.cc/.h, plink2_compress_stream.cc/.h,
+    plink2_import_legacy.cc/.h, plink2_random.cc/.h, plink2_decompress.cc/.h,
+    plink2_data.cc/.h, plink2_family.cc/.h.
+
+  Library-level additions (tools/include/include/, joining the pgenlib read
+  subset above):
+    pgenlib_write.cc/.h - the .pgen writer VcfToPgen() calls. LGPL (>= 3),
+      same license and upstream notice as the read subset above.
+    SFMT.c/.h - the SIMD-oriented Fast Mersenne Twister PRNG
+      plink2_random.h wraps. BSD-3-Clause (Mutsuo Saito, Makoto Matsumoto,
+      Hiroshima University, University of Tokyo) - see "Verbatim upstream
+      BSD-3-Clause notice (SFMT)" below.
+
+  Local patch (tools/vendor-plink2-import/patches/plink2_cmdline.cc.patch):
+    replaces plink2_cmdline.cc's logputs_silent()/logputs()/logerrputs()/
+    logputsb()/logerrputsb() to route through R's Rprintf()/REprintf()
+    instead of a log FILE*/stdout/stderr - required, not cosmetic: Rpgen
+    never opens a log file, so upstream's version (which unconditionally
+    fputs()s to it) would segfault; see that tool's PROVENANCE.md for the
+    full rationale.
 
 Rpgen's own code
 ------------------
-src/rpgen.cpp (the C-callable implementation and R_init_Rpgen registration),
-inst/include/Rpgen.h (the installed C-callable header for downstream
-LinkingTo consumers), and all R/ code are Rpgen's own, GPL-3 licensed, as
-declared in DESCRIPTION.
+src/rpgen.cpp and src/rpgen_import.cpp (the C-callable implementations and
+R_init_Rpgen registration), inst/include/Rpgen.h (the installed C-callable
+header for downstream LinkingTo consumers), and all R/ code are Rpgen's own,
+GPL-3 licensed, as declared in DESCRIPTION.
 
 Licensing summary
 -------------------
-- pgenlib (Christopher Chang): LGPL (>= 3).
-- pgenlibr (Christopher Chang), the CRAN package this tree is vendored from:
-  LGPL (>= 3).
+- pgenlib (Christopher Chang), read subset (tools/vendor-pgenlib) and
+  pgenlib_write.cc/.h (tools/vendor-plink2-import): LGPL (>= 3).
+- pgenlibr (Christopher Chang), the CRAN package the read subset is vendored
+  from: LGPL (>= 3).
+- plink2's program code (Shaun Purcell, Christopher Chang), the
+  VcfToPgen()-and-friends import closure (tools/vendor-plink2-import): GPL-3.
 - Zstd (Yann Collet, Przemyslaw Skibinski, Nick Terrell; copyright Meta
   Platforms, Inc.): BSD.
 - libdeflate (Eric Biggers): MIT.
 - SIMDe (Evan Nemerson): MIT.
+- SFMT (Mutsuo Saito, Makoto Matsumoto, Hiroshima University, University of
+  Tokyo): BSD-3-Clause.
 - Rpgen's own code: GPL-3.
 
-The vendored LGPL/MIT/BSD-licensed components remain under their upstream
-licenses, all GPL-3-compatible; this notice preserves their required
-copyright and permission statements and does not change the license terms
-declared for the Rpgen package itself (GPL-3, see "Why Rpgen is GPL-3"
-above).
+The vendored LGPL/GPL-3/MIT/BSD-licensed components remain under their
+upstream licenses, all GPL-3-compatible; this notice preserves their
+required copyright and permission statements and does not change the
+license terms declared for the Rpgen package itself (GPL-3, see "Why Rpgen
+is GPL-3" above).
 
 Verbatim upstream LGPL notice (from tools/include/include/pgenlib_read.h
 and every other pgenlib source/header file vendored here)
@@ -203,3 +266,55 @@ tools/include/zstd/LICENSE)
     THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
     (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Verbatim upstream GPL-3 notice (from tools/include/plink2_import.cc, and
+every other plink2 program source/header file vendored by
+tools/vendor-plink2-import/)
+--------------------------------------------------------------------------
+
+    This program is free software: you can redistribute it and/or modify it
+    under the terms of the GNU General Public License as published by the
+    Free Software Foundation, either version 3 of the License, or (at your
+    option) any later version.
+
+    This program is distributed in the hope that it will be useful, but
+    WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+    General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+Verbatim upstream BSD-3-Clause notice (SFMT, from
+tools/include/include/SFMT.h)
+--------------------------------------------------------------------------
+
+    Copyright (C) 2006, 2007 Mutsuo Saito, Makoto Matsumoto and Hiroshima
+    University.
+    Copyright (C) 2012 Mutsuo Saito, Makoto Matsumoto, Hiroshima
+    University and The University of Tokyo.
+    All rights reserved.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    - Redistributions of source code must retain the above copyright notice,
+      this list of conditions and the following disclaimer.
+    - Redistributions in binary form must reproduce the above copyright notice,
+      this list of conditions and the following disclaimer in the documentation
+      and/or other materials provided with the distribution.
+    - Neither the names of Hiroshima University, The University of Tokyo nor the
+      names of its contributors may be used to endorse or promote products
+      derived from this software without specific prior written permission.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+    LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+    CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+    SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+    CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+    POSSIBILITY OF SUCH DAMAGE.

@@ -12,9 +12,19 @@ LIBZSTD = $(ZSTD_SOURCES:.c=.o)
 LIBDEFLATE_SOURCES = $(INCL)/libdeflate/lib/zlib_decompress.c $(INCL)/libdeflate/lib/zlib_compress.c $(INCL)/libdeflate/lib/utils.c $(INCL)/libdeflate/lib/gzip_compress.c $(INCL)/libdeflate/lib/crc32.c $(INCL)/libdeflate/lib/adler32.c $(INCL)/libdeflate/lib/deflate_decompress.c $(INCL)/libdeflate/lib/deflate_compress.c $(INCL)/libdeflate/lib/gzip_decompress.c $(INCL)/libdeflate/lib/arm/arm_cpu_features.c $(INCL)/libdeflate/lib/x86/x86_cpu_features.c
 LIBDEFLATE = $(LIBDEFLATE_SOURCES:.c=.o)
 
-LIBPLINK2_SOURCES = $(INCL)/include/pgenlib_ffi_support.cc $(INCL)/include/pgenlib_misc.cc $(INCL)/include/pgenlib_read.cc $(INCL)/include/plink2_base.cc $(INCL)/include/plink2_bits.cc $(INCL)/include/plink2_bgzf.cc $(INCL)/include/plink2_float.cc $(INCL)/include/plink2_htable.cc $(INCL)/include/plink2_memory.cc $(INCL)/include/plink2_simd.cc $(INCL)/include/plink2_string.cc $(INCL)/include/plink2_text.cc $(INCL)/include/plink2_thread.cc $(INCL)/include/plink2_zstfile.cc $(INCL)/include/pvar_ffi_support.cc
+# pgenlib read subset (vendorpgen.R) plus the plink2 VcfToPgen() import
+# closure (vendorplink2import.R, milestone 4a): pgenlib_write.cc is the
+# .pgen writer, the rest of the new entries are plink2's *program*-level
+# files (no "include/" path prefix - they live one directory up from the
+# library subset, see tools/vendor-plink2-import/PROVENANCE.md).
+LIBPLINK2_SOURCES = $(INCL)/include/pgenlib_ffi_support.cc $(INCL)/include/pgenlib_misc.cc $(INCL)/include/pgenlib_read.cc $(INCL)/include/pgenlib_write.cc $(INCL)/include/plink2_base.cc $(INCL)/include/plink2_bits.cc $(INCL)/include/plink2_bgzf.cc $(INCL)/include/plink2_float.cc $(INCL)/include/plink2_htable.cc $(INCL)/include/plink2_memory.cc $(INCL)/include/plink2_simd.cc $(INCL)/include/plink2_string.cc $(INCL)/include/plink2_text.cc $(INCL)/include/plink2_thread.cc $(INCL)/include/plink2_zstfile.cc $(INCL)/include/pvar_ffi_support.cc $(INCL)/plink2_import.cc $(INCL)/plink2_common.cc $(INCL)/plink2_cmdline.cc $(INCL)/plink2_pvar.cc $(INCL)/plink2_psam.cc $(INCL)/plink2_compress_stream.cc $(INCL)/plink2_import_legacy.cc $(INCL)/plink2_random.cc $(INCL)/plink2_decompress.cc $(INCL)/plink2_data.cc $(INCL)/plink2_family.cc
 LIBPLINK2 = $(LIBPLINK2_SOURCES:.cc=.o)
 
+# SFMT is plain C (not C++), so it needs its own suffix rule; SFMT.h wraps
+# its declarations in extern "C" for C++ callers (plink2_random.cc), so the
+# two object kinds link together without a name-mangling mismatch.
+LIBPLINK2_C_SOURCES = $(INCL)/include/SFMT.c
+LIBPLINK2_CO = $(LIBPLINK2_C_SOURCES:.c=.o)
 
 LIBPFFI_SOURCES = $(INCL)/include/pvar_ffi_support.cpp $(INCL)/include/pgenlib_ffi_support.cpp
 LIBFFI = $(LIBPFFI_SOURCES:.cpp=.o)
@@ -27,10 +37,10 @@ libPGZSTD.a: $(LIBZSTD)
 libPGDEFLATE.a: $(LIBDEFLATE)
 	$(AR) rcs libPGDEFLATE.a $(LIBDEFLATE)
 
-libPLINK2.a: $(LIBPLINK2) $(LIBFFI)
-	$(AR) rcs libPLINK2.a $(LIBPLINK2)
+libPLINK2.a: $(LIBPLINK2) $(LIBPLINK2_CO) $(LIBFFI)
+	$(AR) rcs libPLINK2.a $(LIBPLINK2) $(LIBPLINK2_CO)
 
 clean:
-	rm -f $(SHLIB) $(OBJECTS) @ZSTD_CLEAN@ @LIBDEFLATE_CLEAN@ $(LIBPLINK2) $(LIBFFI)
+	rm -f $(SHLIB) $(OBJECTS) @ZSTD_CLEAN@ @LIBDEFLATE_CLEAN@ $(LIBPLINK2) $(LIBPLINK2_CO) $(LIBFFI)
 
-OBJECTS = rpgen.o
+OBJECTS = rpgen.o rpgen_import.o

@@ -22,10 +22,23 @@
 #   edit  : Makevars.in and Makevars.win each set one line,
 #           "OBJECTS = pvar.o pgenlibr.o RcppExports.o", to the R-level Rcpp
 #           bindings pgenlibr compiles. Rpgen has no Rcpp bindings - it has
-#           its own src/rpgen.cpp (hand-authored, not vendored, not touched
-#           by this script) - so that line becomes "OBJECTS = rpgen.o".
+#           its own src/rpgen.cpp and src/rpgen_import.cpp (hand-authored,
+#           not vendored, not touched by this script) - so that line becomes
+#           "OBJECTS = rpgen.o rpgen_import.o" (rpgen_import.cpp is
+#           milestone 4a's VCF import driver, see
+#           tools/vendor-plink2-import/PROVENANCE.md).
 #           Applied inline below rather than as a patches/*.patch file: it is
 #           a single deterministic line replacement, not a source edit.
+#   edit 2: milestone 4a also adds plink2's VcfToPgen() import closure
+#           (tools/vendor-plink2-import/vendorplink2import.R vendors the
+#           source files themselves into tools/include/) to the same
+#           libPLINK2.a static library this script's Makevars.in/Makevars.win
+#           already build: pgenlib_write.cc joins the LIBPLINK2_SOURCES list,
+#           the plink2_*.cc program-level files are appended to it, and a new
+#           LIBPLINK2_C_SOURCES/LIBPLINK2_CO pair (SFMT.c is plain C) joins
+#           the libPLINK2.a build rule. Applied inline below, right after the
+#           OBJECTS= edit, for the same reason: deterministic, and it belongs
+#           next to the file list it's wiring in.
 #
 # Usage (from anywhere):
 #   Rscript tools/vendor-pgenlib/vendorpgen.R download   # fetch + SHA-verify the tarball into cache/
@@ -128,7 +141,102 @@ for (f in src_files_verbatim) {
   stopifnot(file.copy(file.path(src, "src", f), file.path(out, "src", f), overwrite = TRUE))
 }
 
-message("copy src/Makevars.in, src/Makevars.win (OBJECTS= edited for rpgen.cpp)")
+# milestone 4a "edit 2" (see this script's header comment): wires plink2's
+# VcfToPgen() import closure (vendored separately by
+# tools/vendor-plink2-import/vendorplink2import.R into tools/include/) into
+# the same libPLINK2.a build these Makevars templates already produce.
+# file_label picks the (slightly different) explanatory comment each file
+# gets - Makevars.in's is the canonical one, Makevars.win's just points back
+# to it.
+patch_libplink2_sources <- function(lines, file_label) {
+  idx <- grep("^LIBPLINK2_SOURCES = ", lines)
+  if (length(idx) != 1) {
+    stop(file_label, ": expected exactly one 'LIBPLINK2_SOURCES = ' line, found ", length(idx))
+  }
+  if (grepl("plink2_import.cc", lines[idx], fixed = TRUE)) {
+    stop(file_label, ": LIBPLINK2_SOURCES already contains plink2_import.cc (double patch?)")
+  }
+  # pgenlib_write.cc (the .pgen writer, library-level) joins the pgenlib
+  # read-subset entries already there; the program-level plink2_*.cc files
+  # (no "include/" prefix - see tools/vendor-plink2-import/PROVENANCE.md)
+  # are appended at the end.
+  lines[idx] <- sub("\\$\\(INCL\\)/include/pgenlib_read\\.cc",
+                     "$(INCL)/include/pgenlib_read.cc $(INCL)/include/pgenlib_write.cc",
+                     lines[idx])
+  extra_program_files <- paste(sprintf("$(INCL)/%s", c(
+    "plink2_import.cc", "plink2_common.cc", "plink2_cmdline.cc",
+    "plink2_pvar.cc", "plink2_psam.cc", "plink2_compress_stream.cc",
+    "plink2_import_legacy.cc", "plink2_random.cc", "plink2_decompress.cc",
+    "plink2_data.cc", "plink2_family.cc"
+  )), collapse = " ")
+  lines[idx] <- paste(lines[idx], extra_program_files)
+
+  comment <- if (identical(file_label, "Makevars.in")) {
+    c("# pgenlib read subset (vendorpgen.R) plus the plink2 VcfToPgen() import",
+      "# closure (vendorplink2import.R, milestone 4a): pgenlib_write.cc is the",
+      "# .pgen writer, the rest of the new entries are plink2's *program*-level",
+      "# files (no \"include/\" path prefix - they live one directory up from the",
+      "# library subset, see tools/vendor-plink2-import/PROVENANCE.md).")
+  } else {
+    c("# pgenlib read subset (vendorpgen.R) plus the plink2 VcfToPgen() import",
+      "# closure (vendorplink2import.R, milestone 4a) - see src/Makevars.in's",
+      "# comment on this same variable for the file-layout rationale.")
+  }
+  lines <- append(lines, comment, after = idx - 1)
+  idx <- idx + length(comment)  # LIBPLINK2_SOURCES line shifted down by the inserted comment
+
+  idx_obj <- grep("^LIBPLINK2 = \\$\\(LIBPLINK2_SOURCES:\\.cc=\\.o\\)$", lines)
+  if (length(idx_obj) != 1) {
+    stop(file_label, ": expected exactly one LIBPLINK2 object-list line, found ", length(idx_obj))
+  }
+  c_sources_comment <- if (identical(file_label, "Makevars.in")) {
+    c("",
+      "# SFMT is plain C (not C++), so it needs its own suffix rule; SFMT.h wraps",
+      "# its declarations in extern \"C\" for C++ callers (plink2_random.cc), so the",
+      "# two object kinds link together without a name-mangling mismatch.",
+      "LIBPLINK2_C_SOURCES = $(INCL)/include/SFMT.c",
+      "LIBPLINK2_CO = $(LIBPLINK2_C_SOURCES:.c=.o)")
+  } else {
+    c("",
+      "# SFMT is plain C (not C++) - see src/Makevars.in's comment on this same",
+      "# variable.",
+      "LIBPLINK2_C_SOURCES = $(INCL)/include/SFMT.c",
+      "LIBPLINK2_CO = $(LIBPLINK2_C_SOURCES:.c=.o)")
+  }
+  lines <- append(lines, c_sources_comment, after = idx_obj)
+
+  idx_lib_a <- grep("^libPLINK2\\.a: \\$\\(LIBPLINK2\\)", lines)
+  if (length(idx_lib_a) != 1) {
+    stop(file_label, ": expected exactly one libPLINK2.a rule line, found ", length(idx_lib_a))
+  }
+  lines[idx_lib_a] <- sub("^libPLINK2\\.a: \\$\\(LIBPLINK2\\)",
+                           "libPLINK2.a: $(LIBPLINK2) $(LIBPLINK2_CO)", lines[idx_lib_a])
+
+  idx_ar <- grep("^\\s*\\$\\(AR\\) rcs libPLINK2\\.a \\$\\(LIBPLINK2\\)$", lines)
+  if (length(idx_ar) != 1) {
+    stop(file_label, ": expected exactly one libPLINK2.a AR recipe line, found ", length(idx_ar))
+  }
+  lines[idx_ar] <- paste0(lines[idx_ar], " $(LIBPLINK2_CO)")
+
+  idx_clean <- grep("^\\s*rm -f .*\\$\\(LIBPLINK2\\)", lines)
+  if (length(idx_clean) != 1) {
+    stop(file_label, ": expected exactly one clean rm -f line mentioning LIBPLINK2, found ", length(idx_clean))
+  }
+  lines[idx_clean] <- sub("\\$\\(LIBPLINK2\\)", "$(LIBPLINK2) $(LIBPLINK2_CO)", lines[idx_clean])
+
+  # Normalize any run of 2+ blank lines down to 1 (never semantically
+  # meaningful in a Makefile): the insertions above add a blank line before
+  # each comment block irrespective of how much blank space was already
+  # there in the stock file, which otherwise leaves a doubled blank line in
+  # Makevars.in specifically (it had two consecutive blank lines before this
+  # patch; Makevars.win only ever had one).
+  is_blank <- (lines == "")
+  keep <- !(is_blank & c(FALSE, utils::head(is_blank, -1)))
+  lines[keep]
+}
+
+message("copy src/Makevars.in, src/Makevars.win (OBJECTS= edited for rpgen.cpp/rpgen_import.cpp;")
+message("  LIBPLINK2_SOURCES extended with the milestone 4a VcfToPgen() closure)")
 for (f in src_files_patched) {
   lines <- readLines(file.path(src, "src", f))
   idx <- grep("^OBJECTS = ", lines)
@@ -136,8 +244,9 @@ for (f in src_files_patched) {
     stop(f, ": expected exactly one 'OBJECTS = ' line, found ", length(idx))
   }
   old <- lines[idx]
-  lines[idx] <- "OBJECTS = rpgen.o"
+  lines[idx] <- "OBJECTS = rpgen.o rpgen_import.o"
   message("  ", f, ": ", trimws(old), " -> ", lines[idx])
+  lines <- patch_libplink2_sources(lines, f)
   writeLines(lines, file.path(out, "src", f))
 }
 

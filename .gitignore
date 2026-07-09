@@ -11,6 +11,7 @@ README.html
 packages/*/README.html
 tools/vendor-ggml/cache/
 tools/vendor-pgenlib/cache/
+tools/vendor-plink2-import/cache/
 packages/Rpgen/src/libPLINK2.a
 packages/Rpgen/src/libPGZSTD.a
 packages/Rpgen/src/libPGDEFLATE.a
