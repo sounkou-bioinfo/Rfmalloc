@@ -20,3 +20,6 @@
 ^.*\.tar\.gz$
 ^\.Rproj\.user$
 ^.*\.Rproj$
+^README\.Rmd$
+^README\.html$
+^README\.knit\.md$
