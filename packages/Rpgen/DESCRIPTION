@@ -1,0 +1,34 @@
+Package: Rpgen
+Title: Vendored 'PLINK 2' pgenlib with a C-Callable Genotype Reader API
+Version: 0.1.0
+Authors@R: c(
+    person(given = "Sounkou Mahamane", family = "Toure", email = "sounkoutoure@gmail.com", role = c("aut", "cre")),
+    person(given = "Christopher", family = "Chang", role = "cph", comment = "Author of the vendored pgenlib library"),
+    person(given = "Eric", family = "Biggers", role = "cph", comment = "Author of included libdeflate library"),
+    person(given = "Yann Collet", family = "", role = "cph", comment = "Author of included Zstd library"),
+    person(given = "Meta Platforms, Inc.", role = "cph", comment = "Zstd library"),
+    person(given = "Evan", family = "Nemerson", role = "cph", comment = "Author of included SIMDe library")
+    )
+Description: Vendors the read subset of 'PLINK 2's pgenlib library
+    (<https://github.com/chrchang/plink-ng>), the same subset the CRAN
+    package 'pgenlibr' vendors and builds, as a static library and exposes
+    it through 'R_RegisterCCallable' C-callable entry points. This is a
+    carrier package: it has no high-level R modeling API of its own beyond
+    a milestone smoke test that opens a '.pgen' file and reports its sample
+    and variant counts. Other R packages link to it ('LinkingTo') to read
+    'PLINK 2' genotype files natively from their own C or C++ code, which
+    'pgenlibr' does not expose, since it only offers an R-level interface.
+License: GPL-3
+Encoding: UTF-8
+Depends:
+    R (>= 4.4.0),
+    Rfmalloc
+Suggests:
+    tinytest
+Remotes:
+    sounkou-bioinfo/Rfmalloc/packages/Rfmalloc
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+URL: https://github.com/sounkou-bioinfo/Rfmalloc,
+    https://sounkou-bioinfo.github.io/Rfmalloc/Rpgen/
+BugReports: https://github.com/sounkou-bioinfo/Rfmalloc/issues

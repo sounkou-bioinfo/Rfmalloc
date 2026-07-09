@@ -10,6 +10,11 @@ packages/*/inst/ggml/libggml.a
 README.html
 packages/*/README.html
 tools/vendor-ggml/cache/
+tools/vendor-pgenlib/cache/
+packages/Rpgen/src/libPLINK2.a
+packages/Rpgen/src/libPGZSTD.a
+packages/Rpgen/src/libPGDEFLATE.a
+packages/Rpgen/tools/include/**/*.o
 _site/
 packages/*/docs/
 packages/Rggml/inst/ggml/ggml-vulkan/generated/
