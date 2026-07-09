@@ -1,22 +1,40 @@
 INCL = ../tools/include
-PKG_CPPFLAGS = -DNO_UNALIGNED -DLIBDEFLATE_STATIC -DPGENLIB_NOPRINT -I$(INCL) -I$(INCL)/libdeflate
+
+# Kept as its own variable - see src/Makevars.in's comment on this same
+# variable for why (the CLI-shim target-specific override near the bottom
+# of this file needs a non-circular base to build on).
+PKG_CPPFLAGS_BASE = -DNO_UNALIGNED -DLIBDEFLATE_STATIC -DPGENLIB_NOPRINT -I$(INCL) -I$(INCL)/libdeflate
+PKG_CPPFLAGS = $(PKG_CPPFLAGS_BASE)
 PKG_LIBS = -L. -lPLINK2 -lzstd -lPGDEFLATE -lz -lpthread
 
 LIBDEFLATE_SOURCES = $(INCL)/libdeflate/lib/zlib_decompress.c $(INCL)/libdeflate/lib/zlib_compress.c $(INCL)/libdeflate/lib/utils.c $(INCL)/libdeflate/lib/gzip_compress.c $(INCL)/libdeflate/lib/crc32.c $(INCL)/libdeflate/lib/adler32.c $(INCL)/libdeflate/lib/deflate_decompress.c $(INCL)/libdeflate/lib/deflate_compress.c $(INCL)/libdeflate/lib/gzip_decompress.c $(INCL)/libdeflate/lib/arm/arm_cpu_features.c $(INCL)/libdeflate/lib/x86/x86_cpu_features.c
 LIBDEFLATE = $(LIBDEFLATE_SOURCES:.c=.o)
 
-LIBPLINK2_SOURCES = $(INCL)/include/pgenlib_ffi_support.cc $(INCL)/include/pgenlib_misc.cc $(INCL)/include/pgenlib_read.cc $(INCL)/include/plink2_base.cc $(INCL)/include/plink2_bits.cc $(INCL)/include/plink2_bgzf.cc $(INCL)/include/plink2_float.cc $(INCL)/include/plink2_htable.cc $(INCL)/include/plink2_memory.cc $(INCL)/include/plink2_simd.cc $(INCL)/include/plink2_string.cc $(INCL)/include/plink2_text.cc $(INCL)/include/plink2_thread.cc $(INCL)/include/plink2_zstfile.cc $(INCL)/include/pvar_ffi_support.cc
+# pgenlib read subset (vendorpgen.R) plus the plink2 VcfToPgen() import
+# closure (vendorplink2import.R, milestone 4a) - see src/Makevars.in's
+# comment on this same variable for the file-layout rationale.
+LIBPLINK2_SOURCES = $(INCL)/include/pgenlib_ffi_support.cc $(INCL)/include/pgenlib_misc.cc $(INCL)/include/pgenlib_read.cc $(INCL)/include/pgenlib_write.cc $(INCL)/include/plink2_base.cc $(INCL)/include/plink2_bits.cc $(INCL)/include/plink2_bgzf.cc $(INCL)/include/plink2_float.cc $(INCL)/include/plink2_htable.cc $(INCL)/include/plink2_memory.cc $(INCL)/include/plink2_simd.cc $(INCL)/include/plink2_string.cc $(INCL)/include/plink2_text.cc $(INCL)/include/plink2_thread.cc $(INCL)/include/plink2_zstfile.cc $(INCL)/include/pvar_ffi_support.cc $(INCL)/plink2_import.cc $(INCL)/plink2_common.cc $(INCL)/plink2_cmdline.cc $(INCL)/plink2_pvar.cc $(INCL)/plink2_psam.cc $(INCL)/plink2_compress_stream.cc $(INCL)/plink2_import_legacy.cc $(INCL)/plink2_random.cc $(INCL)/plink2_decompress.cc $(INCL)/plink2_data.cc $(INCL)/plink2_family.cc
 LIBPLINK2 = $(LIBPLINK2_SOURCES:.cc=.o)
+
+# SFMT is plain C (not C++) - see src/Makevars.in's comment on this same
+# variable.
+LIBPLINK2_C_SOURCES = $(INCL)/include/SFMT.c
+LIBPLINK2_CO = $(LIBPLINK2_C_SOURCES:.c=.o)
 
 $(SHLIB): libPGDEFLATE.a libPLINK2.a
 
 libPGDEFLATE.a: $(LIBDEFLATE)
 	$(AR) rcs libPGDEFLATE.a $(LIBDEFLATE)
 
-libPLINK2.a: $(LIBPLINK2)
-	$(AR) rcs libPLINK2.a $(LIBPLINK2)
+libPLINK2.a: $(LIBPLINK2) $(LIBPLINK2_CO)
+	$(AR) rcs libPLINK2.a $(LIBPLINK2) $(LIBPLINK2_CO)
 
 clean:
-	rm -f $(SHLIB) $(OBJECTS) $(LIBDEFLATE) $(LIBPLINK2)
+	rm -f $(SHLIB) $(OBJECTS) $(LIBDEFLATE) $(LIBPLINK2) $(LIBPLINK2_CO)
 
-OBJECTS = rpgen.o
+OBJECTS = rpgen.o rpgen_import.o rpgen_null_stream.o rpgen_plink2_glue.o
+
+# CLI shim - see src/Makevars.in's comment on this same variable for the
+# rationale (tools/vendor-plink2-import/PROVENANCE.md has the full story).
+# Plain "=", not "+=" - see PKG_CPPFLAGS_BASE's comment above.
+$(LIBPLINK2) $(LIBPLINK2_CO): PKG_CPPFLAGS = $(PKG_CPPFLAGS_BASE) -I. -include rpgen_cli_shim.h

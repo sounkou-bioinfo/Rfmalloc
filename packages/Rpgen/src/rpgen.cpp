@@ -66,7 +66,16 @@
 // of its own, so raw_sample_ct/raw_variant_ct must be supplied by the
 // caller (counted from the companion .fam/.bim) instead of being read back
 // from the file.
-#define RPGEN_API_VERSION 3
+//
+// Bumped to 4 in milestone 4a: adds Rpgen_import_vcf(), which converts a VCF
+// to a .pgen by calling plink2's own VcfToPgen() importer (vendored
+// separately by tools/vendor-plink2-import/, see its PROVENANCE.md) rather
+// than a from-scratch htslib-based reader - one codebase for VCF now, and
+// BCF/BGEN/Oxford later, since VcfToPgen() lives beside BcfToPgen()/
+// OxBgenToPgen()/etc. in the same vendored closure. Implemented in
+// src/rpgen_import.cpp, not this file; declared here only for the shared
+// CallEntries/register_c_callables tables below.
+#define RPGEN_API_VERSION 4
 
 namespace {
 
@@ -910,11 +919,19 @@ SEXP RC_rpgen_read_bed_hardcalls(SEXP bed_sexp, SEXP bim_sexp,
   return result;
 }
 
+// Implemented in src/rpgen_import.cpp (milestone 4a); declared here only so
+// they can be listed in this file's shared CallEntries/register_c_callables
+// tables, the single registration point for all of Rpgen's entry points.
+int Rpgen_import_vcf(const char *vcf_path, const char *out_pgen_path,
+                      char *errbuf, size_t errbuf_len);
+SEXP RC_rpgen_import_vcf(SEXP vcf_sexp, SEXP out_sexp);
+
 static const R_CallMethodDef CallEntries[] = {
     {"RC_rpgen_info", (DL_FUNC)&RC_rpgen_info, 1},
     {"RC_rpgen_read_hardcalls", (DL_FUNC)&RC_rpgen_read_hardcalls, 2},
     {"RC_rpgen_read_dosages", (DL_FUNC)&RC_rpgen_read_dosages, 2},
     {"RC_rpgen_read_bed_hardcalls", (DL_FUNC)&RC_rpgen_read_bed_hardcalls, 3},
+    {"RC_rpgen_import_vcf", (DL_FUNC)&RC_rpgen_import_vcf, 2},
     {NULL, NULL, 0}};
 
 static void register_c_callables(DllInfo *dll) {
@@ -927,6 +944,7 @@ static void register_c_callables(DllInfo *dll) {
                        (DL_FUNC)Rpgen_read_dosages);
   R_RegisterCCallable("Rpgen", "Rpgen_read_bed_hardcalls",
                        (DL_FUNC)Rpgen_read_bed_hardcalls);
+  R_RegisterCCallable("Rpgen", "Rpgen_import_vcf", (DL_FUNC)Rpgen_import_vcf);
   (void)dll;
 }
 

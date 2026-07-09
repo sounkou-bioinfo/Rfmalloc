@@ -3,6 +3,8 @@
 export(rpgen_bed)
 export(rpgen_bed_info)
 export(rpgen_dosage)
+export(rpgen_import_bed)
+export(rpgen_import_vcf)
 export(rpgen_info)
 export(rpgen_read_bed_hardcalls)
 export(rpgen_read_dosages)

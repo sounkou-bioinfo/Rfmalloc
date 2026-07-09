@@ -1,0 +1,92 @@
+--- a/plink2_cmdline.cc
++++ b/plink2_cmdline.cc
+@@ -27,6 +27,14 @@
+ #include <time.h>  // time(), ctime()
+ #include <unistd.h>  // getcwd(), gethostname(), sysconf(), fstat()
+ 
++// Rpgen patch: logging must go through R's own I/O, never raw stdout/stderr/
++// a FILE* (CRAN policy, and a log FILE* is never open here - g_logfile stays
++// nullptr for the lifetime of the process, see the five functions patched
++// below). R_ext/Print.h is the minimal header for this: just the Rprintf()/
++// REprintf() declarations, none of R.h's/Rinternals.h's macros (so nothing
++// here needs the FALSE/TRUE #undef dance rpgen.cpp does for the R API).
++#include <R_ext/Print.h>
++
+ #include "include/plink2_float.h"
+ #include "include/plink2_htable.h"
+ #include "include/plink2_thread.h"
+@@ -52,55 +60,39 @@
+ uint32_t g_log_failed = 0;
+ uint32_t g_stderr_written_to = 0;
+ 
++// Rpgen patch: the five functions below replace upstream's versions
++// verbatim. Upstream writes to `g_logfile` (a plain FILE*, opened by
++// plink2.cc's own InitLogfile(), which Rpgen never calls) and directly to
++// stdout/stderr. Neither is acceptable embedded in an R package: a null
++// `g_logfile` would make upstream's fputs(str, g_logfile) segfault (Rpgen
++// never opens a log file, so g_logfile is always nullptr - see PROVENANCE.md
++// in tools/vendor-plink2-import/), and CRAN policy forbids writing to
++// stdout/stderr directly - it must go through R's own I/O so output is
++// captured by sinks, knitr, etc. Every other plink2 logging entry point
++// (logprintf(), logerrprintf(), logprintfww(), ...) is a HEADER_INLINE
++// wrapper in plink2_cmdline.h that bottoms out in one of these five, so
++// patching only these five covers the whole vendored tree.
+ void logputs_silent(const char* str) {
+-  if (!g_debug_on) {
+-    fputs(str, g_logfile);
+-    if (unlikely(ferror_unlocked(g_logfile))) {
+-      putchar('\n');
+-      fflush(stdout);
+-      fprintf(stderr, "Warning: Logging failure on:\n%s\nFurther logging will not be attempted in this run.\n", str);
+-      g_log_failed = 1;
+-    }
+-  } else {
+-    if (g_log_failed) {
+-      fflush(stdout);
+-      fputs(str, stderr);
+-    } else {
+-      fputs(str, g_logfile);
+-      if (unlikely(ferror_unlocked(g_logfile))) {
+-        putchar('\n');
+-        fflush(stdout);
+-        fprintf(stderr, "Error: Debug logging failure.  Dumping to stderr:\n%s", str);
+-        g_log_failed = 1;
+-        g_stderr_written_to = 1;
+-      } else {
+-        fflush(g_logfile);
+-      }
+-    }
+-  }
++  // No log file is ever open (g_logfile stays nullptr for Rpgen's whole
++  // process lifetime), so there is nothing to mirror silently.
++  (void)str;
+ }
+ 
+ void logputs(const char* str) {
+-  logputs_silent(str);
+-  fputs(str, stdout);
++  Rprintf("%s", str);
+ }
+ 
+ void logerrputs(const char* str) {
+-  logputs_silent(str);
+-  fflush(stdout);
+-  fputs(str, stderr);
++  REprintf("%s", str);
+   g_stderr_written_to = 1;
+ }
+ 
+ void logputsb() {
+-  logputs_silent(g_logbuf);
+-  fputs(g_logbuf, stdout);
++  Rprintf("%s", g_logbuf);
+ }
+ 
+ void logerrputsb() {
+-  logputs_silent(g_logbuf);
+-  fflush(stdout);
+-  fputs(g_logbuf, stderr);
++  REprintf("%s", g_logbuf);
+   g_stderr_written_to = 1;
+ }
+ 

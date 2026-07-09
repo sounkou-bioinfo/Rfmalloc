@@ -2,7 +2,7 @@
 #define RPGEN_API_PUBLIC_H
 
 /*
- * Rpgen.h - C-callable API for the Rpgen carrier package, version 3.
+ * Rpgen.h - C-callable API for the Rpgen carrier package, version 4.
  *
  * Rpgen vendors the read subset of PLINK 2's pgenlib
  * (https://github.com/chrchang/plink-ng) - the same subset the CRAN package
@@ -36,6 +36,14 @@
  * PgrGet() path as Rpgen_read_hardcalls(), except a .bed has no header to
  * read raw_sample_ct/raw_variant_ct back from, so the caller must supply
  * both (typically the line counts of the companion .fam/.bim).
+ *
+ * Milestone 4a adds Rpgen_import_vcf(): convert a VCF straight to a .pgen by
+ * calling plink2's own VcfToPgen() importer (a separate vendored closure,
+ * tools/vendor-plink2-import/ - see its PROVENANCE.md), then read the result
+ * with any of the functions above. Unlike them, this one is not a pure
+ * reader: it allocates plink2's own working arena for the duration of the
+ * call (see src/rpgen_import.cpp) and is not reentrant - only one call may
+ * be in flight at a time in this process.
  */
 
 #include <stddef.h>
@@ -155,6 +163,33 @@ typedef int (*Rpgen_read_bed_hardcalls_fun)(const char *bed_path,
                                             uint32_t raw_variant_ct,
                                             int32_t *out, char *errbuf,
                                             size_t errbuf_len);
+
+/* -- import a VCF to a .pgen ------------------------------------------------ */
+
+/*
+ * Rpgen_import_vcf(vcf_path, out_pgen_path, errbuf, errbuf_len)
+ *
+ * Converts the VCF at `vcf_path` to a .pgen at `out_pgen_path` (which must
+ * end in ".pgen") by calling plink2's own VcfToPgen() importer, with the
+ * defaults a plain `plink2 --vcf <vcf_path> --make-pgen` (no other flags)
+ * would use. The companion .pvar/.psam are written next to it, same base
+ * name, conventional extensions. Returns 0 on success, nonzero on failure
+ * with a NUL-terminated message in errbuf (a caller-owned buffer of at
+ * least errbuf_len bytes) - VcfToPgen() itself has no error-message-buffer
+ * parameter, so a failure's human-readable explanation was already relayed
+ * to the R console/stderr by the time this returns (see src/rpgen_import.cpp's
+ * top comment); errbuf carries only a short, programmatic-friendly gloss
+ * plus the numeric plink2::PglErr code.
+ *
+ * Allocates and frees plink2's own "bigstack" working arena for the
+ * duration of this one call (process-global, not reentrant - see
+ * src/rpgen_import.cpp's top comment). Read the resulting .pgen with
+ * Rpgen_open_info()/Rpgen_read_hardcalls()/Rpgen_read_dosages() above, same
+ * as any other .pgen.
+ */
+typedef int (*Rpgen_import_vcf_fun)(const char *vcf_path,
+                                    const char *out_pgen_path, char *errbuf,
+                                    size_t errbuf_len);
 
 #ifdef __cplusplus
 }
