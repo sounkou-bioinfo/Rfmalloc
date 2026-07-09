@@ -1,0 +1,13 @@
+# Keep shell scripts LF on every checkout, including Windows (autocrlf would
+# otherwise convert them to CRLF, which R CMD check --as-cran flags as a
+# WARNING: "shell script(s) with CR or CRLF line endings").
+configure      text eol=lf
+configure.ac   text eol=lf
+configure.win  text eol=lf
+cleanup        text eol=lf
+cleanup.win    text eol=lf
+*.sh           text eol=lf
+Makevars       text eol=lf
+Makevars.in    text eol=lf
+Makevars.win   text eol=lf
+Makevars.ucrt  text eol=lf
