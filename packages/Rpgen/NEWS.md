@@ -1,5 +1,26 @@
 # Rpgen 0.1.0 (unreleased)
 
+- Milestone 3: a native PLINK 1 `.bed` reader, bumping `Rpgen_api_version()`
+  to 3. `PgfiInitPhase1()` already opens a PLINK 1 `.bed` transparently, in
+  the same code path as a `.pgen` (its `vrtypes` simply come back `NULL`);
+  the one real difference is that a `.bed` carries no header, so its
+  sample/variant counts have to come from the companion `.fam`/`.bim` line
+  counts instead and are passed in explicitly. New C-callable
+  `Rpgen_read_bed_hardcalls()` (`.Call` entry point
+  `RC_rpgen_read_bed_hardcalls`) reads every variant, for every sample, via
+  the same `plink2::PgrGet()` loop `Rpgen_read_hardcalls()` uses - a `.bed`
+  is biallelic hardcalls only, so there is no dosage counterpart. New
+  R-level `rpgen_bed_info()` (counts from `.bim`/`.fam`) and
+  `rpgen_read_bed_hardcalls()` (`bed`, `bim = NULL`, `fam = NULL`, defaulting
+  the companions to `bed` with its extension swapped); `rpgen_bed()` now
+  dispatches to this reader whenever `path` ends in `.bed`, keeping its
+  `.pgen` behavior otherwise. There is no plink2 CLI or `.bed` fixture
+  available to vendor, so `inst/tinytest/test_bed.R` generates one by hand
+  (magic bytes, 2-bit SNP-major packing) from a small known genotype matrix
+  and asserts an exact round trip; cross-checked against
+  `pgenlibr::NewPgen()`/`ReadIntList()` on the same generated file when
+  `pgenlibr` is installed.
+
 - Milestone 2: genotype reading, and a first Rfmalloc-backed R surface.
   Two new C-callables, bumping `Rpgen_api_version()` to 2:
   `Rpgen_read_hardcalls()` (`.Call` entry point `RC_rpgen_read_hardcalls`, R

@@ -77,24 +77,108 @@ rpgen_read_dosages <- function(path, pvar = NULL) {
     .Call("RC_rpgen_read_dosages", path, .rpgen_expand_pvar(pvar))
 }
 
-#' Read a .pgen file into an Rfmalloc bed tensor
+## The companion .bim/.fam path for a .bed path, by swapping the extension -
+## the convention every PLINK 1 fileset (bed/bim/fam) follows. Errors if
+## `bed_path` doesn't actually end in ".bed", since there is then no
+## extension to swap; callers who have a differently-named companion file
+## must pass it explicitly instead of relying on this default.
+.rpgen_bed_sibling <- function(bed_path, ext) {
+    if (!grepl("\\.bed$", bed_path)) {
+        stop("cannot infer a '", ext, "' path from \"", bed_path,
+            "\": it does not end in '.bed'; pass the path explicitly")
+    }
+    sub("\\.bed$", ext, bed_path)
+}
+
+## Plain line count of a text file - used to size the sample/variant axes of
+## a PLINK 1 .bed read from its companion .fam (one line per sample) and .bim
+## (one line per variant), which carry no counts of their own the way a
+## .pgen's header does. suppressWarnings() covers readLines()'s "incomplete
+## final line" warning on a .fam/.bim whose last line has no trailing
+## newline - still a complete, countable line.
+.rpgen_count_lines <- function(path) {
+    length(suppressWarnings(readLines(path)))
+}
+
+#' Report a PLINK 1 .bed fileset's sample and variant counts
 #'
-#' Reads hardcalls from a PLINK 2 `.pgen` file with [rpgen_read_hardcalls()]
-#' and packs them into fmalloc-backed, 2-bit `.bed` storage with
-#' [Rfmalloc::fmalloc_bed()]. The genotype matrix itself is materialized once,
-#' in R, as the integer matrix pgenlib decodes to; the fmalloc tensor it packs
-#' into is what downstream matrix products (a genotype PCA, a GRM) stream
-#' out-of-core, so the .pgen's genotypes make one trip through an ordinary R
-#' matrix on the way into fmalloc storage, never a second one back out as
-#' doubles.
+#' A PLINK 1 `.bed` file carries no header of its own (unlike a `.pgen`'s -
+#' see [rpgen_info()]): its sample and variant counts come from the companion
+#' `.fam` (one line per sample) and `.bim` (one line per variant) instead.
+#' This reads exactly those two line counts, with no pgenlib involvement.
 #'
-#' @param path Path to a `.pgen` file.
+#' @param bed Path to a `.bed` file. The companion `.bim`/`.fam` are found by
+#'   swapping the `.bed` extension.
+#' @return A list with `n_sample` and `n_variant`, both integers.
+#' @seealso [rpgen_info()], [rpgen_read_bed_hardcalls()]
+#' @export
+rpgen_bed_info <- function(bed) {
+    bed <- path.expand(as.character(bed))
+    bim <- .rpgen_bed_sibling(bed, ".bim")
+    fam <- .rpgen_bed_sibling(bed, ".fam")
+    list(
+        n_sample = .rpgen_count_lines(fam),
+        n_variant = .rpgen_count_lines(bim)
+    )
+}
+
+#' Read genotypes from a PLINK 1 .bed fileset as a dense R matrix
+#'
+#' Reads every sample and every variant from a PLINK 1 `.bed`/`.bim`/`.fam`
+#' fileset through Rpgen's vendored pgenlib. `PgfiInitPhase1()` opens a `.bed`
+#' transparently, in the exact same code path a `.pgen` takes (its `vrtypes`
+#' simply come back `NULL`) - the one real difference is that a `.bed` has no
+#' header to read its sample/variant counts back from, so they are counted
+#' from the companion `.fam`/`.bim` first (see [rpgen_bed_info()]) and passed
+#' in explicitly. Genotypes are then read via the same `plink2::PgrGet()`
+#' [rpgen_read_hardcalls()] uses; a `.bed` is biallelic hardcalls only, so
+#' there is no dosage counterpart to this function. This is a thin wrapper
+#' around the `RC_rpgen_read_bed_hardcalls` `.Call` entry point, itself a
+#' thin wrapper around the `Rpgen_read_bed_hardcalls` C-callable (see
+#' `inst/include/Rpgen.h`) - the lower-level counterpart to [rpgen_bed()] for
+#' callers who want the plain R matrix rather than an `Rfmalloc` tensor.
+#'
+#' @param bed Path to a `.bed` file.
+#' @param bim Path to the companion `.bim` file. Defaults to `bed` with its
+#'   extension swapped for `.bim`.
+#' @param fam Path to the companion `.fam` file. Defaults to `bed` with its
+#'   extension swapped for `.fam`.
+#' @return An integer matrix of `0`, `1`, `2`, or `NA` hardcall dosages,
+#'   `n_sample x n_variant`, samples in rows and variants in columns.
+#' @seealso [rpgen_bed()], [rpgen_bed_info()], [rpgen_read_hardcalls()]
+#' @export
+rpgen_read_bed_hardcalls <- function(bed, bim = NULL, fam = NULL) {
+    bed <- path.expand(as.character(bed))
+    bim <- if (is.null(bim)) .rpgen_bed_sibling(bed, ".bim") else path.expand(as.character(bim))
+    fam <- if (is.null(fam)) .rpgen_bed_sibling(bed, ".fam") else path.expand(as.character(fam))
+    .Call("RC_rpgen_read_bed_hardcalls", bed, bim, fam)
+}
+
+#' Read a .pgen or PLINK 1 .bed fileset into an Rfmalloc bed tensor
+#'
+#' Reads hardcalls and packs them into fmalloc-backed, 2-bit `.bed` storage
+#' with [Rfmalloc::fmalloc_bed()]. `path` selects the reader: a path ending in
+#' `.bed` is read with [rpgen_read_bed_hardcalls()] (PLINK 1, counts from the
+#' companion `.bim`/`.fam`); anything else is read with
+#' [rpgen_read_hardcalls()] (PLINK 2 `.pgen`). The genotype matrix itself is
+#' materialized once, in R, as the integer matrix pgenlib decodes to; the
+#' fmalloc tensor it packs into is what downstream matrix products (a
+#' genotype PCA, a GRM) stream out-of-core, so the genotypes make one trip
+#' through an ordinary R matrix on the way into fmalloc storage, never a
+#' second one back out as doubles.
+#'
+#' @param path Path to a `.pgen` file, or a PLINK 1 `.bed` file.
 #' @param pvar Path to the companion `.pvar`/`.pvar.zst` file; see
-#'   [rpgen_read_hardcalls()]. Defaults to `NULL`.
+#'   [rpgen_read_hardcalls()]. Only used when `path` is a `.pgen`. Defaults to
+#'   `NULL`.
+#' @param bim,fam Paths to the companion `.bim`/`.fam` files; see
+#'   [rpgen_read_bed_hardcalls()]. Only used when `path` is a `.bed`. Default
+#'   to `NULL` (inferred from `path`).
 #' @param runtime Runtime handle from [Rfmalloc::open_fmalloc()]; defaults to
 #'   the runtime established by [Rfmalloc::init_fmalloc()].
 #' @return An `fmalloc_tensor` of dtype `"bed"`, `n_sample x n_variant`.
-#' @seealso [rpgen_dosage()], [rpgen_read_hardcalls()]
+#' @seealso [rpgen_dosage()], [rpgen_read_hardcalls()],
+#'   [rpgen_read_bed_hardcalls()]
 #' @examples
 #' pgen <- system.file("extdata", "chr21_phase3_start.pgen", package = "Rpgen")
 #' rt <- Rfmalloc::open_fmalloc(tempfile(), size_gb = 0.5)
@@ -102,8 +186,13 @@ rpgen_read_dosages <- function(path, pvar = NULL) {
 #' dim(tn)
 #' Rfmalloc::cleanup_fmalloc(rt)
 #' @export
-rpgen_bed <- function(path, pvar = NULL, runtime = NULL) {
-    g <- rpgen_read_hardcalls(path, pvar = pvar)
+rpgen_bed <- function(path, pvar = NULL, bim = NULL, fam = NULL, runtime = NULL) {
+    path <- path.expand(as.character(path))
+    g <- if (grepl("\\.bed$", path)) {
+        rpgen_read_bed_hardcalls(path, bim = bim, fam = fam)
+    } else {
+        rpgen_read_hardcalls(path, pvar = pvar)
+    }
     Rfmalloc::fmalloc_bed(g, runtime = runtime)
 }
 

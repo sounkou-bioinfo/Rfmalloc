@@ -2,7 +2,7 @@
 #define RPGEN_API_PUBLIC_H
 
 /*
- * Rpgen.h - C-callable API for the Rpgen carrier package, version 2.
+ * Rpgen.h - C-callable API for the Rpgen carrier package, version 3.
  *
  * Rpgen vendors the read subset of PLINK 2's pgenlib
  * (https://github.com/chrchang/plink-ng) - the same subset the CRAN package
@@ -30,6 +30,12 @@
  * variant range for every sample into a caller-allocated buffer. Neither
  * milestone keeps a reader handle alive across calls - every call opens the
  * file, does its work, and closes it again.
+ *
+ * Milestone 3 adds Rpgen_read_bed_hardcalls(): read every variant, for every
+ * sample, from a PLINK 1 .bed file - the same underlying PgfiInitPhase1() /
+ * PgrGet() path as Rpgen_read_hardcalls(), except a .bed has no header to
+ * read raw_sample_ct/raw_variant_ct back from, so the caller must supply
+ * both (typically the line counts of the companion .fam/.bim).
  */
 
 #include <stddef.h>
@@ -115,6 +121,40 @@ typedef int (*Rpgen_read_dosages_fun)(const char *path, uint32_t variant_start,
                                       uint32_t *n_sample_out,
                                       uint32_t *n_variant_out, char *errbuf,
                                       size_t errbuf_len);
+
+/* -- read genotypes from a PLINK 1 .bed --------------------------------- */
+
+/*
+ * Rpgen_read_bed_hardcalls(bed_path, raw_sample_ct, raw_variant_ct, out,
+ *                           errbuf, errbuf_len)
+ *
+ * Opens the PLINK 1 .bed file at `bed_path` and reads every variant, for
+ * every sample, via plink2::PgrGet() (the same reader Rpgen_read_hardcalls()
+ * uses - PgfiInitPhase1() opens a .bed transparently, in the same code path
+ * as a .pgen), then closes it again. Unlike Rpgen_read_hardcalls(), a .bed
+ * has no header to read counts back from: the caller must already know
+ * `raw_sample_ct`/`raw_variant_ct` (typically the line counts of the
+ * companion .fam/.bim) and supplies them; pgenlib validates them against the
+ * .bed's file size and fails if they're wrong.
+ *
+ * `out` must be a caller-allocated buffer of at least
+ * raw_sample_ct * raw_variant_ct int32_t values, written in column-major
+ * (variant-major) order: out[v * raw_sample_ct + s] holds sample s's
+ * hardcall dosage - 0, 1, 2, or NA_INTEGER for missing - at variant v. This
+ * is exactly the layout an R INTSXP matrix of dim (raw_sample_ct,
+ * raw_variant_ct) uses, so INTEGER(result) can be passed straight through
+ * from a .Call entry point.
+ *
+ * A PLINK 1 .bed is biallelic hardcalls only - there is no dosage
+ * counterpart to this function. Returns 0 on success, nonzero on failure
+ * with a NUL-terminated message in errbuf (a caller-owned buffer of at
+ * least errbuf_len bytes).
+ */
+typedef int (*Rpgen_read_bed_hardcalls_fun)(const char *bed_path,
+                                            uint32_t raw_sample_ct,
+                                            uint32_t raw_variant_ct,
+                                            int32_t *out, char *errbuf,
+                                            size_t errbuf_len);
 
 #ifdef __cplusplus
 }
