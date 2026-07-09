@@ -30,8 +30,9 @@ Imports:
     methods
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
-Suggests: 
+Suggests:
     bench,
+    kalis,
     lobstr,
     tinytest
 SystemRequirements: GNU make, POSIX threads

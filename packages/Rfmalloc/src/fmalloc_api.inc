@@ -660,6 +660,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"rfm_tensor_bed_standardize_impl", (DL_FUNC)&rfm_tensor_bed_standardize_impl, 3},
     {"rfm_tensor_dosage_encode_impl", (DL_FUNC)&rfm_tensor_dosage_encode_impl, 2},
     {"rfm_tensor_dosage_standardize_impl", (DL_FUNC)&rfm_tensor_dosage_standardize_impl, 3},
+    {"rfm_hap_encode_impl", (DL_FUNC)&rfm_hap_encode_impl, 2},
+    {"rfm_hap_materialize_impl", (DL_FUNC)&rfm_hap_materialize_impl, 2},
     {"rfm_matmul_ooc_impl", (DL_FUNC)&rfm_matmul_ooc_impl, 3},
     {"rfm_crossprod_ooc_impl", (DL_FUNC)&rfm_crossprod_ooc_impl, 3},
     {"rfm_tcrossprod_ooc_impl", (DL_FUNC)&rfm_tcrossprod_ooc_impl, 2},

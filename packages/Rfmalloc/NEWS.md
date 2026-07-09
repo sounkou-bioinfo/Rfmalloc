@@ -2,6 +2,20 @@
 
 ## 0.1.0 (unreleased)
 
+- Added `fmalloc_haplotypes()` / `fmalloc_hap_materialize()`: a phased-
+  haplotype fmalloc store at **one bit per call**, a SIBLING interface to the
+  matmul tensor codec ABI rather than an instance of it. Haplotype HMM methods
+  (Li and Stephens local-ancestry inference, e.g. the `kalis` package) are not
+  linear algebra, so this store never calls `Rfmalloc_register_tensor_codec`
+  and never participates in `%*%`; it is a second, independent typed accessor
+  over the same fmalloc storage substrate. Materializing back to a `0`/`1`
+  matrix decodes into fmalloc-backed storage (not an R-heap copy), and that
+  matrix can be handed straight to `kalis::CacheHaplotypes()`: kalis's own
+  Forward/Backward output is bit-identical whether it caches from the
+  fmalloc-materialized matrix or from the original in-memory matrix (see
+  `inst/tinytest/test_fmalloc_hap_kalis.R`). Roughly 32x tighter than an
+  integer `0`/`1` matrix and 64x tighter than a double matrix.
+
 - Added the `"dosage"` tensor codec via `fmalloc_dosage()`: fractional genotype
   dosages in `[0, 2]` at **one byte each** (fixed point, `round(d * 127)`, with
   255 reserved for missing), the continuous sibling of `"bed"`. Eight times
