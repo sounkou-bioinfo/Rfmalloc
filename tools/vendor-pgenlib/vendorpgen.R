@@ -14,9 +14,11 @@
 #           pgenlib *read* subset + zstd + libdeflate + simde and builds
 #           libPLINK2.a from them; that build is our reference. We take its
 #           configure/configure.ac/Makevars* and its whole tools/include/
-#           tree verbatim, and its pvar.cpp/pvar.h for provenance (kept in
-#           the tree, not compiled - they depend on Rcpp, which Rpgen does
-#           not use; see PROVENANCE.md).
+#           tree verbatim. We do NOT take pgenlibr's pvar.cpp/pvar.h: they are
+#           its Rcpp R-facing wrapper, and Rpgen is not an Rcpp package (it uses
+#           the C FFI in include/pvar_ffi_support.*). R's Windows build compiles
+#           every src/*.cpp regardless of OBJECTS, so shipping them broke the
+#           Windows build on a missing Rcpp.h.
 #   edit  : Makevars.in and Makevars.win each set one line,
 #           "OBJECTS = pvar.o pgenlibr.o RcppExports.o", to the R-level Rcpp
 #           bindings pgenlibr compiles. Rpgen has no Rcpp bindings - it has
@@ -60,7 +62,7 @@ cache   <- file.path(here, "cache")
 # Files copied byte-identical from the pgenlibr tarball (package root and
 # src/); Makevars.in/Makevars.win get the one OBJECTS= edit described above.
 root_files <- c("configure", "configure.ac", "cleanup")
-src_files_verbatim <- c("Makevars.ucrt", "pvar.cpp", "pvar.h")
+src_files_verbatim <- c("Makevars.ucrt")
 src_files_patched   <- c("Makevars.in", "Makevars.win")
 tools_files <- c("zstd_version.cpp", "libdeflate_version.cpp", "simde_version.cpp")
 # pgenlibr's own test fixture (a small real .pgen + its .pvar.zst/.psam
