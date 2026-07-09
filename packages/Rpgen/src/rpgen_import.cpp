@@ -34,9 +34,10 @@
  * tools/vendor-plink2-import/patches/plink2_cmdline.cc.patch and its
  * PROVENANCE.md), to route through Rprintf()/REprintf() instead of a log
  * file handle, stdout, or stderr - VcfToPgen() itself never takes an
- * error-message buffer, so a failure's human-readable explanation reaches the user via
- * REprintf() (R's console/stderr), while rpgen_import_vcf()'s own errbuf
- * carries just the numeric plink2::PglErr code for programmatic checks.
+ * error-message buffer, so a failure's human-readable explanation reaches
+ * the user via REprintf() (R's console/stderr), while rpgen_import_vcf()'s
+ * own errbuf carries just the numeric plink2::PglErr code for programmatic
+ * checks.
  */
 
 #include <cerrno>
@@ -163,8 +164,13 @@ int rpgen_import_vcf(const char *vcf_path, const char *out_pgen_path,
   chr_info_ready = true;
 
   {
-    uint32_t pgen_generated = 0;
-    uint32_t psam_generated = 0;
+    // VcfToPgen() only ever *clears* these to 0 (when the VCF has no
+    // samples); it never sets them to 1 itself. Callers must pre-set them
+    // to 1, exactly as plink2.cc's own call site does - initializing to 0
+    // here would make the "was a .pgen actually written" check below fire
+    // on every successful import.
+    uint32_t pgen_generated = 1;
+    uint32_t psam_generated = 1;
     const plink2::PglErr reterr = plink2::VcfToPgen(
         vcf_path,
         /*preexisting_psamname=*/nullptr,  // no separate .psam; sample IDs come from the VCF header

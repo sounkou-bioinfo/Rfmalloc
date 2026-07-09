@@ -53,11 +53,14 @@ Useful links:
 
 Other contributors:
 \itemize{
-  \item Christopher Chang (Author of the vendored pgenlib library) [copyright holder]
+  \item Christopher Chang (Author of the vendored pgenlib library and plink2 program) [copyright holder]
+  \item Shaun Purcell (Co-author of the vendored plink2 program (VcfToPgen import closure)) [copyright holder]
   \item Eric Biggers (Author of included libdeflate library) [copyright holder]
   \item Yann Collet (Author of included Zstd library) [copyright holder]
   \item Meta Platforms, Inc. (Zstd library) [copyright holder]
   \item Evan Nemerson (Author of included SIMDe library) [copyright holder]
+  \item Mutsuo Saito (Co-author of included SFMT library) [copyright holder]
+  \item Makoto Matsumoto (Co-author of included SFMT library) [copyright holder]
 }
 
 }

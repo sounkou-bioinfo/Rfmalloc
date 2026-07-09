@@ -1,5 +1,33 @@
 # Rpgen 0.1.0 (unreleased)
 
+- Milestone 4a: `rpgen_import_vcf()` converts a VCF straight to a `.pgen` by
+  calling plink2's own `VcfToPgen()` importer - reusing plink2's import code
+  rather than a from-scratch `htslib`-based reader, since the same vendored
+  closure also covers BCF/BGEN/Oxford for a later milestone. A second
+  vendoring recipe, `tools/vendor-plink2-import/`, pins plink-ng at commit
+  `a81e38220b16e3907bdcedbe6ce39b273e001e13` and adds the program-level files
+  `VcfToPgen()` needs (verified by actually compiling and linking the
+  closure, not just following `#include`s) plus two library-level additions
+  (`pgenlib_write.cc`, the `.pgen` writer; `SFMT`, the PRNG
+  `plink2_random.h` wraps). One local patch routes `plink2_cmdline.cc`'s
+  logging through `Rprintf()`/`REprintf()` instead of a log `FILE*`/stdout/
+  stderr - required, not cosmetic, since Rpgen never opens a log file and
+  upstream's version would segfault on it. New C-callable
+  `Rpgen_import_vcf()` (`.Call` entry point `RC_rpgen_import_vcf`), bumping
+  `Rpgen_api_version()` to 4; new R-level `rpgen_import_vcf()` and the
+  convenience `rpgen_import_bed()` (import straight into an `Rfmalloc` `bed`
+  tensor, matching `rpgen_bed()`). `inst/tinytest/test_import_vcf.R` writes
+  a tiny VCF with known `GT` fields, converts it, and asserts the genotypes
+  read back through the existing (unmodified) `rpgen_read_hardcalls()`
+  match exactly. Known gap, tracked for follow-up rather than blocking this
+  milestone: `R CMD check` reports one WARNING for raw
+  `printf()`/`stdout`/`stderr` calls scattered through the ~18,000-line
+  vendored `plink2_import.cc` outside the patched logging functions (mostly
+  a `\r`-progress spinner); a handful of `exit()` calls likewise remain in
+  paths our driver's fixed defaults never reach (multiallelic dosage import,
+  multiallelic variant split/join) but would need patching before a future
+  milestone enables those options.
+
 - Milestone 3: a native PLINK 1 `.bed` reader, bumping `Rpgen_api_version()`
   to 3. `PgfiInitPhase1()` already opens a PLINK 1 `.bed` transparently, in
   the same code path as a `.pgen` (its `vrtypes` simply come back `NULL`);
