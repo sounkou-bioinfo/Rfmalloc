@@ -38,6 +38,17 @@
 #include "include/pgenlib_read.h"
 #include "include/pvar_ffi_support.h"  // RefcountedWptr, for allele_idx_offsets
 
+// plink2's headers #define FALSE/TRUE as int macros, which shadow R's Rboolean
+// enumerators; mingw's stricter compiler then rejects R_useDynamicSymbols(dll,
+// FALSE) as an int-to-Rboolean conversion. Undo the macros so FALSE/TRUE resolve
+// to R's enumerators again (rpgen.cpp uses them only for the R API).
+#ifdef FALSE
+#  undef FALSE
+#endif
+#ifdef TRUE
+#  undef TRUE
+#endif
+
 // Internal version constant for the C-callable API registered below. Not
 // shared with the installed inst/include/Rpgen.h: downstream consumers read
 // the version at runtime through Rpgen_api_version(), the same pattern
