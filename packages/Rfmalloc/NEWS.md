@@ -2,6 +2,20 @@
 
 ## 0.1.0 (unreleased)
 
+- Added the `"dosage"` tensor codec via `fmalloc_dosage()`: fractional genotype
+  dosages in `[0, 2]` at **one byte each** (fixed point, `round(d * 127)`, with
+  255 reserved for missing), the continuous sibling of `"bed"`. Eight times
+  tighter than the doubles it decodes to, lossy at resolution `2/254` by design.
+  It is the target a PLINK 2 `.pgen` dosage import re-encodes into, since pgen's
+  own records are stateful and LD-compressed and so are decoded through pgenlibr
+  once at import rather than stored raw. `fmalloc_dosage_standardize()` bakes
+  per-variant mean and sd into the tensor in one streaming pass exactly as the
+  `"bed"` codec does, so decode returns standardized, mean-imputed dosages (the
+  missing code maps to the mean, hence to 0 after centering) with no dosage ever
+  materialized as a double; `scale = "sd"` matches `scale()` on the mean-imputed
+  matrix to quantization, `scale = "binomial"` uses `sqrt(2 p (1 - p))`. No ABI
+  change: like `"bed"`, the stats ride behind a kind byte in the header.
+
 - `fmalloc_bed_standardize()` bakes per-variant standardization into a `"bed"`
   tensor in one streaming pass, so every later decode returns standardized,
   mean-imputed genotypes with no genotype ever materialized as a double and no
