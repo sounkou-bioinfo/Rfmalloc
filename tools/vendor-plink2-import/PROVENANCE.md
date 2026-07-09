@@ -181,6 +181,50 @@ default in `src/rpgen_import.cpp`'s `VcfToPgen()` call has a comment citing
 where in `plink2.cc` that default came from (grep that file for
 `"VcfToPgen("` to see the real call site this mirrors).
 
+## CLI shim (R CMD check "checking compiled code")
+
+Vendoring the closure verbatim (above) left one gap: plink2 is a *program*,
+not a library, so the vendored code still calls `printf()`/`exit()` and
+writes through the raw `stdout`/`stderr` `FILE*`. `R CMD check --no-manual`
+flags this as a WARNING ("checking compiled code", symbols `__printf_chk`/
+`exit`/`stderr`/`stdout` in `libPLINK2.a`) - unacceptable for a
+`--as-cran`/error-on-warning CI gate. Closed with a small, hand-maintained
+shim, **not** part of `vendorplink2import.R`'s automated `vendor` action
+(unlike `patches/plink2_cmdline.cc.patch`, which *is* applied by that
+script): three new `packages/Rpgen/src/` files -
+`rpgen_cli_shim.h` (the macro redirections: `printf` -> `Rprintf()`,
+`stdout`/`stderr` -> a shared `/dev/null` `FILE*`, `exit`/`abort` -> a
+longjmp relay), `rpgen_null_stream.c` (that shared bit-bucket `FILE*`,
+opened once), and `rpgen_plink2_glue.c`/`.h` (the `jmp_buf` `exit()`/
+`abort()` longjmp to, and the driver `rpgen_import_vcf()` in
+`rpgen_import.cpp` `setjmp()`s before calling into the vendored closure -
+see that header's top comment for why a bare `Rf_error()` from inside the
+vendored code is not an acceptable substitute: it would longjmp past the
+driver's own arena-free/file-close cleanup). `src/Makevars.in`/`.win` force
+`rpgen_cli_shim.h` into every `LIBPLINK2`/`LIBPLINK2_CO` object via
+`-include` (never into `rpgen.cpp`/`rpgen_import.cpp`/
+`rpgen_null_stream.c`/`rpgen_plink2_glue.c`, which already use the R API,
+or real `stdio.h`/`setjmp.h`, directly) - a target-specific `PKG_CPPFLAGS`
+override built from a `PKG_CPPFLAGS_BASE` variable, using plain `=` rather
+than `PKG_CPPFLAGS +=` (a GNU Make extension `R CMD check`'s "checking for
+GNU extensions in Makefiles" step itself flags, and which would also be
+circular here, since a target-specific `PKG_CPPFLAGS` referencing
+`$(PKG_CPPFLAGS)` is a self-reference once that override is in scope).
+
+**Consequence for re-vendoring**: this wiring lives directly in
+`packages/Rpgen/src/Makevars.in`/`.win`, files `vendorpgen.R`'s `vendor`
+action fully regenerates from the pgenlibr CRAN tarball (see that script's
+own header comment, "edit"/"edit 2") and `vendorplink2import.R`'s `vendor`
+action then patches (see this file's own top comment, "Ordering matters").
+Neither script currently knows about the CLI-shim block - re-running either
+one will silently drop it, and `R CMD check` will regress to the WARNING
+above until the `OBJECTS =`/`PKG_CPPFLAGS_BASE`/target-specific-override
+lines are re-added by hand (or `vendorpgen.R`/`vendorplink2import.R` are
+themselves extended to re-apply this block, the same way they already own
+the `LIBPLINK2_SOURCES`/`OBJECTS=` edits). The three new `.h`/`.c` files
+themselves are untouched by re-vendoring either way (they are
+hand-authored, like `rpgen_import.cpp`, not vendored).
+
 ## Update policy
 
 Pinned at plink-ng `a81e38220b16e3907bdcedbe6ce39b273e001e13` until there is a

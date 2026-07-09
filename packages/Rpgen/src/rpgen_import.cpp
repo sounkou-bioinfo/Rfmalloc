@@ -29,6 +29,17 @@
  * evaluator, but not safe to call from multiple threads of a larger
  * embedding application).
  *
+ * The vendored closure's rare exit()/abort() calls (a handful of "should
+ * never happen" internal-error paths in plink2_data.cc/plink2_import.cc)
+ * are redirected by rpgen_cli_shim.h to rpgen_plink2_exit()/
+ * rpgen_plink2_abort() (rpgen_plink2_glue.h/.c), which longjmp back into
+ * this function instead of calling Rf_error() directly - see
+ * rpgen_plink2_glue.h's top comment for why (in short: Rf_error() would
+ * longjmp past the arena free below). rpgen_import_vcf() setjmp()s that
+ * same jmp_buf before making any call into the vendored closure, so a
+ * longjmp lands back here and falls through this function's normal
+ * goto-cleanup path, same as an ordinary PglErr failure.
+ *
  * plink2's own logging (logputs()/logerrputs()/logprintf()/...) has been
  * patched, in the vendored tools/include/plink2_cmdline.cc itself (see
  * tools/vendor-plink2-import/patches/plink2_cmdline.cc.patch and its
@@ -53,6 +64,10 @@
 #include "plink2_cmdline.h"  // InitBigstack(), g_bigstack_base/g_bigstack_end
 #include "plink2_common.h"   // InitChrInfoHuman(), CleanupChrInfo()
 #include "plink2_import.h"   // VcfToPgen()
+
+#include <csetjmp>
+
+#include "rpgen_plink2_glue.h"  // rpgen_plink2_exit_jmp/_exit_code/_aborted
 
 // See rpgen.cpp's identical comment: plink2's headers #define FALSE/TRUE as
 // int macros, which shadow R's Rboolean enumerators.
@@ -135,8 +150,16 @@ int rpgen_import_vcf(const char *vcf_path, const char *out_pgen_path,
   }
 
   int rc = -1;
-  unsigned char *bigstack_ua = nullptr;
-  bool chr_info_ready = false;
+  // volatile: both are (re)assigned after the setjmp() below and read again
+  // in the `cleanup` path a longjmp may jump straight to, which the C/C++
+  // standard only guarantees survives correctly for volatile-qualified
+  // locals (rpgen_plink2_glue.h explains why a longjmp can land here at
+  // all). chr_info itself does not need the same treatment: its address is
+  // taken and handed to external, separately-compiled functions
+  // (InitChrInfoHuman()/VcfToPgen()/CleanupChrInfo()), which forces the
+  // compiler to keep it memory-resident rather than register-cached.
+  unsigned char *volatile bigstack_ua = nullptr;
+  volatile bool chr_info_ready = false;
   plink2::ChrInfo chr_info;
   char outname[plink2::kPglFnamesize];
   char *outname_end = nullptr;
@@ -146,15 +169,41 @@ int rpgen_import_vcf(const char *vcf_path, const char *out_pgen_path,
     return -1;
   }
 
+  // Guards every call from here on into the vendored plink2 closure: see
+  // this file's top comment and rpgen_plink2_glue.h for why. A nonzero
+  // return means some vendored code called exit()/abort() instead of
+  // returning a PglErr the normal way; report it like any other failure
+  // path in this function and fall through to the same `cleanup`.
+  if (setjmp(rpgen_plink2_exit_jmp) != 0) {
+    if (rpgen_plink2_aborted) {
+      snprintf(errbuf, errbuf_len,
+               "VcfToPgen(\"%s\") aborted (internal plink2 abort())",
+               vcf_path);
+    } else {
+      snprintf(errbuf, errbuf_len,
+               "VcfToPgen(\"%s\") called exit(%d) internally", vcf_path,
+               rpgen_plink2_exit_code);
+    }
+    goto cleanup;
+  }
+
   {
     uintptr_t malloc_mib_final = 0;
+    // Landed through InitBigstack()'s own unsigned char** out-param, not
+    // straight into the volatile bigstack_ua above: a volatile-qualified
+    // pointer variable's address does not implicitly convert to the plain
+    // unsigned char** InitBigstack() expects. Assigning the plain result
+    // into bigstack_ua right after success (below) still records it before
+    // any later vendored call that might exit()/abort().
+    unsigned char *bigstack_ua_tmp = nullptr;
     if (plink2::InitBigstack(kRpgenImportArenaMib, &malloc_mib_final,
-                              &bigstack_ua) != plink2::kPglRetSuccess) {
+                              &bigstack_ua_tmp) != plink2::kPglRetSuccess) {
       snprintf(errbuf, errbuf_len,
                "failed to allocate a %lu MiB working arena",
                static_cast<unsigned long>(kRpgenImportArenaMib));
       goto cleanup;
     }
+    bigstack_ua = bigstack_ua_tmp;
   }
 
   if (plink2::InitChrInfoHuman(&chr_info) != plink2::kPglRetSuccess) {

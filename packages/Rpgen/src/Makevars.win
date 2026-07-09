@@ -1,5 +1,10 @@
 INCL = ../tools/include
-PKG_CPPFLAGS = -DNO_UNALIGNED -DLIBDEFLATE_STATIC -DPGENLIB_NOPRINT -I$(INCL) -I$(INCL)/libdeflate
+
+# Kept as its own variable - see src/Makevars.in's comment on this same
+# variable for why (the CLI-shim target-specific override near the bottom
+# of this file needs a non-circular base to build on).
+PKG_CPPFLAGS_BASE = -DNO_UNALIGNED -DLIBDEFLATE_STATIC -DPGENLIB_NOPRINT -I$(INCL) -I$(INCL)/libdeflate
+PKG_CPPFLAGS = $(PKG_CPPFLAGS_BASE)
 PKG_LIBS = -L. -lPLINK2 -lzstd -lPGDEFLATE -lz -lpthread
 
 LIBDEFLATE_SOURCES = $(INCL)/libdeflate/lib/zlib_decompress.c $(INCL)/libdeflate/lib/zlib_compress.c $(INCL)/libdeflate/lib/utils.c $(INCL)/libdeflate/lib/gzip_compress.c $(INCL)/libdeflate/lib/crc32.c $(INCL)/libdeflate/lib/adler32.c $(INCL)/libdeflate/lib/deflate_decompress.c $(INCL)/libdeflate/lib/deflate_compress.c $(INCL)/libdeflate/lib/gzip_decompress.c $(INCL)/libdeflate/lib/arm/arm_cpu_features.c $(INCL)/libdeflate/lib/x86/x86_cpu_features.c
@@ -27,4 +32,9 @@ libPLINK2.a: $(LIBPLINK2) $(LIBPLINK2_CO)
 clean:
 	rm -f $(SHLIB) $(OBJECTS) $(LIBDEFLATE) $(LIBPLINK2) $(LIBPLINK2_CO)
 
-OBJECTS = rpgen.o rpgen_import.o
+OBJECTS = rpgen.o rpgen_import.o rpgen_null_stream.o rpgen_plink2_glue.o
+
+# CLI shim - see src/Makevars.in's comment on this same variable for the
+# rationale (tools/vendor-plink2-import/PROVENANCE.md has the full story).
+# Plain "=", not "+=" - see PKG_CPPFLAGS_BASE's comment above.
+$(LIBPLINK2) $(LIBPLINK2_CO): PKG_CPPFLAGS = $(PKG_CPPFLAGS_BASE) -I. -include rpgen_cli_shim.h
