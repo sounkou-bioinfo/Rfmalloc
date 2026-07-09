@@ -13,7 +13,7 @@
 
 # Dependency order matters: Rfmalloc and Rggml are roots, Rgguf needs
 # Rfmalloc, Rllm needs all three.
-PKGS = Rfmalloc Rggml Rgguf Rllm
+PKGS = Rfmalloc Rggml Rgguf Rllm Rpgen
 
 .PHONY: all install test check rd rdm fixtures clean
 

@@ -52,6 +52,14 @@ jobs:
           - {pkg: Rllm,     os: ubuntu-latest,  r: 'devel'}
           - {pkg: Rllm,     os: macos-latest,   r: 'release'}
           - {pkg: Rllm,     os: ubuntu-24.04-arm, r: 'release'}
+          # Rpgen vendors pgenlib (LGPL-3) + zstd/libdeflate/simde. Windows is
+          # held until the vendored Windows build (Makevars.win/.ucrt) is
+          # verified here; pgenlibr proves it builds on Windows, so it is a
+          # follow-up, not a barrier.
+          - {pkg: Rpgen,    os: ubuntu-latest,  r: 'release'}
+          - {pkg: Rpgen,    os: ubuntu-latest,  r: 'devel'}
+          - {pkg: Rpgen,    os: macos-latest,   r: 'release'}
+          - {pkg: Rpgen,    os: ubuntu-24.04-arm, r: 'release'}
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -80,6 +88,7 @@ jobs:
         run: |
           case "${{ matrix.pkg }}" in
             Rgguf) siblings="Rfmalloc" ;;
+            Rpgen) siblings="Rfmalloc" ;;
             Rllm)  siblings="Rfmalloc Rggml Rgguf" ;;
             *)     siblings="" ;;
           esac
@@ -107,6 +116,19 @@ jobs:
       # it from the pinned ggmlR tarball + patches/ + overlay/ and assert equal.
       - name: vendorggml.R check
         run: Rscript tools/vendor-ggml/vendorggml.R check
+
+  vendored-pgenlib-matches-recipe:
+    runs-on: ubuntu-latest
+    name: vendored pgenlib == recipe
+    steps:
+      - uses: actions/checkout@v6
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+      # Guard against silent hand-edits of packages/Rpgen's vendored pgenlib:
+      # re-derive it from the pinned pgenlibr CRAN tarball and assert equal.
+      - name: vendorpgen.R check
+        run: Rscript tools/vendor-pgenlib/vendorpgen.R check
 
   integration:
     runs-on: ubuntu-latest
