@@ -7,10 +7,11 @@
 rpgen_dosage(path, pvar = NULL, runtime = NULL)
 }
 \arguments{
-\item{path}{Path to a \code{.pgen} file.}
+\item{path}{Path to a \code{.pgen} file, or a PLINK 1 \code{.bed} file.}
 
 \item{pvar}{Path to the companion \code{.pvar}/\code{.pvar.zst} file; see
-\code{\link[=rpgen_read_hardcalls]{rpgen_read_hardcalls()}}. Defaults to \code{NULL}.}
+\code{\link[=rpgen_read_hardcalls]{rpgen_read_hardcalls()}}. Only used when \code{path} is a \code{.pgen}. Defaults to
+\code{NULL}.}
 
 \item{runtime}{Runtime handle from \code{\link[Rfmalloc:open_fmalloc]{Rfmalloc::open_fmalloc()}}; defaults to
 the runtime established by \code{\link[Rfmalloc:init_fmalloc]{Rfmalloc::init_fmalloc()}}.}

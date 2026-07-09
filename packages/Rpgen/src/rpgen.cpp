@@ -26,9 +26,11 @@
  * modeled on pgenlibr's RPgenReader::Load()/ReadIntList()/ReadList().
  */
 
+#include <cerrno>
 #include <climits>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 #include <R.h>
 #include <Rinternals.h>
@@ -45,7 +47,15 @@
 //
 // Bumped to 2 in milestone 2: adds Rpgen_read_hardcalls()/
 // Rpgen_read_dosages() alongside milestone 1's Rpgen_open_info().
-#define RPGEN_API_VERSION 2
+//
+// Bumped to 3 in milestone 3: adds Rpgen_read_bed_hardcalls(), a PLINK 1
+// .bed reader. PgfiInitPhase1() already opens a PLINK 1 .bed file in
+// exactly the same code path as a .pgen (see rpgen_full_reader_open()'s
+// comment below) - the one real difference is that a .bed carries no header
+// of its own, so raw_sample_ct/raw_variant_ct must be supplied by the
+// caller (counted from the companion .fam/.bim) instead of being read back
+// from the file.
+#define RPGEN_API_VERSION 3
 
 namespace {
 
@@ -293,17 +303,27 @@ void rpgen_full_reader_release(RpgenFullReader *r) {
 // rpgen_full_reader_release(r). On failure, r has already been released (via
 // rpgen_full_reader_release()) and every pointer in it is back to nullptr;
 // the caller must not release it again.
+//
+// `cur_sample_ct`/`cur_variant_ct` are passed straight through to
+// PgfiInitPhase1(): UINT32_MAX (the default every .pgen caller below uses)
+// means "read the count back from the file's own header". A PLINK 1 .bed
+// file has no such header, so its reader (rpgen_read_bed_hardcalls() below)
+// passes the counts it already got from the companion .fam/.bim line counts
+// instead - PgfiInitPhase1() requires an accurate raw_sample_ct in that case
+// (it cannot be inferred) and infers raw_variant_ct from the file size if
+// not supplied, but rpgen_read_bed_hardcalls() always has both on hand
+// already, so it always supplies both explicitly.
 int rpgen_full_reader_open(const char *fname, bool with_dosage,
                             RpgenFullReader *r, char *errbuf,
-                            size_t errbuf_len) {
+                            size_t errbuf_len,
+                            uint32_t cur_sample_ct = UINT32_MAX,
+                            uint32_t cur_variant_ct = UINT32_MAX) {
   if (errbuf_len > 0) {
     errbuf[0] = '\0';
   }
   rpgen_full_reader_preinit(r);
 
   int rc = -1;
-  const uint32_t cur_sample_ct = UINT32_MAX;
-  const uint32_t cur_variant_ct = UINT32_MAX;
   plink2::PgenHeaderCtrl header_ctrl;
   uintptr_t pgfi_alloc_cacheline_ct;
   char pgenlib_errbuf[plink2::kPglErrstrBufBlen];
@@ -554,6 +574,109 @@ int rpgen_read_dosages_range(const char *fname, uint32_t variant_start,
   return rc;
 }
 
+// -- milestone 3: PLINK 1 .bed reading --------------------------------------
+//
+// A PLINK 1 .bed carries only 3 magic/mode bytes, no counts (see
+// PgfiInitPhase1()'s "plink 1 binary" branch in pgenlib_read.cc): the sample
+// and variant counts have to come from the companion .fam (one line per
+// sample) and .bim (one line per variant) instead. This is plain line
+// counting, nothing pgenlib-specific, so it is implemented directly here
+// rather than by involving PgfiInitPhase1() twice.
+//
+// Counts newlines, plus one more if the file is non-empty and its last byte
+// isn't a newline (a final line with no trailing newline still counts).
+// Deliberately not going through R's connection machinery: this runs before
+// any R-level buffer exists to write into, same reasoning rpgen_open_info()
+// already applies to every other file access in this file.
+int rpgen_count_lines(const char *fname, uint32_t *count_out, char *errbuf,
+                       size_t errbuf_len) {
+  FILE *f = fopen(fname, "rb");
+  if (!f) {
+    snprintf(errbuf, errbuf_len, "failed to open %s: %s", fname,
+              strerror(errno));
+    return -1;
+  }
+
+  uint64_t n = 0;
+  int last_byte = -1;
+  unsigned char buf[65536];
+  size_t nread;
+  while ((nread = fread(buf, 1, sizeof(buf), f)) > 0) {
+    for (size_t i = 0; i != nread; ++i) {
+      if (buf[i] == '\n') {
+        ++n;
+      }
+    }
+    last_byte = buf[nread - 1];
+  }
+  const bool had_error = ferror(f) != 0;
+  fclose(f);
+  if (had_error) {
+    snprintf(errbuf, errbuf_len, "read failure on %s", fname);
+    return -1;
+  }
+  if (last_byte != -1 && last_byte != '\n') {
+    ++n;
+  }
+  if (n > UINT32_MAX) {
+    snprintf(errbuf, errbuf_len, "%s has too many lines to count", fname);
+    return -1;
+  }
+
+  *count_out = static_cast<uint32_t>(n);
+  return 0;
+}
+
+// Reads every variant, for every sample, from the PLINK 1 .bed file at
+// `bed_fname` into `out` (caller-allocated, raw_sample_ct * raw_variant_ct
+// int32_t values, same column-major/variant-major layout
+// rpgen_read_hardcalls_range() uses). `raw_sample_ct`/`raw_variant_ct` must
+// be the exact counts from the companion .fam/.bim (rpgen_count_lines()
+// above, or any equivalent count) - PgfiInitPhase1() validates them against
+// the .bed's file size and fails if they're wrong, which is the whole
+// correctness check available for a header-less format.
+//
+// rpgen_full_reader_open() with an explicit sample/variant count takes
+// PgfiInitPhase1()'s PLINK-1-.bed branch (file_type_code 1: see
+// pgenlib_read.cc), which requires raw_sample_ct up front and sets
+// info.const_vrtype = kPglVrtypePlink1 - everything downstream of that
+// (PgfiInitPhase2(), PgrInit(), and PgrGet() itself) already branches on
+// kPglVrtypePlink1 to unpack PLINK 1's 2-bit encoding (00 = hom first
+// allele, 01 = missing, 10 = het, 11 = hom second allele) into the same
+// {hom-ref, het, hom-alt, missing} genovec codes a .pgen read produces (see
+// PgrPlink1ToPlink2InplaceUnsafe() in pgenlib_read.cc), so the PgrGet() loop
+// below is identical to rpgen_read_hardcalls_range()'s - no PLINK-1-specific
+// decoding needed at this level.
+int rpgen_read_bed_hardcalls(const char *bed_fname, uint32_t raw_sample_ct,
+                              uint32_t raw_variant_ct, int32_t *out,
+                              char *errbuf, size_t errbuf_len) {
+  RpgenFullReader r;
+  if (rpgen_full_reader_open(bed_fname, /*with_dosage=*/false, &r, errbuf,
+                              errbuf_len, raw_sample_ct,
+                              raw_variant_ct) != 0) {
+    return -1;
+  }
+
+  int rc = 0;
+  for (uint32_t vidx = 0; rc == 0 && vidx != r.n_variant; ++vidx) {
+    const plink2::PglErr reterr =
+        plink2::PgrGet(r.subset_include_vec, r.subset_index, r.n_sample,
+                       vidx, &r.state, r.genovec);
+    if (reterr != plink2::kPglRetSuccess) {
+      snprintf(errbuf, errbuf_len, "PgrGet() error %d at variant %u",
+               static_cast<int>(reterr), vidx);
+      rc = -1;
+      break;
+    }
+    plink2::GenoarrLookup256x4bx4(
+        r.genovec, kGenoRInt32Quads, r.n_sample,
+        &out[static_cast<size_t>(vidx) * r.n_sample]);
+  }
+
+  rpgen_full_reader_release(&r);
+  return rc;
+}
+
 }  // namespace
 
 extern "C" {
@@ -592,6 +715,24 @@ int Rpgen_read_dosages(const char *path, uint32_t variant_start,
   return rpgen_read_dosages_range(path, variant_start, variant_ct, out,
                                    n_sample_out, n_variant_out, errbuf,
                                    errbuf_len);
+}
+
+// Reads every variant, for every sample, from the PLINK 1 .bed file at
+// `bed_path` into `out` (caller-allocated, raw_sample_ct * raw_variant_ct
+// int32_t values, column-major/variant-major - see
+// Rpgen_read_hardcalls()'s comment for the exact layout). Unlike
+// Rpgen_read_hardcalls(), there is no file header to read the counts back
+// from: the caller must already know raw_sample_ct/raw_variant_ct (the line
+// counts of the companion .fam/.bim) and supplies them; PgfiInitPhase1()
+// validates them against the .bed's file size and fails if they're wrong.
+// A .bed is biallelic hardcalls only - there is no dosage counterpart.
+// Returns 0 on success, nonzero on failure with a NUL-terminated message in
+// errbuf (a caller-owned buffer of at least errbuf_len bytes).
+int Rpgen_read_bed_hardcalls(const char *bed_path, uint32_t raw_sample_ct,
+                              uint32_t raw_variant_ct, int32_t *out,
+                              char *errbuf, size_t errbuf_len) {
+  return rpgen_read_bed_hardcalls(bed_path, raw_sample_ct, raw_variant_ct,
+                                   out, errbuf, errbuf_len);
 }
 
 SEXP RC_rpgen_info(SEXP path_sexp) {
@@ -709,10 +850,60 @@ SEXP RC_rpgen_read_dosages(SEXP path_sexp, SEXP pvar_sexp) {
   return result;
 }
 
+// `path_sexp` must be a single non-NA string; `argname` names it in the
+// error message. Shared by RC_rpgen_read_bed_hardcalls()'s three path
+// arguments (bed/bim/fam all have the identical requirement, unlike
+// rpgen_check_path_and_pvar()'s `pvar`, which is optional).
+static const char *rpgen_check_single_string(SEXP path_sexp,
+                                              const char *argname) {
+  if (TYPEOF(path_sexp) != STRSXP || Rf_length(path_sexp) != 1 ||
+      STRING_ELT(path_sexp, 0) == NA_STRING) {
+    Rf_error("%s must be a single non-NA string", argname);
+  }
+  return CHAR(STRING_ELT(path_sexp, 0));
+}
+
+SEXP RC_rpgen_read_bed_hardcalls(SEXP bed_sexp, SEXP bim_sexp,
+                                  SEXP fam_sexp) {
+  const char *bed_path = rpgen_check_single_string(bed_sexp, "bed");
+  const char *bim_path = rpgen_check_single_string(bim_sexp, "bim");
+  const char *fam_path = rpgen_check_single_string(fam_sexp, "fam");
+
+  uint32_t n_variant = 0;
+  uint32_t n_sample = 0;
+  char errbuf[512];
+  if (rpgen_count_lines(bim_path, &n_variant, errbuf, sizeof(errbuf)) != 0) {
+    Rf_error("failed to count variants in \"%s\": %s", bim_path, errbuf);
+  }
+  if (rpgen_count_lines(fam_path, &n_sample, errbuf, sizeof(errbuf)) != 0) {
+    Rf_error("failed to count samples in \"%s\": %s", fam_path, errbuf);
+  }
+  if (n_sample == 0 || n_variant == 0) {
+    Rf_error("\"%s\"/\"%s\" must each have at least one line", fam_path,
+              bim_path);
+  }
+  if (n_sample > static_cast<uint32_t>(INT_MAX) ||
+      n_variant > static_cast<uint32_t>(INT_MAX)) {
+    Rf_error("\"%s\" is too large for an R matrix (%u x %u)", bed_path,
+             n_sample, n_variant);
+  }
+
+  SEXP result = PROTECT(Rf_allocMatrix(
+      INTSXP, static_cast<int>(n_sample), static_cast<int>(n_variant)));
+  if (Rpgen_read_bed_hardcalls(bed_path, n_sample, n_variant, INTEGER(result),
+                                errbuf, sizeof(errbuf)) != 0) {
+    UNPROTECT(1);
+    Rf_error("Rpgen_read_bed_hardcalls(\"%s\") failed: %s", bed_path, errbuf);
+  }
+  UNPROTECT(1);
+  return result;
+}
+
 static const R_CallMethodDef CallEntries[] = {
     {"RC_rpgen_info", (DL_FUNC)&RC_rpgen_info, 1},
     {"RC_rpgen_read_hardcalls", (DL_FUNC)&RC_rpgen_read_hardcalls, 2},
     {"RC_rpgen_read_dosages", (DL_FUNC)&RC_rpgen_read_dosages, 2},
+    {"RC_rpgen_read_bed_hardcalls", (DL_FUNC)&RC_rpgen_read_bed_hardcalls, 3},
     {NULL, NULL, 0}};
 
 static void register_c_callables(DllInfo *dll) {
@@ -723,6 +914,8 @@ static void register_c_callables(DllInfo *dll) {
                        (DL_FUNC)Rpgen_read_hardcalls);
   R_RegisterCCallable("Rpgen", "Rpgen_read_dosages",
                        (DL_FUNC)Rpgen_read_dosages);
+  R_RegisterCCallable("Rpgen", "Rpgen_read_bed_hardcalls",
+                       (DL_FUNC)Rpgen_read_bed_hardcalls);
   (void)dll;
 }
 

@@ -2,15 +2,20 @@
 % Please edit documentation in R/rpgen.R
 \name{rpgen_bed}
 \alias{rpgen_bed}
-\title{Read a .pgen file into an Rfmalloc bed tensor}
+\title{Read a .pgen or PLINK 1 .bed fileset into an Rfmalloc bed tensor}
 \usage{
-rpgen_bed(path, pvar = NULL, runtime = NULL)
+rpgen_bed(path, pvar = NULL, bim = NULL, fam = NULL, runtime = NULL)
 }
 \arguments{
-\item{path}{Path to a \code{.pgen} file.}
+\item{path}{Path to a \code{.pgen} file, or a PLINK 1 \code{.bed} file.}
 
 \item{pvar}{Path to the companion \code{.pvar}/\code{.pvar.zst} file; see
-\code{\link[=rpgen_read_hardcalls]{rpgen_read_hardcalls()}}. Defaults to \code{NULL}.}
+\code{\link[=rpgen_read_hardcalls]{rpgen_read_hardcalls()}}. Only used when \code{path} is a \code{.pgen}. Defaults to
+\code{NULL}.}
+
+\item{bim, fam}{Paths to the companion \code{.bim}/\code{.fam} files; see
+\code{\link[=rpgen_read_bed_hardcalls]{rpgen_read_bed_hardcalls()}}. Only used when \code{path} is a \code{.bed}. Default
+to \code{NULL} (inferred from \code{path}).}
 
 \item{runtime}{Runtime handle from \code{\link[Rfmalloc:open_fmalloc]{Rfmalloc::open_fmalloc()}}; defaults to
 the runtime established by \code{\link[Rfmalloc:init_fmalloc]{Rfmalloc::init_fmalloc()}}.}
@@ -19,14 +24,16 @@ the runtime established by \code{\link[Rfmalloc:init_fmalloc]{Rfmalloc::init_fma
 An \code{fmalloc_tensor} of dtype \code{"bed"}, \verb{n_sample x n_variant}.
 }
 \description{
-Reads hardcalls from a PLINK 2 \code{.pgen} file with \code{\link[=rpgen_read_hardcalls]{rpgen_read_hardcalls()}}
-and packs them into fmalloc-backed, 2-bit \code{.bed} storage with
-\code{\link[Rfmalloc:fmalloc_bed]{Rfmalloc::fmalloc_bed()}}. The genotype matrix itself is materialized once,
-in R, as the integer matrix pgenlib decodes to; the fmalloc tensor it packs
-into is what downstream matrix products (a genotype PCA, a GRM) stream
-out-of-core, so the .pgen's genotypes make one trip through an ordinary R
-matrix on the way into fmalloc storage, never a second one back out as
-doubles.
+Reads hardcalls and packs them into fmalloc-backed, 2-bit \code{.bed} storage
+with \code{\link[Rfmalloc:fmalloc_bed]{Rfmalloc::fmalloc_bed()}}. \code{path} selects the reader: a path ending in
+\code{.bed} is read with \code{\link[=rpgen_read_bed_hardcalls]{rpgen_read_bed_hardcalls()}} (PLINK 1, counts from the
+companion \code{.bim}/\code{.fam}); anything else is read with
+\code{\link[=rpgen_read_hardcalls]{rpgen_read_hardcalls()}} (PLINK 2 \code{.pgen}). The genotype matrix itself is
+materialized once, in R, as the integer matrix pgenlib decodes to; the
+fmalloc tensor it packs into is what downstream matrix products (a
+genotype PCA, a GRM) stream out-of-core, so the genotypes make one trip
+through an ordinary R matrix on the way into fmalloc storage, never a
+second one back out as doubles.
 }
 \examples{
 pgen <- system.file("extdata", "chr21_phase3_start.pgen", package = "Rpgen")
@@ -36,5 +43,6 @@ dim(tn)
 Rfmalloc::cleanup_fmalloc(rt)
 }
 \seealso{
-\code{\link[=rpgen_dosage]{rpgen_dosage()}}, \code{\link[=rpgen_read_hardcalls]{rpgen_read_hardcalls()}}
+\code{\link[=rpgen_dosage]{rpgen_dosage()}}, \code{\link[=rpgen_read_hardcalls]{rpgen_read_hardcalls()}},
+\code{\link[=rpgen_read_bed_hardcalls]{rpgen_read_bed_hardcalls()}}
 }
