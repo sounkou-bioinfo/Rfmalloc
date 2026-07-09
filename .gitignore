@@ -16,3 +16,4 @@ packages/Rggml/inst/ggml/ggml-vulkan/generated/
 packages/Rggml/inst/ggml/ggml-vulkan/vulkan-shaders/vulkan-shaders-gen
 packages/*/src/Makevars.win
 .pi/
+.claude/
