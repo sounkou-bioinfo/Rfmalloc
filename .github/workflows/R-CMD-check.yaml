@@ -136,6 +136,19 @@ jobs:
       - name: vendorpgen.R check
         run: Rscript tools/vendor-pgenlib/vendorpgen.R check
 
+  vendored-plink2-import-matches-recipe:
+    runs-on: ubuntu-latest
+    name: vendored plink2-import == recipe
+    steps:
+      - uses: actions/checkout@v6
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+      # Guard the milestone 4a plink2 VCF-import closure: re-derive it from the
+      # pinned plink-ng commit and assert equal.
+      - name: vendorplink2import.R check
+        run: Rscript tools/vendor-plink2-import/vendorplink2import.R check
+
   integration:
     runs-on: ubuntu-latest
     name: integration (full stack)

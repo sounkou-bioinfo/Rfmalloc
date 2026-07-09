@@ -283,16 +283,23 @@ if (mode == "check") {
     if (!file.exists(b) || !identical(sha256(a), sha256(b))) mism <<- c(mism, rel)
   }
   for (f in root_files) check_file(f)
-  for (f in c(src_files_verbatim, src_files_patched)) check_file(file.path("src", f))
+  for (f in src_files_verbatim) check_file(file.path("src", f))
+  # Makevars.in/Makevars.win (src_files_patched) are NOT drift-checked: they
+  # carry hand-maintained CLI-shim wiring on top of what this recipe generates
+  # (the milestone 4a plink2 import routes its console I/O through a force-
+  # included shim, see tools/vendor-plink2-import/PROVENANCE.md), so they are our
+  # build config, not vendored source. This guard protects the vendored
+  # tools/include tree; `vendor` still regenerates Makevars as a starting point,
+  # but the shim override must then be reapplied per PROVENANCE.
   for (f in tools_files) check_file(file.path("tools", f))
   for (f in inc_manifest) check_file(file.path("tools", "include", f))
   for (f in extdata_files) check_file(file.path("inst", "extdata", f))
 
   if (length(mism) == 0) {
     message("OK: committed vendored tree == vendorpgen.R output (",
-            3 + length(src_files_verbatim) + length(src_files_patched) +
+            3 + length(src_files_verbatim) +
               length(tools_files) + length(inc_manifest) + length(extdata_files),
-            " files)")
+            " files; Makevars.in/.win hand-maintained, not checked)")
   } else {
     stop("MISMATCH - committed tree no longer equals the recipe:\n  ",
          paste(mism, collapse = "\n  "))
