@@ -47,7 +47,8 @@ as one commit and is validated as one unit.
 ## Test workflow
 - Per package: `Rscript -e "tinytest::test_package('<pkg>')"` (install the
   package and its local siblings first: `R CMD INSTALL packages/<sibling>`
-  in dependency order Rfmalloc, Rggml, Rgguf, Rllm).
+  in dependency order Rfmalloc, Rggml, Rgguf, Rllm, Rpgen; Rpgen needs only
+  Rfmalloc).
 - Focused: `Rscript -e "tinytest::run_test_file('packages/<pkg>/inst/tinytest/<file>.R')"`.
 - Before finishing: `R CMD check --no-manual packages/<pkg>` for every package
   you touched; CI additionally runs the full-stack integration job.
@@ -61,6 +62,33 @@ as one commit and is validated as one unit.
 - READMEs: `README.Rmd` is the source where present; re-render to `README.md`.
 - CI is `.github/workflows/R-CMD-check.yaml` (per-package matrix + integration
   job). Keep it green on every push. Rfmalloc and Rggml also build on Windows;
-  all four are checked on aarch64 (`ubuntu-24.04-arm`, macOS Apple Silicon).
+  all five are checked on aarch64 (`ubuntu-24.04-arm`, macOS Apple Silicon).
 - Prose is written without em dashes, anywhere: READMEs, DESCRIPTION, NEWS,
   commit messages. Use a colon in a title, ` - ` mid-sentence.
+
+## GPU test harness (the rig)
+
+Real GPU numbers come from **`ssh rig`**, a gaming-rig WSL box reachable over a
+reverse tunnel (port 2222) from the dev server. It is the harness for anything
+GPU: CI only ever exercises the Vulkan backend on Mesa lavapipe (a software
+driver, correctness not speed), so a genuine GPU-vs-CPU measurement has to run
+here.
+
+- **Hardware:** NVIDIA RTX 5050 Laptop, 8 GB VRAM (Blackwell, compute 12.x),
+  CUDA 13.2 at `/usr/local/cuda-13.2`.
+- **`nvidia-smi` is at `/usr/lib/wsl/lib/nvidia-smi`**, not on the non-login
+  `ssh rig` PATH; call it by full path or a bare `nvidia-smi` may report
+  "not reachable" when the GPU is in fact fine.
+- **Vulkan is a dead end on the rig:** WSL ships no Dozen (`dzn`) driver, so the
+  RTX 5050 is not a Vulkan device there. **CUDA is the only GPU path on the
+  rig.** Reference point: upstream llama.cpp CUDA runs SmolLM2 `Q4_K_M` at
+  ~455 tok/s (~28x this CPU stack); our stack has no CUDA backend yet, so that
+  number is the hardware, not us.
+- **Memory:** two caps, do not confuse them. WSL system RAM is ~8 GB (default,
+  no `.wslconfig`); raise it by writing `[wsl2] memory=...` to
+  `C:\Users\<user>\.wslconfig` on the Windows host and running `wsl --shutdown`
+  (which drops the tunnel until WSL restarts) - that only helps the nvcc build.
+  GPU inference is capped by the 8 GB VRAM, which is fixed hardware and already
+  ample for the models we test.
+- Editing `.wslconfig` and `wsl --shutdown` are Windows-host actions the agent
+  cannot do over `ssh rig`; hand them to the user.
