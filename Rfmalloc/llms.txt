@@ -1499,6 +1499,16 @@ GPL (\>= 2)
 - [`fmalloc_colVars()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_colVars.md)
   [`fmalloc_rowVars()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_colVars.md)
   : Column / row variances of an fmalloc matrix
+- [`fmalloc_dosage()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_dosage.md)
+  : Fractional genotype dosages as a 1-byte fmalloc tensor
+- [`fmalloc_dosage_standardize()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_dosage_standardize.md)
+  : Bake per-variant standardization into a dosage tensor
+- [`fmalloc_hap_materialize()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_hap_materialize.md)
+  : Materialize a bit-packed haplotype store into a 0/1 matrix
+- [`fmalloc_haplotypes()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_haplotypes.md)
+  [`dim(`*`<fmalloc_haplotypes>`*`)`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_haplotypes.md)
+  [`print(`*`<fmalloc_haplotypes>`*`)`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_haplotypes.md)
+  : Phased haplotypes as a 1-bit fmalloc store
 - [`fmalloc_set()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_insitu.md)
   [`fmalloc_fill()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_insitu.md)
   [`fmalloc_add()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_insitu.md)

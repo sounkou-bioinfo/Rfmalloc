@@ -20,6 +20,10 @@
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_bed.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_bed_standardize.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_colVars.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_dosage.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_dosage_standardize.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_hap_materialize.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_haplotypes.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_insitu.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_linalg.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_matmul_ooc.html</loc></url>
