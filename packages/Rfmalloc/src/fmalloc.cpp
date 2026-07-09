@@ -11,5 +11,6 @@
 #include "fmalloc_sparse.inc"
 #include "fmalloc_bed.inc"
 #include "fmalloc_dosage.inc"
+#include "fmalloc_hap.inc"
 #include "fmalloc_insitu.inc"
 #include "fmalloc_api.inc"
