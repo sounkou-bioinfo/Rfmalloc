@@ -2,7 +2,7 @@
 #define RPGEN_API_PUBLIC_H
 
 /*
- * Rpgen.h - C-callable API for the Rpgen carrier package, version 1.
+ * Rpgen.h - C-callable API for the Rpgen carrier package, version 2.
  *
  * Rpgen vendors the read subset of PLINK 2's pgenlib
  * (https://github.com/chrchang/plink-ng) - the same subset the CRAN package
@@ -23,10 +23,13 @@
  *      Rpgen is guaranteed attached/loaded (normal LinkingTo + Imports
  *      behavior guarantees this).
  *
- * Milestone 1 provides one operation: open a .pgen file far enough to read
- * its header counts, then close it again. It does not yet keep a reader
- * handle alive across calls - that is for a later milestone, once genotype
- * reading is added.
+ * Milestone 1 provides Rpgen_open_info(): open a .pgen file far enough to
+ * read its header counts, then close it again.
+ *
+ * Milestone 2 adds Rpgen_read_hardcalls()/Rpgen_read_dosages(): read a
+ * variant range for every sample into a caller-allocated buffer. Neither
+ * milestone keeps a reader handle alive across calls - every call opens the
+ * file, does its work, and closes it again.
  */
 
 #include <stddef.h>
@@ -56,6 +59,62 @@ typedef int (*Rpgen_api_version_fun)(void);
 typedef int (*Rpgen_open_info_fun)(const char *path, uint32_t *n_sample_out,
                                    uint32_t *n_variant_out, char *errbuf,
                                    size_t errbuf_len);
+
+/* -- read genotypes ---------------------------------------------------------- */
+
+/*
+ * Rpgen_read_hardcalls(path, variant_start, variant_ct, out, n_sample_out,
+ *                       n_variant_out, errbuf, errbuf_len)
+ *
+ * Opens the .pgen file at `path` and reads variants
+ * [variant_start, variant_start + variant_ct) for every sample via
+ * plink2::PgrGet(), then closes it again. `out` must be a caller-allocated
+ * buffer of at least (the file's raw_sample_ct) * variant_ct int32_t values,
+ * written in column-major (variant-major) order:
+ * out[v * raw_sample_ct + s] holds sample s's hardcall dosage - 0, 1, 2, or
+ * NA_INTEGER for missing - at variant (variant_start + v). This is exactly
+ * the layout an R INTSXP matrix of dim (raw_sample_ct, variant_ct) uses, so
+ * INTEGER(result) can be passed straight through from a .Call entry point.
+ *
+ * For a multiallelic variant, every ALT allele is collapsed into one
+ * non-reference count (plink2::PgrGet(), unlike the allele-specific
+ * PgrGet1(), needs no per-variant allele-identity bookkeeping to produce
+ * this - see Rpgen's own rpgen_read_hardcalls()/rpgen_read_dosages() R
+ * documentation for why that means no .pvar is required here, unlike
+ * pgenlibr::NewPgen() at a file combining multiallelic variants with
+ * phase/dosage info).
+ *
+ * *n_sample_out is always the file's full raw_sample_ct (there is no
+ * sample-subsetting API yet); *n_variant_out is the file's full
+ * raw_variant_ct, independent of variant_ct, so callers can distinguish a
+ * short read (variant_ct < raw_variant_ct, by design) from an out-of-range
+ * one (checked internally: variant_start + variant_ct > raw_variant_ct
+ * fails). Returns 0 on success, nonzero on failure with a NUL-terminated
+ * message in errbuf (a caller-owned buffer of at least errbuf_len bytes).
+ */
+typedef int (*Rpgen_read_hardcalls_fun)(const char *path,
+                                        uint32_t variant_start,
+                                        uint32_t variant_ct, int32_t *out,
+                                        uint32_t *n_sample_out,
+                                        uint32_t *n_variant_out, char *errbuf,
+                                        size_t errbuf_len);
+
+/*
+ * Rpgen_read_dosages(path, variant_start, variant_ct, out, n_sample_out,
+ *                     n_variant_out, errbuf, errbuf_len)
+ *
+ * Same contract as Rpgen_read_hardcalls(), but reads via plink2::PgrGetD()
+ * and `out` is a caller-allocated double buffer: out[v * raw_sample_ct + s]
+ * holds sample s's dosage in [0, 2] (or NA_REAL for missing) at variant
+ * (variant_start + v). A sample with no explicit dosage record at a variant
+ * falls back to that sample's hardcall value, so every non-missing sample
+ * gets a value.
+ */
+typedef int (*Rpgen_read_dosages_fun)(const char *path, uint32_t variant_start,
+                                      uint32_t variant_ct, double *out,
+                                      uint32_t *n_sample_out,
+                                      uint32_t *n_variant_out, char *errbuf,
+                                      size_t errbuf_len);
 
 #ifdef __cplusplus
 }
