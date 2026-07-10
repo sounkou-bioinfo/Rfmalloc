@@ -87,3 +87,196 @@ rpgen_import_bed <- function(vcf, out = tempfile(fileext = ".pgen"), keep = FALS
     }
     rpgen_bed(pgen, runtime = runtime)
 }
+
+## Milestone 4b: the rest of plink2's import matrix. Each function below is
+## the same shape as rpgen_import_vcf() above - a thin wrapper around a
+## .Call into src/rpgen_import.cpp, which in turn calls one more entry point
+## of the same vendored plink2_import.cc closure VcfToPgen() already came
+## from. See that file's top comment for the shared defaults/design notes,
+## and each function's own C driver comment (src/rpgen_import.cpp) for the
+## format-specific ones.
+
+#' Convert a BCF to a .pgen using plink2's own importer
+#'
+#' Converts `bcf` to a `.pgen` by calling plink2's own `BcfToPgen()` importer
+#' - BCF's binary-sibling counterpart to [rpgen_import_vcf()]'s `VcfToPgen()`,
+#' living in the same vendored closure - with the defaults a plain
+#' `plink2 --bcf <bcf> --make-pgen` (no other flags) would use.
+#'
+#' The produced `.pgen` can be read back with any of Rpgen's existing `.pgen`
+#' readers, exactly as [rpgen_import_vcf()]'s can.
+#'
+#' @param bcf Path to a BCF file.
+#' @param out Path to the `.pgen` to produce; must end in `.pgen`. Defaults
+#'   to a fresh [tempfile()].
+#' @return `out`, invisibly on success; an R error is raised on failure.
+#' @seealso [rpgen_import_vcf()], [rpgen_read_hardcalls()]
+#' @examples
+#' vcf <- system.file("extdata", "tiny.vcf", package = "Rpgen")
+#' if (nzchar(vcf) && nzchar(Sys.which("bcftools"))) {
+#'     bcf <- tempfile(fileext = ".bcf")
+#'     system2("bcftools", c("view", shQuote(vcf), "-Ob", "-o", shQuote(bcf)))
+#'     pgen <- rpgen_import_bcf(bcf)
+#'     rpgen_info(pgen)$n_sample
+#'     unlink(c(bcf, pgen, sub("\\.pgen$", ".pvar", pgen), sub("\\.pgen$", ".psam", pgen)))
+#' }
+#' @export
+rpgen_import_bcf <- function(bcf, out = tempfile(fileext = ".pgen")) {
+    bcf <- path.expand(as.character(bcf))
+    out <- path.expand(as.character(out))
+    if (!grepl("\\.pgen$", out)) {
+        stop("out must end in \".pgen\": \"", out, "\"")
+    }
+    invisible(.Call("RC_rpgen_import_bcf", bcf, out))
+}
+
+#' Convert an Oxford-format .gen + .sample to a .pgen using plink2's own importer
+#'
+#' Converts the Oxford-format `gen`/`sample` pair to a `.pgen` by calling
+#' plink2's own `OxGenToPgen()` importer, with the defaults a plain
+#' `plink2 --gen <gen> --sample <sample> --make-pgen` would use. Unlike
+#' [rpgen_import_vcf()]'s VCF/BCF, a `.gen` file carries no sample IDs or
+#' pedigree of its own, so `sample` is required, not optional.
+#'
+#' `gen`'s rows must carry an explicit leading chromosome column (plink2's
+#' original 5-column `.gen` layout: `chr id pos a1 a2 <probabilities>...`);
+#' this function does not expose an `--oxford-single-chr` equivalent.
+#'
+#' The produced `.pgen` can be read back with any of Rpgen's existing `.pgen`
+#' readers, exactly as [rpgen_import_vcf()]'s can.
+#'
+#' @param gen Path to an Oxford-format `.gen` file (original 5-column
+#'   layout, with a leading chromosome column).
+#' @param sample Path to the companion `.sample` file. Required.
+#' @param out Path to the `.pgen` to produce; must end in `.pgen`. Defaults
+#'   to a fresh [tempfile()].
+#' @return `out`, invisibly on success; an R error is raised on failure.
+#' @seealso [rpgen_import_bgen()], [rpgen_import_haps()]
+#' @export
+rpgen_import_gen <- function(gen, sample, out = tempfile(fileext = ".pgen")) {
+    gen <- path.expand(as.character(gen))
+    sample <- path.expand(as.character(sample))
+    out <- path.expand(as.character(out))
+    if (!grepl("\\.pgen$", out)) {
+        stop("out must end in \".pgen\": \"", out, "\"")
+    }
+    invisible(.Call("RC_rpgen_import_gen", gen, sample, out))
+}
+
+#' Convert a BGEN file to a .pgen using plink2's own importer
+#'
+#' Converts `bgen` (any of v1.1/v1.2/v1.3) to a `.pgen` by calling plink2's
+#' own `OxBgenToPgen()` importer, with the defaults a plain
+#' `plink2 --bgen <bgen> --sample <sample> --make-pgen` (or, if `sample` is
+#' `NULL`, `plink2 --bgen <bgen> --make-pgen` alone) would use. Unlike
+#' [rpgen_import_gen()]'s `.gen`, a BGEN v1.2/v1.3 file may carry its own
+#' sample identifier block, so `sample` may be omitted when the file has one
+#' - plink2's own importer raises a clear error if it does not.
+#'
+#' The produced `.pgen` can be read back with any of Rpgen's existing `.pgen`
+#' readers, exactly as [rpgen_import_vcf()]'s can.
+#'
+#' @param bgen Path to a BGEN file (v1.1, v1.2, or v1.3).
+#' @param sample Path to a companion `.sample` file, or `NULL` (the default)
+#'   to use the BGEN's own embedded sample identifiers, if present.
+#' @param out Path to the `.pgen` to produce; must end in `.pgen`. Defaults
+#'   to a fresh [tempfile()].
+#' @return `out`, invisibly on success; an R error is raised on failure.
+#' @seealso [rpgen_import_gen()], [rpgen_import_haps()]
+#' @examples
+#' bgen <- system.file("extdata", "tiny.bgen", package = "Rpgen")
+#' samp <- system.file("extdata", "tiny.sample", package = "Rpgen")
+#' if (nzchar(bgen) && nzchar(samp)) {
+#'     pgen <- rpgen_import_bgen(bgen, sample = samp)
+#'     rpgen_info(pgen)$n_sample
+#'     unlink(c(pgen, sub("\\.pgen$", ".pvar", pgen), sub("\\.pgen$", ".psam", pgen)))
+#' }
+#' @export
+rpgen_import_bgen <- function(bgen, sample = NULL, out = tempfile(fileext = ".pgen")) {
+    bgen <- path.expand(as.character(bgen))
+    if (!is.null(sample)) {
+        sample <- path.expand(as.character(sample))
+    }
+    out <- path.expand(as.character(out))
+    if (!grepl("\\.pgen$", out)) {
+        stop("out must end in \".pgen\": \"", out, "\"")
+    }
+    invisible(.Call("RC_rpgen_import_bgen", bgen, sample, out))
+}
+
+#' Convert Oxford-format phased haplotypes (.haps/.legend/.sample) to a .pgen
+#'
+#' Converts the Oxford-format `haps`/`legend`/`sample` triple to a `.pgen` by
+#' calling plink2's own `OxHapslegendToPgen()` importer, with the defaults a
+#' plain `plink2 --haps <haps> --legend <legend> <chr> --sample <sample>
+#' --make-pgen` would use.
+#'
+#' A `.haps`/`.legend` pair encodes *phased* haplotypes, and the produced
+#' `.pgen` faithfully carries that phase - but Rpgen's current readers
+#' ([rpgen_read_hardcalls()], [rpgen_read_dosages()]) only read the
+#' collapsed, unphased hardcall/dosage view; reading phase back is a future
+#' milestone. The genotypes themselves (0/1/2 copies of the alternate
+#' allele) still round-trip correctly through the existing readers - only
+#' which haplotype carries which allele is not yet recoverable.
+#'
+#' `chr` is required: the classic IMPUTE2 `.legend` format (`id position a0
+#' a1`, no chromosome column) does not carry its own chromosome, so plink2
+#' itself requires one whenever `--legend` is used (confirmed via
+#' `plink2 --help legend`).
+#'
+#' @param haps Path to a `.haps` file.
+#' @param legend Path to the companion `.legend` file.
+#' @param sample Path to the companion `.sample` file.
+#' @param chr Chromosome code for every variant in `legend` (e.g. `"1"`).
+#'   Required; see this function's Details.
+#' @param out Path to the `.pgen` to produce; must end in `.pgen`. Defaults
+#'   to a fresh [tempfile()].
+#' @return `out`, invisibly on success; an R error is raised on failure.
+#' @seealso [rpgen_import_gen()], [rpgen_import_bgen()], [rpgen_read_hardcalls()]
+#' @export
+rpgen_import_haps <- function(haps, legend, sample, chr, out = tempfile(fileext = ".pgen")) {
+    haps <- path.expand(as.character(haps))
+    legend <- path.expand(as.character(legend))
+    sample <- path.expand(as.character(sample))
+    chr <- as.character(chr)
+    out <- path.expand(as.character(out))
+    if (!grepl("\\.pgen$", out)) {
+        stop("out must end in \".pgen\": \"", out, "\"")
+    }
+    invisible(.Call("RC_rpgen_import_haps", haps, legend, sample, chr, out))
+}
+
+#' Convert a legacy PLINK 1 --import-dosage file to a .pgen
+#'
+#' Converts the legacy PLINK 1.x `--import-dosage` text format (`dosage`,
+#' plus companion `fam`/`map` files) to a `.pgen` by calling plink2's own
+#' `Plink1DosageToPgen()` importer, with the defaults a plain
+#' `plink2 --import-dosage <dosage> --fam <fam> --map <map> --make-pgen` (no
+#' `--import-dosage` modifiers) would use - in particular, the per-sample
+#' column format (a single dosage value, or a double/triple-probability
+#' layout) is auto-inferred from `dosage`'s own column count, the same as
+#' the plain command would do.
+#'
+#' The produced `.pgen` can be read back with any of Rpgen's existing `.pgen`
+#' readers, exactly as [rpgen_import_vcf()]'s can.
+#'
+#' @param dosage Path to a PLINK 1 `--import-dosage`-format text file (a
+#'   header line of space-separated `FID IID` pairs, then one row per
+#'   variant of `ID A1 A2 <per-sample value(s)>`).
+#' @param fam Path to the companion `.fam` file.
+#' @param map Path to the companion `.map` file.
+#' @param out Path to the `.pgen` to produce; must end in `.pgen`. Defaults
+#'   to a fresh [tempfile()].
+#' @return `out`, invisibly on success; an R error is raised on failure.
+#' @seealso [rpgen_import_vcf()], [rpgen_read_dosages()]
+#' @export
+rpgen_import_plink1_dosage <- function(dosage, fam, map, out = tempfile(fileext = ".pgen")) {
+    dosage <- path.expand(as.character(dosage))
+    fam <- path.expand(as.character(fam))
+    map <- path.expand(as.character(map))
+    out <- path.expand(as.character(out))
+    if (!grepl("\\.pgen$", out)) {
+        stop("out must end in \".pgen\": \"", out, "\"")
+    }
+    invisible(.Call("RC_rpgen_import_plink1_dosage", dosage, fam, map, out))
+}

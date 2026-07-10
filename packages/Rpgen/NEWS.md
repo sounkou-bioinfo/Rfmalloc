@@ -1,5 +1,48 @@
 # Rpgen 0.1.0 (unreleased)
 
+- Milestone 4b: closes over the rest of plink2's import matrix - no new
+  vendoring, since every function below already lives in the
+  `plink2_import.cc` closure milestone 4a pulled in for `VcfToPgen()`. Five
+  new drivers in `src/rpgen_import.cpp`, each the same arena/jmp_buf/
+  goto-cleanup shape as `rpgen_import_vcf()`: `rpgen_import_bcf()`
+  (`BcfToPgen()`), `rpgen_import_bgen()` (`OxBgenToPgen()`),
+  `rpgen_import_gen()` (`OxGenToPgen()`), `rpgen_import_haps()`
+  (`OxHapslegendToPgen()`), `rpgen_import_plink1_dosage()`
+  (`Plink1DosageToPgen()`). New C-callables `Rpgen_import_bcf()`/
+  `Rpgen_import_bgen()`/`Rpgen_import_gen()`/`Rpgen_import_haps()`/
+  `Rpgen_import_plink1_dosage()`, bumping `Rpgen_api_version()` to 5.
+  - Found and worked around a real null-pointer crash in the vendored
+    `OxHapslegendToPgen()`: it unconditionally calls
+    `InitOxfordSingleChr(ox_single_chr_str, ...)` whenever a `--legend` file
+    is given, and that function dereferences `ox_single_chr_str` without a
+    null check - so `rpgen_import_haps()` takes a required `chr` argument
+    (not in the milestone's original signature sketch, but necessary: the
+    classic IMPUTE2 `.legend` format has no chromosome column of its own,
+    and plink2's own CLI independently requires a chromosome code via
+    `--legend <filename> <chr code>` for the same reason).
+  - `rpgen_import_bgen()`'s `sample` argument defaults to `NULL` (a BGEN
+    v1.2/v1.3 file may carry its own sample identifier block); a null
+    `sample` is translated to an empty C string before reaching
+    `OxBgenToPgen()`, which itself unconditionally dereferences
+    `samplename[0]`.
+  - Verification status: `.gen`/`.sample`, `.haps`/`.legend`/`.sample`
+    (hardcall level only - phase is written but Rpgen's readers don't read
+    it back yet), and PLINK 1 `--import-dosage`/`.fam`/`.map` (hardcalls
+    *and* dosages, including one deliberately ambiguous fractional dosage)
+    all get full round-trip tests against hand-written text fixtures. BCF
+    gets a full round-trip test too, converting the milestone-4a VCF fixture
+    to BCF via `bcftools` at test time when it is on `PATH` (skipped
+    otherwise, not a hard dependency). BGEN gets a full round-trip test
+    against two small, real, committed binary fixtures
+    (`inst/extdata/tiny.bgen` + `tiny.sample` for v1.1 with an external
+    `.sample`; `inst/extdata/tiny_selfid.bgen` for v1.3 with embedded sample
+    IDs, `sample = NULL`) - both produced once from known genotypes by a
+    real plink2 build used only during development (not a build or test
+    dependency of this package), the same way `inst/extdata/tiny.vcf`
+    already ships as committed package data; no hand-crafted-bytes fallback
+    was needed. Every driver also gets a clean-error-on-bad-input smoke test
+    (`inst/tinytest/test_import_matrix.R`).
+
 - Milestone 4a follow-up: closes the "known gap" the previous entry left
   open - `R CMD check --no-manual` now reports `Status: OK` (previously one
   WARNING, "checking compiled code", for `__printf_chk`/`exit`/`stderr`/

@@ -75,7 +75,15 @@
 // OxBgenToPgen()/etc. in the same vendored closure. Implemented in
 // src/rpgen_import.cpp, not this file; declared here only for the shared
 // CallEntries/register_c_callables tables below.
-#define RPGEN_API_VERSION 4
+//
+// Bumped to 5 in milestone 4b: adds Rpgen_import_bcf()/Rpgen_import_bgen()/
+// Rpgen_import_gen()/Rpgen_import_haps()/Rpgen_import_plink1_dosage() -
+// closing over the rest of the same vendored closure's import entry points
+// (BcfToPgen()/OxBgenToPgen()/OxGenToPgen()/OxHapslegendToPgen()/
+// Plink1DosageToPgen()) that milestone 4a's comment above already
+// anticipated. Also implemented in src/rpgen_import.cpp; same reason for
+// being declared here only.
+#define RPGEN_API_VERSION 5
 
 namespace {
 
@@ -919,12 +927,35 @@ SEXP RC_rpgen_read_bed_hardcalls(SEXP bed_sexp, SEXP bim_sexp,
   return result;
 }
 
-// Implemented in src/rpgen_import.cpp (milestone 4a); declared here only so
-// they can be listed in this file's shared CallEntries/register_c_callables
+// Implemented in src/rpgen_import.cpp (milestone 4a/4b); declared here only
+// so they can be listed in this file's shared CallEntries/register_c_callables
 // tables, the single registration point for all of Rpgen's entry points.
 int Rpgen_import_vcf(const char *vcf_path, const char *out_pgen_path,
                       char *errbuf, size_t errbuf_len);
 SEXP RC_rpgen_import_vcf(SEXP vcf_sexp, SEXP out_sexp);
+int Rpgen_import_bcf(const char *bcf_path, const char *out_pgen_path,
+                      char *errbuf, size_t errbuf_len);
+SEXP RC_rpgen_import_bcf(SEXP bcf_sexp, SEXP out_sexp);
+int Rpgen_import_gen(const char *gen_path, const char *sample_path,
+                      const char *out_pgen_path, char *errbuf,
+                      size_t errbuf_len);
+SEXP RC_rpgen_import_gen(SEXP gen_sexp, SEXP sample_sexp, SEXP out_sexp);
+int Rpgen_import_bgen(const char *bgen_path, const char *sample_path,
+                       const char *out_pgen_path, char *errbuf,
+                       size_t errbuf_len);
+SEXP RC_rpgen_import_bgen(SEXP bgen_sexp, SEXP sample_sexp, SEXP out_sexp);
+int Rpgen_import_haps(const char *haps_path, const char *legend_path,
+                       const char *sample_path, const char *chr,
+                       const char *out_pgen_path, char *errbuf,
+                       size_t errbuf_len);
+SEXP RC_rpgen_import_haps(SEXP haps_sexp, SEXP legend_sexp, SEXP sample_sexp,
+                           SEXP chr_sexp, SEXP out_sexp);
+int Rpgen_import_plink1_dosage(const char *dosage_path, const char *fam_path,
+                                const char *map_path,
+                                const char *out_pgen_path, char *errbuf,
+                                size_t errbuf_len);
+SEXP RC_rpgen_import_plink1_dosage(SEXP dosage_sexp, SEXP fam_sexp,
+                                    SEXP map_sexp, SEXP out_sexp);
 
 static const R_CallMethodDef CallEntries[] = {
     {"RC_rpgen_info", (DL_FUNC)&RC_rpgen_info, 1},
@@ -932,6 +963,12 @@ static const R_CallMethodDef CallEntries[] = {
     {"RC_rpgen_read_dosages", (DL_FUNC)&RC_rpgen_read_dosages, 2},
     {"RC_rpgen_read_bed_hardcalls", (DL_FUNC)&RC_rpgen_read_bed_hardcalls, 3},
     {"RC_rpgen_import_vcf", (DL_FUNC)&RC_rpgen_import_vcf, 2},
+    {"RC_rpgen_import_bcf", (DL_FUNC)&RC_rpgen_import_bcf, 2},
+    {"RC_rpgen_import_gen", (DL_FUNC)&RC_rpgen_import_gen, 3},
+    {"RC_rpgen_import_bgen", (DL_FUNC)&RC_rpgen_import_bgen, 3},
+    {"RC_rpgen_import_haps", (DL_FUNC)&RC_rpgen_import_haps, 5},
+    {"RC_rpgen_import_plink1_dosage",
+     (DL_FUNC)&RC_rpgen_import_plink1_dosage, 4},
     {NULL, NULL, 0}};
 
 static void register_c_callables(DllInfo *dll) {
@@ -945,6 +982,14 @@ static void register_c_callables(DllInfo *dll) {
   R_RegisterCCallable("Rpgen", "Rpgen_read_bed_hardcalls",
                        (DL_FUNC)Rpgen_read_bed_hardcalls);
   R_RegisterCCallable("Rpgen", "Rpgen_import_vcf", (DL_FUNC)Rpgen_import_vcf);
+  R_RegisterCCallable("Rpgen", "Rpgen_import_bcf", (DL_FUNC)Rpgen_import_bcf);
+  R_RegisterCCallable("Rpgen", "Rpgen_import_gen", (DL_FUNC)Rpgen_import_gen);
+  R_RegisterCCallable("Rpgen", "Rpgen_import_bgen",
+                       (DL_FUNC)Rpgen_import_bgen);
+  R_RegisterCCallable("Rpgen", "Rpgen_import_haps",
+                       (DL_FUNC)Rpgen_import_haps);
+  R_RegisterCCallable("Rpgen", "Rpgen_import_plink1_dosage",
+                       (DL_FUNC)Rpgen_import_plink1_dosage);
   (void)dll;
 }
 

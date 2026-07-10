@@ -2,7 +2,7 @@
 #define RPGEN_API_PUBLIC_H
 
 /*
- * Rpgen.h - C-callable API for the Rpgen carrier package, version 4.
+ * Rpgen.h - C-callable API for the Rpgen carrier package, version 5.
  *
  * Rpgen vendors the read subset of PLINK 2's pgenlib
  * (https://github.com/chrchang/plink-ng) - the same subset the CRAN package
@@ -44,6 +44,19 @@
  * reader: it allocates plink2's own working arena for the duration of the
  * call (see src/rpgen_import.cpp) and is not reentrant - only one call may
  * be in flight at a time in this process.
+ *
+ * Milestone 4b closes over the rest of the same vendored closure's import
+ * entry points: Rpgen_import_bcf() (BcfToPgen(), BCF's binary VCF sibling),
+ * Rpgen_import_bgen()/Rpgen_import_gen()/Rpgen_import_haps() (Oxford-format
+ * BGEN/.gen/.haps+.legend via OxBgenToPgen()/OxGenToPgen()/
+ * OxHapslegendToPgen()), and Rpgen_import_plink1_dosage() (the legacy PLINK
+ * 1.x `--import-dosage` text format via Plink1DosageToPgen()). Same
+ * reentrancy/arena caveat as Rpgen_import_vcf() applies to all five - see
+ * src/rpgen_import.cpp. Rpgen_import_haps() is the one exception to "read the
+ * result with any of the functions above": .haps/.legend encodes *phased*
+ * haplotypes, and while the produced .pgen faithfully carries that phase,
+ * none of the reader functions above read phase back yet (a future
+ * milestone) - only the unphased hardcall/dosage view is available today.
  */
 
 #include <stddef.h>
@@ -190,6 +203,104 @@ typedef int (*Rpgen_read_bed_hardcalls_fun)(const char *bed_path,
 typedef int (*Rpgen_import_vcf_fun)(const char *vcf_path,
                                     const char *out_pgen_path, char *errbuf,
                                     size_t errbuf_len);
+
+/* -- import the rest of the plink2 matrix to a .pgen (milestone 4b) -------- */
+
+/*
+ * Rpgen_import_bcf(bcf_path, out_pgen_path, errbuf, errbuf_len)
+ *
+ * Same contract as Rpgen_import_vcf() above, but for BCF (VCF's binary
+ * sibling) via plink2's own BcfToPgen() - the defaults a plain
+ * `plink2 --bcf <bcf_path> --make-pgen` would use.
+ */
+typedef int (*Rpgen_import_bcf_fun)(const char *bcf_path,
+                                    const char *out_pgen_path, char *errbuf,
+                                    size_t errbuf_len);
+
+/*
+ * Rpgen_import_gen(gen_path, sample_path, out_pgen_path, errbuf, errbuf_len)
+ *
+ * Converts the Oxford-format `gen_path`/`sample_path` pair to a .pgen at
+ * `out_pgen_path` by calling plink2's own OxGenToPgen() importer, with the
+ * defaults a plain `plink2 --gen <gen_path> --sample <sample_path>
+ * --make-pgen` would use (this library entry point does not require the
+ * newer plink2 CLI's mandatory ref-first/ref-last/ref-unknown modifier - see
+ * src/rpgen_import.cpp's top comment for why the library-level default is
+ * safe and unambiguous). `sample_path` must be non-null: a .gen file carries
+ * no sample IDs of its own. `gen_path`'s rows must carry an explicit leading
+ * chromosome column (plink2's original 5-column .gen layout). Same
+ * arena/reentrancy caveat as Rpgen_import_vcf().
+ */
+typedef int (*Rpgen_import_gen_fun)(const char *gen_path,
+                                    const char *sample_path,
+                                    const char *out_pgen_path, char *errbuf,
+                                    size_t errbuf_len);
+
+/*
+ * Rpgen_import_bgen(bgen_path, sample_path, out_pgen_path, errbuf,
+ *                    errbuf_len)
+ *
+ * Same as Rpgen_import_gen(), but for a BGEN file (any of v1.1/1.2/1.3) via
+ * plink2's own OxBgenToPgen() importer. Unlike Rpgen_import_gen(),
+ * `sample_path` may be NULL: BGEN v1.2/v1.3 files may carry their own sample
+ * identifier block, in which case no external .sample file is needed.
+ */
+typedef int (*Rpgen_import_bgen_fun)(const char *bgen_path,
+                                     const char *sample_path,
+                                     const char *out_pgen_path, char *errbuf,
+                                     size_t errbuf_len);
+
+/*
+ * Rpgen_import_haps(haps_path, legend_path, sample_path, chr, out_pgen_path,
+ *                    errbuf, errbuf_len)
+ *
+ * Converts the Oxford-format `haps_path`/`legend_path`/`sample_path` triple
+ * (all required) to a .pgen at `out_pgen_path` by calling plink2's own
+ * OxHapslegendToPgen() importer, with the defaults a plain
+ * `plink2 --haps <haps_path> --legend <legend_path> <chr> --sample
+ * <sample_path> --make-pgen` would use. A .haps/.legend pair encodes
+ * *phased* haplotypes; the produced .pgen carries that phase, but none of
+ * this header's reader functions (Rpgen_read_hardcalls()/
+ * Rpgen_read_dosages()) read phase back yet - only the collapsed
+ * hardcall/dosage view is available today. Same arena/reentrancy caveat as
+ * Rpgen_import_vcf().
+ *
+ * `chr` (a chromosome code, e.g. "1") is required and must be non-null: the
+ * classic IMPUTE2 .legend format has no chromosome column of its own, so
+ * plink2 itself requires one via `--legend <filename> <chr code>` whenever
+ * --legend is used - passing a null `chr` here reaches an unchecked null
+ * dereference inside the vendored OxHapslegendToPgen()'s
+ * InitOxfordSingleChr() call, crashing the whole process instead of
+ * returning an error (see src/rpgen_import.cpp's rpgen_import_haps()
+ * comment for how this was found).
+ */
+typedef int (*Rpgen_import_haps_fun)(const char *haps_path,
+                                     const char *legend_path,
+                                     const char *sample_path, const char *chr,
+                                     const char *out_pgen_path, char *errbuf,
+                                     size_t errbuf_len);
+
+/*
+ * Rpgen_import_plink1_dosage(dosage_path, fam_path, map_path, out_pgen_path,
+ *                             errbuf, errbuf_len)
+ *
+ * Converts the legacy PLINK 1.x `--import-dosage` text format
+ * (`dosage_path`, plus companion `fam_path`/`map_path`, all required) to a
+ * .pgen at `out_pgen_path` by calling plink2's own Plink1DosageToPgen()
+ * importer, with the defaults a plain
+ * `plink2 --import-dosage <dosage_path> --fam <fam_path> --map <map_path>
+ * --make-pgen` (no --import-dosage modifiers) would use - in particular, the
+ * per-sample column format (single dosage value vs. a double/triple
+ * probability layout) is auto-inferred from the file's own column count, the
+ * same as the plain command would do. Same arena/reentrancy caveat as
+ * Rpgen_import_vcf().
+ */
+typedef int (*Rpgen_import_plink1_dosage_fun)(const char *dosage_path,
+                                               const char *fam_path,
+                                               const char *map_path,
+                                               const char *out_pgen_path,
+                                               char *errbuf,
+                                               size_t errbuf_len);
 
 #ifdef __cplusplus
 }

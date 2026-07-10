@@ -16,14 +16,17 @@ Description: Vendors the read subset of 'PLINK 2's pgenlib library
     (<https://github.com/chrchang/plink-ng>), the same subset the CRAN
     package 'pgenlibr' vendors and builds, as a static library and exposes
     it through 'R_RegisterCCallable' C-callable entry points. Also vendors
-    plink2's own VCF import closure ('VcfToPgen' and friends) so a VCF can
-    be converted to a '.pgen' and read back through this package's own
-    reader, without a separate 'htslib'-based parser. This is a carrier
-    package: it has no high-level R modeling API of its own beyond a
-    milestone smoke test that opens a '.pgen' file and reports its sample
-    and variant counts. Other R packages link to it ('LinkingTo') to read
-    'PLINK 2' genotype files natively from their own C or C++ code, which
-    'pgenlibr' does not expose, since it only offers an R-level interface.
+    plink2's own import closure ('VcfToPgen', 'BcfToPgen', 'OxBgenToPgen',
+    'OxGenToPgen', 'OxHapslegendToPgen', 'Plink1DosageToPgen') so a VCF,
+    BCF, BGEN, Oxford .gen, Oxford .haps/.legend, or legacy PLINK 1
+    --import-dosage file can be converted to a '.pgen' and read back through
+    this package's own reader, without a separate 'htslib'-based parser.
+    This is a carrier package: it has no high-level R modeling API of its
+    own beyond a milestone smoke test that opens a '.pgen' file and reports
+    its sample and variant counts. Other R packages link to it ('LinkingTo')
+    to read 'PLINK 2' genotype files natively from their own C or C++ code,
+    which 'pgenlibr' does not expose, since it only offers an R-level
+    interface.
 License: GPL-3
 Encoding: UTF-8
 Depends:
