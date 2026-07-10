@@ -468,7 +468,7 @@ SEXP cleanup_fmalloc_impl(SEXP runtime_xptr)
 
 int Rfmalloc_api_version(void)
 {
-    return 7;
+    return 8;
 }
 
 SEXP fmalloc_api_version_impl(void)
@@ -709,6 +709,12 @@ static void register_c_callables(void)
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_register_matmul_backend", (DL_FUNC)Rfmalloc_register_matmul_backend);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_register_matmul_backend_ex", (DL_FUNC)Rfmalloc_register_matmul_backend_ex);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_tensor_decode", (DL_FUNC)Rfmalloc_tensor_decode);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_ld_ncol", (DL_FUNC)Rfmalloc_ld_ncol);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_ld_bits", (DL_FUNC)Rfmalloc_ld_bits);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_ld_pair", (DL_FUNC)Rfmalloc_ld_pair);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_ld_col", (DL_FUNC)Rfmalloc_ld_col);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_ld_col_raw", (DL_FUNC)Rfmalloc_ld_col_raw);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_ld_build", (DL_FUNC)Rfmalloc_ld_build);
 }
 
 static const R_CallMethodDef CallEntries[] = {
@@ -745,6 +751,11 @@ static const R_CallMethodDef CallEntries[] = {
     {"rfm_tensor_dosage_standardize_impl", (DL_FUNC)&rfm_tensor_dosage_standardize_impl, 3},
     {"rfm_hap_encode_impl", (DL_FUNC)&rfm_hap_encode_impl, 2},
     {"rfm_hap_materialize_impl", (DL_FUNC)&rfm_hap_materialize_impl, 2},
+    {"rfm_ld_encode_triplets_impl", (DL_FUNC)&rfm_ld_encode_triplets_impl, 7},
+    {"rfm_ld_info_impl", (DL_FUNC)&rfm_ld_info_impl, 1},
+    {"rfm_ld_ncol_impl", (DL_FUNC)&rfm_ld_ncol_impl, 1},
+    {"rfm_ld_pair_impl", (DL_FUNC)&rfm_ld_pair_impl, 3},
+    {"rfm_ld_col_impl", (DL_FUNC)&rfm_ld_col_impl, 2},
     {"rfm_matmul_ooc_impl", (DL_FUNC)&rfm_matmul_ooc_impl, 3},
     {"rfm_crossprod_ooc_impl", (DL_FUNC)&rfm_crossprod_ooc_impl, 3},
     {"rfm_tcrossprod_ooc_impl", (DL_FUNC)&rfm_tcrossprod_ooc_impl, 2},

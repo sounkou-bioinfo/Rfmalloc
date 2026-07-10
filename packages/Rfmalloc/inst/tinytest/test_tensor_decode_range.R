@@ -13,7 +13,7 @@ decode_range <- function(tensor, elem_offset, n_elems) {
 }
 
 (function() {
-    expect_equal(.Call("fmalloc_api_version_impl"), 7L)
+    expect_true(.Call("fmalloc_api_version_impl") >= 7L)
 
     rt <- open_fmalloc(tempfile(fileext = ".bin"), mode = "scratch", size_gb = 0.2)
     on.exit(cleanup_fmalloc(rt), add = TRUE)

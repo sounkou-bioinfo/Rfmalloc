@@ -10,7 +10,7 @@ extern "C" {
 #endif
 
 /*
- * Rfmalloc C-callable API, version 7.
+ * Rfmalloc C-callable API, version 8.
  *
  * These functions are resolved with R_GetCCallable(). Packages should import
  * Rfmalloc at runtime before calling them, for example by listing Rfmalloc in
@@ -106,6 +106,34 @@ typedef int (*Rfmalloc_register_matmul_backend_ex_fun)(const char *name,
  */
 typedef int (*Rfmalloc_tensor_decode_range_fun)(SEXP tensor, R_xlen_t elem_offset,
                                                 R_xlen_t n_elems, double *out);
+
+/*
+ * Banded LD-matrix accessor API (API version 8). An "ld" store is a compressed,
+ * mmap-backed banded symmetric correlation matrix built by fmalloc_ld() /
+ * RfmallocStatgen's statgen_snp_cor(); it is a typed accessor sibling of the
+ * tensor codec (like the haplotype store), not a decode-to-f64 matmul codec.
+ * Consumers (LDpred2) read one column's contiguous neighbour run at a time.
+ *   - Rfmalloc_ld_ncol: number of variants (columns == rows), or -1.
+ *   - Rfmalloc_ld_bits: quantization width, 8 or 16, or -1.
+ *   - Rfmalloc_ld_pair: r[i, j] (0-based), 0.0 outside the band.
+ *   - Rfmalloc_ld_col: decode column j's band into out (>= *len doubles),
+ *     setting *lo (band start row) and *len (band length); returns 0/-1.
+ *   - Rfmalloc_ld_col_raw: zero-copy pointer to column j's raw int8/int16 codes
+ *     (decode a code c as c / (bits==16 ? 32767 : 127)); returns 0/-1.
+ *   - Rfmalloc_ld_build: build an ld store from computed per-column bands (lo,
+ *     len 0-based, rvals the column-major concatenation of band correlations);
+ *     returns the ALTREP raw payload SEXP - PROTECT it immediately.
+ */
+typedef R_xlen_t (*Rfmalloc_ld_ncol_fun)(SEXP store);
+typedef int (*Rfmalloc_ld_bits_fun)(SEXP store);
+typedef double (*Rfmalloc_ld_pair_fun)(SEXP store, R_xlen_t i, R_xlen_t j);
+typedef int (*Rfmalloc_ld_col_fun)(SEXP store, R_xlen_t j, R_xlen_t *lo,
+                                   R_xlen_t *len, double *out);
+typedef int (*Rfmalloc_ld_col_raw_fun)(SEXP store, R_xlen_t j, R_xlen_t *lo,
+                                       R_xlen_t *len, const void **values);
+typedef SEXP (*Rfmalloc_ld_build_fun)(SEXP runtime, R_xlen_t n_variants, int bits,
+                                      int window, const R_xlen_t *lo,
+                                      const R_xlen_t *len, const double *rvals);
 
 static inline Rfmalloc_api_version_fun Rfmalloc_api_version_ptr(void)
 {
@@ -326,6 +354,41 @@ static inline int Rfmalloc_tensor_decode(SEXP tensor, R_xlen_t elem_offset,
                                          R_xlen_t n_elems, double *out)
 {
     return Rfmalloc_tensor_decode_ptr()(tensor, elem_offset, n_elems, out);
+}
+
+static inline R_xlen_t Rfmalloc_ld_ncol(SEXP store)
+{
+    return ((Rfmalloc_ld_ncol_fun) R_GetCCallable("Rfmalloc", "Rfmalloc_ld_ncol"))(store);
+}
+
+static inline int Rfmalloc_ld_bits(SEXP store)
+{
+    return ((Rfmalloc_ld_bits_fun) R_GetCCallable("Rfmalloc", "Rfmalloc_ld_bits"))(store);
+}
+
+static inline double Rfmalloc_ld_pair(SEXP store, R_xlen_t i, R_xlen_t j)
+{
+    return ((Rfmalloc_ld_pair_fun) R_GetCCallable("Rfmalloc", "Rfmalloc_ld_pair"))(store, i, j);
+}
+
+static inline int Rfmalloc_ld_col(SEXP store, R_xlen_t j, R_xlen_t *lo,
+                                  R_xlen_t *len, double *out)
+{
+    return ((Rfmalloc_ld_col_fun) R_GetCCallable("Rfmalloc", "Rfmalloc_ld_col"))(store, j, lo, len, out);
+}
+
+static inline int Rfmalloc_ld_col_raw(SEXP store, R_xlen_t j, R_xlen_t *lo,
+                                      R_xlen_t *len, const void **values)
+{
+    return ((Rfmalloc_ld_col_raw_fun) R_GetCCallable("Rfmalloc", "Rfmalloc_ld_col_raw"))(store, j, lo, len, values);
+}
+
+static inline SEXP Rfmalloc_ld_build(SEXP runtime, R_xlen_t n_variants, int bits,
+                                     int window, const R_xlen_t *lo,
+                                     const R_xlen_t *len, const double *rvals)
+{
+    return ((Rfmalloc_ld_build_fun) R_GetCCallable("Rfmalloc", "Rfmalloc_ld_build"))(
+        runtime, n_variants, bits, window, lo, len, rvals);
 }
 
 #ifdef __cplusplus

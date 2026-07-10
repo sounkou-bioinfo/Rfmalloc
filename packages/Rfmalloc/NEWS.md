@@ -2,6 +2,25 @@
 
 ## 0.1.0 (unreleased)
 
+- C-callable API version 8: added `fmalloc_ld()` and the banded LD-matrix
+  accessor API. An `fmalloc_ld` store is a compressed, mmap-backed **banded
+  symmetric correlation (LD) matrix**, a SIBLING interface to the matmul tensor
+  codec ABI (like the haplotype store), not a decode-to-`f64` matmul codec: an
+  LD matrix is read one column's contiguous neighbour run at a time by a Gibbs
+  sampler or ridge solve (LDpred2), never multiplied as a dense `p x p` double
+  matrix. Because the variants are position-sorted, each column's in-window
+  neighbours are a contiguous index range, so the store keeps the **full
+  symmetric band per column with no explicit neighbour indices** (the row of a
+  column's t-th value is `lo_j + t`), a per-column offset table for O(1) random
+  access, and correlations quantized to int8 (`round(r*127)`, resolution
+  `~1/127`) or int16 (`round(r*32767)`, resolution `~3e-5`). Build one from
+  `(i, j, x)` triplets; read it with `ld_ncol()`, `ld_pair()` and `ld_col()`.
+  The new C-callables `Rfmalloc_ld_ncol/bits/pair/col/col_raw/build` (declared
+  in `inst/include/Rfmalloc.h`) let a consumer package (RfmallocStatgen's
+  `statgen_snp_cor()` / LDpred2) build and read a store without knowing the
+  private byte layout. Additive, so existing API-7 consumers are unaffected.
+  Exercised by `inst/tinytest/test_fmalloc_ld.R`.
+
 - C-callable API version 7: added `Rfmalloc_tensor_decode(tensor, elem_offset,
   n_elems, out)`, a streaming decode primitive that decodes one block-aligned
   element range of a typed tensor into a caller-owned `double*` buffer using the
