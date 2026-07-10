@@ -1,0 +1,436 @@
+/*******************************************************************************
+ * @file        https://github.com/Zilong-Li/PCAone/src/Data.cpp
+ * @author      Zilong Li
+ * Copyright (C) 2022-2024. Use of this code is governed by the LICENSE file.
+ ******************************************************************************/
+
+#include "Data.hpp"
+
+#include "Cmd.hpp"
+#include "Utils.hpp"
+
+using namespace std;
+
+void Data::prepare() {
+  if (nsamples > nsnps) nsamples_ge_nsnps = true;
+
+  if (!params.dopca) {  // for projection, read F from reference set
+    cao.print(tick.date(), "read allele frequency from .mbim file: " + params.filebim);
+    F = read_frq(params.filebim);
+    if (!keepRefSNPs.empty()) {
+      Mat1D Fnew(keepRefSNPs.size());
+      for (int i = 0; i < (int)keepRefSNPs.size(); ++i) {
+        Fnew(i) = F(keepRefSNPs[i]);
+      }
+      F = Fnew;
+      cao.print(tick.date(), "keep AF of", F.size(), " matched sites in the reference");
+    }
+    if (!flipSNPs.empty()) {
+      for (int i : flipSNPs) F(i) = 1.0 - F(i);
+    }
+  }
+
+  if (!params.out_of_core) {
+    tick.clock();
+    read_all();
+    readtime += tick.reltime();
+    cao.print(tick.date(), "done reading all data");
+    return;
+  }
+
+  // some common settings for out-of-core
+  if (params.dopca) {
+    if (params.svd_t == SvdType::IRAM) {
+      // ram of arnoldi = n * b * 8 / 1024 kb
+      blocksize = (uint)ceil((double)params.memory * 134217728 / nsamples);
+    } else {
+      // ram of halko = (3*n*l + 2*m*l + 5*m + n*b)*8/1024 Kb
+      uint l = params.k + params.oversamples;
+      double m = (double)(3 * nsamples * l + 2 * nsnps * l + 5 * nsnps) / 134217728;
+      if (params.memory > 1.1 * m)
+        m = 0;
+      else
+        cao.warn("minimum RAM required is ", m, " GB. trying to allocate more RAM.");
+      blocksize = (unsigned int)ceil(
+          (double)((m + params.memory) * 134217728 - 3 * nsamples * l - 2 * nsnps * l - 5 * nsnps) / nsamples);
+    }
+  } else {
+    // ram of non-pca run
+    blocksize = (uint)ceil((double)params.memory * 134217728 / nsamples);
+  }
+
+  nblocks = (unsigned int)ceil((double)nsnps / blocksize);
+  cao.print(tick.date(), "initial setting by -m/--memory: blocksize =", blocksize, ", nblocks =", nblocks,
+            ", factor =", bandFactor);
+  if (nblocks == 1) cao.error("only one block exists. please remove -m option");
+  if (params.dopca && params.svd_t == SvdType::PCAoneAlg2) {
+    // decrease blocksize for the winSVD
+    if (nblocks < params.bands) {
+      blocksize = (unsigned int)ceil((double)nsnps / params.bands);
+    } else {
+      bandFactor = (unsigned int)ceil((double)nblocks / params.bands);
+      blocksize = (unsigned int)ceil((double)nsnps / (params.bands * bandFactor));
+    }
+    nblocks = (unsigned int)ceil((double)nsnps / blocksize);
+    cao.print(tick.date(), "after adjustment by PCAone: -w =", params.bands, ", blocksize =", blocksize,
+              ", nblocks =", nblocks, ", factor =", bandFactor);
+  }
+  start.resize(nblocks);
+  stop.resize(nblocks);
+  for (uint i = 0; i < nblocks; i++) {
+    start[i] = i * blocksize;
+    stop[i] = start[i] + blocksize - 1;
+    stop[i] = stop[i] >= nsnps ? nsnps - 1 : stop[i];
+  }
+}
+
+// filter snps, update keepSNPs, reassign nsnps;
+void Data::filter_snps_resize_F() {
+  if (!params.filterSNP) return;
+  if (!(params.maf > 0 && params.maf <= 0.5)) cao.error("--maf has to be between (0, 0.5)");
+
+  Mat1D Fnew(F.size());  // make a temp F
+  int i, j;
+  for (i = 0, j = 0; j < (int)F.size(); j++) {
+    if (MAF(F(j)) > params.maf) {
+      keepSNPs.push_back(j);  // keep track of index of element > maf
+      Fnew(i++) = F(j);
+    }
+  }
+  nsnps = keepSNPs.size();  // new number of SNPs
+  cao.print(tick.date(), "number of SNPs after filtering by MAF >", params.maf, ":", nsnps);
+  if (nsnps < 1) cao.error("no SNPs left after filtering!");
+  // resize F
+  F.noalias() = Fnew.head(nsnps);
+}
+
+// initially only works with plink inputs
+// but can work with beagle file as long as there is beagle.gz.bim file
+// TODO: always output mbim even though there is no beagle.gz.bim file
+void Data::save_snps_in_mbim() {
+  const bool has_metadata_header = params.file_t == FileType::PGEN;
+  const std::string bim_path = params.filein + (has_metadata_header ? ".pvar" : ".bim");
+  std::ifstream ifs_bim(bim_path);
+  if (!ifs_bim.is_open()) {
+    cao.warn(params.filein + ".bim/.pvar not found; skipping mbim output");
+    return;
+  }
+  std::ofstream ofs_bim(params.fileout + ".mbim");
+  std::string line;
+  auto read_metadata_line = [&]() {
+    while (getline(ifs_bim, line)) {
+      if (has_metadata_header && !line.empty() && line[0] == '#') continue;
+      if (has_metadata_header) line = pvar_line_to_bim_line(line, bim_path);
+      return true;
+    }
+    return false;
+  };
+  const bool metadata_is_permuted =
+      params.file_t == FileType::PLINK && params.perm && params.out_of_core && perm.indices().size() == nsnps;
+  const bool frequency_is_permuted = params.perm && params.out_of_core && perm.indices().size() == nsnps;
+
+  if (!params.filterSNP && !params.perm) {
+    for (Eigen::Index j = 0; j < F.size() && read_metadata_line(); ++j) {
+      ofs_bim << line << "\t" << F(j) << "\n";
+    }
+    ofs_bim.close();
+    return;
+  }
+
+  std::vector<std::string> metadata(nsnps);
+  if (metadata_is_permuted) {
+    for (Eigen::Index permuted_idx = 0; permuted_idx < nsnps && read_metadata_line(); ++permuted_idx) {
+      Eigen::Index original_idx = perm.indices()[permuted_idx];
+      metadata[original_idx] = line;
+    }
+  } else if (params.filterSNP) {
+    int kept = 0;
+    for (int source_idx = 0; kept < (int)nsnps && read_metadata_line(); ++source_idx) {
+      if (kept < (int)keepSNPs.size() && keepSNPs[kept] == source_idx) {
+        metadata[kept++] = line;
+      }
+    }
+  } else {
+    for (Eigen::Index j = 0; j < nsnps && read_metadata_line(); ++j) {
+      metadata[j] = line;
+    }
+  }
+
+  std::vector<Eigen::Index> original_to_logical(nsnps);
+  for (Eigen::Index logical_idx = 0; logical_idx < nsnps; ++logical_idx) {
+    Eigen::Index original_idx = frequency_is_permuted ? perm.indices()[logical_idx] : logical_idx;
+    original_to_logical[original_idx] = logical_idx;
+  }
+
+  for (Eigen::Index original_idx = 0; original_idx < nsnps; ++original_idx) {
+    ofs_bim << metadata[original_idx] << "\t" << F(original_to_logical[original_idx]) << "\n";
+  }
+  ofs_bim.close();
+  cao.print(tick.date(), "save matched sites in .mbim file and permutation mode is", params.perm);
+}
+
+/**
+  T = U'/s
+  VT = (U'/s) * G = T * G
+  V = G' * (U/s) // calculate V is not a good idea
+ **/
+void Data::calcu_vt_initial(const Mat2D& T, Mat2D& VT, bool standardize) {
+  if (nblocks == 1) {
+    cao.error("only one block exists. please use in-memory mode instead");
+  }
+  uint actual_block_size;
+  check_file_offset_first_var();
+  for (uint i = 0; i < nblocks; ++i) {
+    actual_block_size = stop[i] - start[i] + 1;
+    // G (nsamples, actual_block_size)
+    read_block_initial(start[i], stop[i], standardize);
+    VT.block(0, start[i], T.rows(), actual_block_size) = T * G.leftCols(actual_block_size);
+  }
+
+  return;
+}
+
+void Data::calcu_vt_update(const Mat2D& T, const Mat2D& U, const Mat1D& svals, Mat2D& VT, bool standardize) {
+  if (nblocks == 1) {
+    cao.error("only one block exists. please use in-memory mode instead");
+  }
+  uint actual_block_size;
+  check_file_offset_first_var();
+  for (uint i = 0; i < nblocks; ++i) {
+    actual_block_size = stop[i] - start[i] + 1;
+    // G (nsamples, actual_block_size)
+    read_block_update(start[i], stop[i], U, svals, VT, standardize);
+    VT.block(0, start[i], T.rows(), actual_block_size) = T * G.leftCols(actual_block_size);
+  }
+
+  return;
+}
+
+// S: signular values
+// E: eigen values
+void Data::write_eigs_files(const Mat1D& E, const Mat1D& S, const Mat2D& U, const Mat2D& V) {
+  std::ofstream outs(params.fileout + ".sigvals");
+  std::ofstream oute(params.fileout + ".eigvals");
+  std::ofstream outu(params.fileout + ".eigvecs");
+  Eigen::IOFormat fmt(6, Eigen::DontAlignCols, "\t", "\n");
+  if (outs.is_open()) {
+    outs << '#' << U.rows() << ',' << V.rows() << '\n';
+    outs << S.format(fmt) << '\n';
+  }
+  if (oute.is_open()) oute << E.format(fmt) << '\n';
+  if (outu.is_open()) outu << U.format(fmt) << '\n';
+  if (params.printv) {
+    save_snps_in_mbim();
+    std::ofstream outv(params.fileout + ".loadings");
+    if (!outv.is_open()) cao.error("can not open " + params.fileout + ".loadings");
+    if (params.perm && V.rows() == nsnps && perm.indices().size() == nsnps) {
+      std::vector<Eigen::Index> original_to_logical(nsnps);
+      for (Eigen::Index logical_idx = 0; logical_idx < nsnps; ++logical_idx) {
+        original_to_logical[perm.indices()[logical_idx]] = logical_idx;
+      }
+      for (Eigen::Index original_idx = 0; original_idx < V.rows(); ++original_idx) {
+        outv << V.row(original_to_logical[original_idx]).format(fmt) << '\n';
+      }
+    } else {
+      outv << V.format(fmt) << '\n';
+    }
+  }
+
+  cao.print(tick.date(), "eigen vectors and values saved");
+}
+
+void Data::write_residuals(const Mat1D& S, const Mat2D& U, const Mat2D& VT) {
+  // we always filter snps for in-core mode
+  if (params.ld_stats == 1) {
+    cao.print(tick.date(), "ld-stats=1: calculate standardized genotype matrix!");
+  } else {
+    cao.print(tick.date(), "ld-stats=0: calculate the ancestry adjusted LD matrix!");
+  }
+  std::setlocale(LC_ALL, "C");
+  std::ios_base::sync_with_stdio(false);
+  std::ofstream ofs(params.fileout + ".residuals", std::ios::binary);
+  const uint64 ibyte = 4;
+  const uint64 magic = ibyte * 2;
+  uint64 bytes_per_snp = nsamples * ibyte;
+  ofs.write((char*)&nsnps, ibyte);
+  ofs.write((char*)&nsamples, ibyte);
+  Eigen::VectorXf fg;
+  uint64 idx;
+  if (!params.out_of_core) {
+    if (params.ld_stats == 0) G -= U * S.asDiagonal() * VT;  // get residuals matrix
+    G.rowwise() -= G.colwise().mean();                       // Centering
+    for (Eigen::Index ib = 0; ib < G.cols(); ib++) {
+      fg = G.col(ib).cast<float>();
+      if (params.perm) {
+        idx = magic + (uint64)perm.indices()[ib] * bytes_per_snp;
+        ofs.seekp(idx, std::ios_base::beg);
+      }
+      ofs.write((char*)fg.data(), bytes_per_snp);
+    }
+  } else {
+    check_file_offset_first_var();
+    int i = 0;
+    for (uint b = 0; b < nblocks; ++b) {
+      read_block_initial(start[b], stop[b], false);
+      // G (nsamples, actual_block_size)
+      if (params.ld_stats == 0) G -= U * S.asDiagonal() * VT.middleCols(start[b], G.cols());
+      G.rowwise() -= G.colwise().mean();  // Centering
+      for (Eigen::Index ib = 0; ib <= stop[b] - start[b]; ib++, i++) {
+        fg = G.col(ib).cast<float>();
+        if (params.perm) {
+          idx = magic + (uint64)perm.indices()[i] * bytes_per_snp;
+          ofs.seekp(idx, std::ios_base::beg);
+        }
+        ofs.write((char*)fg.data(), bytes_per_snp);
+      }
+    }
+  }
+
+  save_snps_in_mbim();
+  cao.print(tick.date(), "the LD matrix and SNPs info are saved");
+}
+
+void Data::fit_with_pi(const Mat2D& U, const Mat1D& svals, const Mat2D& VT) {
+  if (params.verbose >= 3) cao.print(tick.date(), "call fit_with_pi");
+  uint ks = svals.size();
+  if (params.pcangsd) {  // for pcangsd with beagle input
+#pragma omp parallel for
+    for (uint j = 0; j < nsnps; ++j) {
+      double p0, p1, p2;
+      uint s = params.filterSNP ? keepSNPs[j] : j;
+      for (uint i = 0; i < nsamples; ++i) {
+        // Rescale individual allele frequencies
+        double pt = 0.0;
+        for (uint k = 0; k < ks; ++k) {
+          pt += U(i, k) * svals(k) * VT(k, j);
+        }
+        pt = (pt + 2.0 * F(j)) / 2.0;
+        pt = fmin(fmax(pt, 1e-4), 1.0 - 1e-4);
+        // update E, which is G here
+        p0 = P(2 * i + 0, s) * (1.0 - pt) * (1.0 - pt);
+        p1 = P(2 * i + 1, s) * 2 * pt * (1.0 - pt);
+        p2 = (1 - P(2 * i + 0, s) - P(2 * i + 1, s)) * pt * pt;
+        G(i, j) = (p1 + 2.0 * p2) / (p0 + p1 + p2) - 2.0 * F(j);
+      }
+    }
+  }
+
+  if (params.emu && params.perm) {  // for emu with permuted data, -d 2
+#pragma omp parallel for
+    for (uint i = 0; i < nsnps; ++i) {
+      for (uint j = 0; j < nsamples; ++j) {
+        if (C[perm.indices()[i] * nsamples + j])  // no bool & 1
+        {                                         // sites need to be predicted
+          G(j, i) = 0.0;
+          for (uint k = 0; k < ks; ++k) {
+            G(j, i) += U(j, k) * svals(k) * VT(k, i);
+          }
+          G(j, i) = fmin(fmax(G(j, i), -F(i)), 1 - F(i));
+        }
+      }
+    }
+  }
+
+  if (params.emu && !params.perm) {  // for emu without permuted data, -d 0
+#pragma omp parallel for
+    for (uint i = 0; i < nsnps; ++i) {
+      for (uint j = 0; j < nsamples; ++j) {
+        if (C[i * nsamples + j])  // no bool & 1
+        {                         // sites need to be predicted
+          G(j, i) = 0.0;
+          for (uint k = 0; k < ks; ++k) {
+            G(j, i) += U(j, k) * svals(k) * VT(k, i);
+          }
+          G(j, i) = fmin(fmax(G(j, i), -F(i)), 1 - F(i));
+        }
+      }
+    }
+  }
+}
+
+void Data::standardize_E() {
+  if (params.verbose >= 3) cao.print(tick.date(), "standardize the matrix");
+  if (params.scale != -9) return;
+#pragma omp parallel for
+  for (uint i = 0; i < nsnps; ++i) {
+    const double f = F(i);
+    const double sd = sqrt(f * (1.0 - f));
+    if (sd > VAR_TOL) {  // in case denominator is too small.
+      G.col(i) *= sqrt((double)params.ploidy) / sd;
+    }
+  }
+}
+
+void Data::pcangsd_standardize_E(const Mat2D& U, const Mat1D& svals, const Mat2D& VT) {
+  if (params.scale != -9) return;
+  cao.print(tick.date(), "begin to standardize the matrix for pcangsd procedure");
+  uint nk = svals.size();
+  Dc = Mat1D::Zero(nsamples);
+#pragma omp parallel
+  {
+    Mat1D diag_private = Mat1D::Zero(nsamples);  // Thread private vector;
+#pragma omp for
+    for (uint j = 0; j < nsnps; j++) {
+      double p0, p1, p2, pt, pSum, tmp;
+      double norm = sqrt(2.0 * F(j) * (1.0 - F(j)));
+      uint s = params.filterSNP ? keepSNPs[j] : j;
+      for (uint i = 0; i < nsamples; i++) {
+        // Rescale individual allele frequencies
+        pt = 0.0;
+        for (uint k = 0; k < nk; ++k) {
+          pt += U(i, k) * svals(k) * VT(k, j);
+        }
+        pt = (pt + 2.0 * F(j)) / 2.0;
+        pt = fmin(fmax(pt, 1e-4), 1.0 - 1e-4);
+        // Update e
+        p0 = P(2 * i + 0, s) * (1.0 - pt) * (1.0 - pt);
+        p1 = P(2 * i + 1, s) * 2 * pt * (1.0 - pt);
+        p2 = (1 - P(2 * i + 0, s) - P(2 * i + 1, s)) * pt * pt;
+        pSum = p0 + p1 + p2;
+        G(i, j) = (p1 + 2 * p2) / pSum - 2.0 * F(j);
+        if (norm > VAR_TOL) G(i, j) /= norm;
+
+        // Update diag
+        tmp = (0.0 - 2.0 * F(j)) * (0.0 - 2.0 * F(j)) * (p0 / pSum);
+        tmp += (1.0 - 2.0 * F(j)) * (1.0 - 2.0 * F(j)) * (p1 / pSum);
+        tmp += (2.0 - 2.0 * F(j)) * (2.0 - 2.0 * F(j)) * (p2 / pSum);
+        diag_private[i] += tmp / (2.0 * F(j) * (1.0 - F(j)));
+      }
+    }
+#pragma omp critical
+    {
+      for (uint i = 0; i < nsamples; i++) {
+        Dc[i] += diag_private[i];  // Sum arrays for threads
+      }
+    }
+  }
+}
+
+void Data::predict_missing_E(const Mat2D& U, uint64 start_idx, uint64 stop_idx) {
+  // assume full size G is in memory
+  // Eigen::ColPivHouseholderQR<Mat2D> qr(U);  // nsamples x nk
+  const uint nk = U.cols();
+// get beta by linear regresion on data without NAs
+// Ux = g, x is the beta
+#pragma omp parallel for
+  for (uint j = start_idx; j <= stop_idx; j++) {
+    // find non-missing samples
+    Int1D idx, na_idx;
+    for (uint i = 0; i < nsamples; i++) {
+      if (!C(j * nsamples + i))
+        idx.push_back(i);
+      else
+        na_idx.push_back(i);
+    }
+    if (idx.size() == 0) continue;
+    Mat1D v = U(idx, Eigen::all).colPivHouseholderQr().solve(G(idx, j));
+    // predict for NAs in E
+    for (auto i : na_idx) {  // samples need to be predicted
+      G(i, j) = 0.0;
+      for (uint k = 0; k < nk; ++k) {
+        G(i, j) += U(i, k) * v(k);
+      }
+      G(i, j) = fmin(fmax(G(i, j), -F(j)), 1 - F(j));
+    }
+  }
+}

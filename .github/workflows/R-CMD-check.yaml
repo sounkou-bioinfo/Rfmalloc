@@ -66,8 +66,9 @@ jobs:
           - {pkg: Rgguf,    os: windows-latest, r: 'release'}
           - {pkg: Rllm,     os: windows-latest, r: 'release'}
           - {pkg: Rpgen,    os: windows-latest, r: 'release'}
-          # RfmallocStatgen: pure R over Rfmalloc's tensors, no compiled code
-          # of its own, so the full platform matrix is free.
+          # RfmallocStatgen vendors PCAone's randomized-SVD core (C++17, Eigen
+          # via LinkingTo: RcppEigen) for its out-of-core PCA, so it now needs a
+          # compiler on every row of its platform matrix.
           - {pkg: RfmallocStatgen, os: ubuntu-latest,  r: 'release'}
           - {pkg: RfmallocStatgen, os: ubuntu-latest,  r: 'devel'}
           - {pkg: RfmallocStatgen, os: macos-latest,   r: 'release'}
@@ -156,6 +157,19 @@ jobs:
       # pinned plink-ng commit and assert equal.
       - name: vendorplink2import.R check
         run: Rscript tools/vendor-plink2-import/vendorplink2import.R check
+
+  vendored-pcaone-matches-recipe:
+    runs-on: ubuntu-latest
+    name: vendored PCAone == recipe
+    steps:
+      - uses: actions/checkout@v6
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+      # Guard RfmallocStatgen's vendored PCAone RSVD core (src/pcaone): re-derive
+      # it from the pinned PCAone commit and assert byte-equal.
+      - name: vendorpcaone.R check
+        run: Rscript tools/vendor-pcaone/vendorpcaone.R check
 
   integration:
     runs-on: ubuntu-latest

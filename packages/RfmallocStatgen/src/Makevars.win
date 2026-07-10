@@ -1,0 +1,12 @@
+# Windows/Rtools build - identical to src/Makevars. Eigen is header-only
+# (RcppEigen via LinkingTo) and no external libraries are linked, so the
+# vendored PCAone RSVD core builds the same way under MinGW as on Unix.
+CXX_STD = CXX17
+
+PKG_CXXFLAGS = -DNDEBUG -DEIGEN_PERMANENTLY_DISABLE_STUPID_WARNINGS
+
+OBJECTS = statgen_glue.o \
+          pcaone_backend.o \
+          pcaone/Halko.o \
+          pcaone/Data.o \
+          pcaone/Utils.o

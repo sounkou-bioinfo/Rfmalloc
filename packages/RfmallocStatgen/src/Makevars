@@ -1,0 +1,19 @@
+# RfmallocStatgen compiles a small R-facing glue layer (statgen_glue.cpp) and
+# a native backend (pcaone_backend.cpp) that drives the vendored PCAone RSVD
+# core in src/pcaone/. Eigen comes from RcppEigen via LinkingTo (header-only);
+# no BLAS/LAPACK is linked - Eigen's built-in kernels keep the build dependency-
+# free and portable across the platform matrix. A BLAS backend
+# (-DEIGEN_USE_BLAS + $(BLAS_LIBS)) is a possible follow-up for speed.
+CXX_STD = CXX17
+
+PKG_CXXFLAGS = -DNDEBUG -DEIGEN_PERMANENTLY_DISABLE_STUPID_WARNINGS
+
+# Explicit object list: the vendored core lives in the src/pcaone/ subdirectory,
+# which R's default source glob does not descend into. Headers (RSVD.hpp,
+# Common.hpp, Cmd.hpp, Logger.hpp, Timer.hpp, Utils.hpp, and the two *.hpp of
+# Halko/Data) are compiled transitively, not listed here.
+OBJECTS = statgen_glue.o \
+          pcaone_backend.o \
+          pcaone/Halko.o \
+          pcaone/Data.o \
+          pcaone/Utils.o

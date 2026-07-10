@@ -12,6 +12,7 @@ packages/*/README.html
 tools/vendor-ggml/cache/
 tools/vendor-pgenlib/cache/
 tools/vendor-plink2-import/cache/
+tools/vendor-pcaone/cache/
 packages/Rpgen/src/libPLINK2.a
 packages/Rpgen/src/libPGZSTD.a
 packages/Rpgen/src/libPGDEFLATE.a
@@ -21,5 +22,10 @@ packages/*/docs/
 packages/Rggml/inst/ggml/ggml-vulkan/generated/
 packages/Rggml/inst/ggml/ggml-vulkan/vulkan-shaders/vulkan-shaders-gen
 packages/*/src/Makevars.win
+# RfmallocStatgen ships a static, hand-written Makevars/Makevars.win (it has no
+# configure step, unlike Rggml/Rfmalloc whose Makevars are generated), so keep
+# them tracked despite the generated-Makevars ignores above.
+!packages/RfmallocStatgen/src/Makevars
+!packages/RfmallocStatgen/src/Makevars.win
 .pi/
 .claude/

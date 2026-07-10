@@ -12,3 +12,6 @@
 ^README\.Rmd$
 ^README\.html$
 ^README\.knit\.md$
+# never ship compiled artifacts left over from an in-tree build; R's own build
+# only sweeps src/*.o, not the vendored src/pcaone/ subdirectory
+^src/.*\.(o|so|dll|a)$
