@@ -31,3 +31,18 @@
   the out-of-core result equals the in-core path on the same standardized
   tensor to floating point, independent of the streaming block size, for both
   `bed` and `dosage`.
+- `statgen_coloc_bf()`: all-pairs Bayesian colocalisation of two traits'
+  signals, coloc's `coloc.bf_bf` recast as a single matrix multiply. Stacking
+  each trait's per-SNP log approximate Bayes factors as a matrix of signals,
+  the shared-causal (H4) coupling for every signal pair is one stabilized
+  log-sum-exp GEMM (`c = outer(m1,m2,"+") + log(E1 %*% t(E2))`); the coloc
+  posteriors PP0..PP4 follow elementwise. The hot kernel therefore rides any
+  backend 'Rggml' offers via `backend = "cpu"` / `"blas"` / `"vulkan"` -
+  including a Vulkan GPU - and larger-than-memory signal sets via the
+  out-of-core panel-GEMM; this is the same idea as gpu-coloc (Torch) without
+  its CUDA/Metal-only lock-in. `trim = TRUE` returns the per-pair posterior
+  overlap and flags low-overlap H4 (the analogue of `trim_by_posterior`).
+  `inst/tinytest/test_coloc_bf.R` proves the matrix form is identical to the
+  consecutive per-pair form to machine precision, that the single-precision
+  backend agrees with the double-precision CPU path, and that it recovers
+  colocalisation vs distinct causals.

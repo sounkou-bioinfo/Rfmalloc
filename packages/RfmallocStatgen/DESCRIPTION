@@ -13,9 +13,12 @@ Description: Runs genome-scale statistical genetics methods over Rfmalloc's
     validated against 'bigsnpr' and 'bigstatsr' as a numerical oracle in the
     test suite: the methods are reimplemented clean room, never vendored.
     The first shipped methods are a fused, whole-genome univariate linear
-    regression GWAS scan over an fmalloc genotype tensor, and a randomized
+    regression GWAS scan over an fmalloc genotype tensor, a randomized
     principal-component analysis built on the 'PCAone' randomized SVD (Li
-    2023), vendored verbatim (GPL-3) behind a pinned drift-guard recipe.
+    2023), vendored verbatim (GPL-3) behind a pinned drift-guard recipe, and
+    an all-pairs colocalisation of two traits' signals ('coloc.bf_bf' cast as
+    a single matrix multiply) that runs on any backend 'Rggml' offers,
+    including a GPU.
 License: GPL-3
 Encoding: UTF-8
 Depends:
@@ -27,13 +30,15 @@ LinkingTo:
     RcppEigen,
     Rfmalloc
 Suggests:
+    Rggml,
     Rpgen,
     tinytest,
     bigsnpr,
     bigstatsr,
     pcaone
 Remotes:
-    sounkou-bioinfo/Rfmalloc/packages/Rfmalloc
+    sounkou-bioinfo/Rfmalloc/packages/Rfmalloc,
+    sounkou-bioinfo/Rfmalloc/packages/Rggml
 SystemRequirements: C++17
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
