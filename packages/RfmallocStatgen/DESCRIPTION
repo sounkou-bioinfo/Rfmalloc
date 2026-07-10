@@ -35,6 +35,8 @@ Suggests:
     tinytest,
     bigsnpr,
     bigstatsr,
+    bigsparser,
+    Matrix,
     pcaone
 Remotes:
     sounkou-bioinfo/Rfmalloc/packages/Rfmalloc,

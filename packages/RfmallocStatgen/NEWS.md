@@ -45,6 +45,22 @@
   quantization tolerance (max |diff| ~3.9e-3 at int8), the position-based
   window and `thr_r2` behaviour, and - guarded by `requireNamespace` - matches
   `bigsnpr::snp_cor()` on the same complete-data matrix.
+- `statgen_ldpred2_inf()`, `statgen_ldpred2()` and `statgen_ldpred2_auto()`:
+  LDpred2 (Prive, Arbel & Vilhjalmsson 2020), reimplemented clean-room over the
+  banded `Rfmalloc::fmalloc_ld` LD store. All three read the LD matrix one
+  column's neighbour run at a time (the `fmalloc_ld` C-callables), never the
+  genotypes or a dense p x p. `statgen_ldpred2_inf()` is the deterministic
+  infinitesimal model: it solves the ridge-like system `(C + m/(h2 N) I) b =
+  beta_hat` by conjugate gradient over the band. `statgen_ldpred2()` is the
+  LDpred2-grid Gibbs sampler (spike-and-slab prior, causal effects
+  `~ N(0, h2/(m p))`), returning the Rao-Blackwellized posterior mean.
+  `statgen_ldpred2_auto()` estimates `p` and `h2` from the data each iteration
+  (the `alpha = -1`, `sigma2 = h2/(m p)` variant). `inst/tinytest/test_ldpred2.R`
+  matches `snp_ldpred2_inf` to solver tolerance (max |diff| ~4e-12 against both
+  a dense `solve()` and, guarded by `requireNamespace`, `bigsnpr`), and matches
+  `snp_ldpred2_grid` / `snp_ldpred2_auto(use_MLE = FALSE)` within Monte-Carlo
+  error (posterior-mean correlation > 0.99, and recovers the simulated p / h2),
+  plus deterministic seeded self-consistency checks that run without bigsnpr.
 - `statgen_coloc_bf()`: all-pairs Bayesian colocalisation of two traits'
   signals, coloc's `coloc.bf_bf` recast as a single matrix multiply. Stacking
   each trait's per-SNP log approximate Bayes factors as a matrix of signals,

@@ -43,7 +43,7 @@
 #'   `ncol(genotypes)`).
 #'
 #' @seealso [Rfmalloc::fmalloc_ld], [Rfmalloc::ld_col()],
-#'   [Rfmalloc::ld_pair()]
+#'   [Rfmalloc::ld_pair()], [statgen_ldpred2_inf()]
 #' @examples
 #' rt <- Rfmalloc::open_fmalloc(tempfile(fileext = ".bin"), mode = "scratch",
 #'                              size_gb = 0.1)

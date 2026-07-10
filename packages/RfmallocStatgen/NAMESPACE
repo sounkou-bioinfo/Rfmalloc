@@ -2,6 +2,9 @@
 
 export(statgen_coloc_bf)
 export(statgen_gwas_lin)
+export(statgen_ldpred2)
+export(statgen_ldpred2_auto)
+export(statgen_ldpred2_inf)
 export(statgen_pca)
 export(statgen_snp_cor)
 import(Rfmalloc)

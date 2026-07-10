@@ -26,8 +26,11 @@ the methods, never lift code).
 **Tier 2: LD-matrix-only** (storage-agnostic sparse linear algebra over the
 LD matrix)
 
-- LDpred2 and LDpred2-auto (Gibbs sampling over the sparse LD matrix + GWAS
-  `beta_hat`).
+- LDpred2 and LDpred2-auto (Gibbs sampling over the LD matrix + GWAS
+  `beta_hat`). [SHIPPED as `statgen_ldpred2_inf()` (deterministic ridge solve),
+  `statgen_ldpred2()` (grid Gibbs) and `statgen_ldpred2_auto()` (auto Gibbs),
+  clean-room over the banded `fmalloc_ld` store; validated against
+  `bigsnpr::snp_ldpred2_inf` (exact) / `snp_ldpred2_grid` / `snp_ldpred2_auto`]
 - lassosum2 (coordinate descent).
 - LD score regression (heritability).
 - `split-LD`: min-cost dynamic-programming partition of the genome into LD
