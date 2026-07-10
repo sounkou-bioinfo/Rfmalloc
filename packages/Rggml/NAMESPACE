@@ -3,5 +3,6 @@
 export(ggml_version)
 export(rggml_cpu_info)
 export(rggml_has_vulkan)
+export(rggml_mul_mat)
 export(rggml_vulkan_info)
 useDynLib(Rggml, .registration = TRUE)
