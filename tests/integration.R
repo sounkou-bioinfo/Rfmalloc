@@ -4,7 +4,7 @@
 # decode+BLAS fallback). CI runs this after installing packages/ in dependency
 # order (Rfmalloc, Rggml, Rgguf, Rllm); locally, install the same way first.
 ok <- TRUE
-for (p in c("Rfmalloc", "Rggml", "Rgguf", "Rllm", "Rpgen")) {
+for (p in c("Rfmalloc", "Rggml", "Rgguf", "Rllm", "Rpgen", "RfmallocStatgen")) {
     cat("==== ", p, " ====\n", sep = "")
     res <- tinytest::test_package(p)
     print(res)
