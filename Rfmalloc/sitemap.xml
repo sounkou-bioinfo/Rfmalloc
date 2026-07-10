@@ -25,6 +25,7 @@
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_hap_materialize.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_haplotypes.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_insitu.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_ld.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_linalg.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_matmul_ooc.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_pca.html</loc></url>
@@ -33,6 +34,9 @@
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_tensor.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/index.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/init_fmalloc.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/ld_col.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/ld_ncol.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/ld_pair.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/list_fmalloc_allocations.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/open_fmalloc.html</loc></url>
 </urlset>

@@ -2,6 +2,22 @@
 
 ## Rggml 0.1.0 (unreleased)
 
+- Added `rggml_mul_mat(A, B, backend)`, a public GEMM
+  (`crossprod(A, B)`) on the `"cpu"`, `"blas"`, or `"vulkan"` backend
+  via GGML’s device-buffer residency path - the supported entry point
+  for a dense single-precision matrix multiply on the GPU, promoted from
+  the internal test routine.
+
+- New opt-in `GGML_VK_ALLOW_128_PUSH=1` (off by default, so default
+  behaviour is upstream GGML’s): accepts a Vulkan device that exposes
+  only 128-byte push constants for matrix multiply and `<=4D` ops.
+  Upstream refuses any device below 256 bytes, but in this build only
+  the 5-D non-contiguous copy actually needs 256 (and still errors at
+  its own dispatch); matmul’s push struct is 68 bytes. This makes a real
+  GPU reached through the Mesa dzn D3D12 translation layer under WSL
+  usable for GEMM - verified on an RTX 5050 via dzn at 2-2.6x OpenBLAS
+  through 4096^3 (single precision).
+
 - Added
   [`rggml_cpu_info()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/reference/rggml_cpu_info.md),
   reporting what `configure` actually compiled: `arch_kernels` (`"arm"`

@@ -63,6 +63,10 @@
   [`fmalloc_mul()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_insitu.md)
   [`fmalloc_div()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_insitu.md)
   : In-place (by-reference) mutation of fmalloc vectors
+- [`fmalloc_ld()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_ld.md)
+  [`dim(`*`<fmalloc_ld>`*`)`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_ld.md)
+  [`print(`*`<fmalloc_ld>`*`)`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_ld.md)
+  : Banded LD (correlation) matrix as a compressed fmalloc store
 - [`` `%*%`( ``*`<fmalloc>`*`)`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_linalg.md)
   [`crossprod(`*`<fmalloc>`*`)`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_linalg.md)
   [`tcrossprod(`*`<fmalloc>`*`)`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_linalg.md)
@@ -95,6 +99,12 @@
   : Typed fmalloc tensors
 - [`init_fmalloc()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/init_fmalloc.md)
   : Initialize fmalloc
+- [`ld_col()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/ld_col.md)
+  : Neighbour run of one column of a banded LD store
+- [`ld_ncol()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/ld_ncol.md)
+  : Number of variants in a banded LD store
+- [`ld_pair()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/ld_pair.md)
+  : Correlation between two variants of a banded LD store
 - [`list_fmalloc_allocations()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/list_fmalloc_allocations.md)
   : List Persistent fmalloc Allocations
 - [`open_fmalloc()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/open_fmalloc.md)
