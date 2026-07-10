@@ -179,6 +179,20 @@ static bool ggml_vk_allow_cpu_device() {
     return s != nullptr && s[0] != '\0' && s[0] != '0';
 }
 
+// Rggml: upstream refuses any Vulkan device with maxPushConstantsSize < 256 B.
+// In this 5D fork that 256 B is needed by exactly ONE op - the 5D non-contiguous
+// tensor copy (guarded at dispatch in ggml-vulkan-elemwise.cpp) - while matmul's
+// push-constant struct is 68 B and every <=4D op fits in 128 B. A D3D12
+// translation layer such as Mesa dzn (the only Vulkan path to a GPU under WSL)
+// exposes just 128 B push constants, a D3D12 root-signature limit, so a real GPU
+// gets rejected even though it can run GEMM and all <=4D ops. GGML_VK_ALLOW_128_PUSH=1
+// opts in to >=128 B devices: matmul and <=4D ops run; the 5D-copy path still
+// errors at its dispatch. Off by default, so default behaviour is upstream's.
+static bool ggml_vk_allow_128_push() {
+    const char * s = getenv("GGML_VK_ALLOW_128_PUSH");
+    return s != nullptr && s[0] != '\0' && s[0] != '0';
+}
+
 static void ggml_vk_instance_init() {
     if (vk_instance_initialized) {
         return;
@@ -435,11 +449,15 @@ static void ggml_vk_init(ggml_backend_vk_context * ctx, size_t idx) {
     ctx->device = ggml_vk_get_device(idx);
 
     if (!ctx->device->supports_256_push_constants) {
-        r_ggml_error("Vulkan device '%s' requires maxPushConstantsSize >= 256 bytes "
-                     "(got %u). Update your GPU driver "
-                     "(Mesa 25.0+ for AMD/Intel, 550+ for NVIDIA).",
-                     ctx->device->name.c_str(),
-                     ctx->device->properties.limits.maxPushConstantsSize);
+        const uint32_t have_pc = ctx->device->properties.limits.maxPushConstantsSize;
+        if (!(ggml_vk_allow_128_push() && have_pc >= 128)) {
+            r_ggml_error("Vulkan device '%s' requires maxPushConstantsSize >= 256 bytes "
+                         "(got %u). Update your GPU driver "
+                         "(Mesa 25.0+ for AMD/Intel, 550+ for NVIDIA).%s",
+                         ctx->device->name.c_str(), have_pc,
+                         have_pc >= 128 ? " Set GGML_VK_ALLOW_128_PUSH=1 to use it for"
+                                          " matmul and <=4D ops anyway." : "");
+        }
     }
 
     ctx->semaphore_idx = 0;
