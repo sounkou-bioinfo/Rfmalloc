@@ -311,76 +311,61 @@ base_expected_hc <- matrix(
     )
 })()
 
-## -- rpgen_import_bcf(): BCF, full round-trip if bcftools is on PATH -------
+## -- rpgen_import_bcf(): BCF, full round-trip against a committed fixture --
 ##
-## Reuses milestone 4a's own tiny.vcf genotypes (test_import_vcf.R), which
-## do include one missing call, so this section also exercises missingness
-## through the BCF path - unlike the .gen/.haps/.bgen fixtures above, which
-## deliberately avoid it (Oxford formats' own missing-call encodings are a
-## separate concern from this milestone's scope).
+## inst/extdata/tiny.bcf is a real BCF (bcftools view -Ob of milestone 4a's
+## own tiny.vcf, test_import_vcf.R) committed to the tree, so this runs
+## unconditionally with no bcftools on PATH at test time - BCF is a first-
+## class import, not a best-effort one. Those genotypes include one missing
+## call, so this section also exercises missingness through the BCF path,
+## unlike the .gen/.haps/.bgen fixtures above, which deliberately avoid it
+## (Oxford formats' own missing-call encodings are a separate concern from
+## this milestone's scope).
 
-if (nzchar(Sys.which("bcftools"))) {
-    (function() {
-        message("Testing rpgen_import_bcf() -> rpgen_read_hardcalls() round-trip (via bcftools)...")
+(function() {
+    message("Testing rpgen_import_bcf() -> rpgen_read_hardcalls() round-trip (committed tiny.bcf)...")
 
-        vcf_lines <- c(
-            "##fileformat=VCFv4.2",
-            "##contig=<ID=1,length=249250621>",
-            '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
-            "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMP1\tSAMP2\tSAMP3",
-            "1\t1000\trs1\tA\tG\t.\tPASS\t.\tGT\t0/0\t0/1\t1/1",
-            "1\t2000\trs2\tC\tT\t.\tPASS\t.\tGT\t0/1\t1/1\t0/0",
-            "1\t3000\trs3\tG\tA\t.\tPASS\t.\tGT\t./.\t0/0\t1/1",
-            "1\t4000\trs4\tT\tC\t.\tPASS\t.\tGT\t1/1\t0/1\t0/0"
-        )
-        expected_hc <- matrix(
-            c(
-                0L, 1L, 2L,
-                1L, 2L, 0L,
-                NA, 0L, 2L,
-                2L, 1L, 0L
-            ),
-            nrow = 3L, ncol = 4L
-        )
+    bcf_path <- system.file("extdata", "tiny.bcf", package = "Rpgen")
+    if (!nzchar(bcf_path)) {
+        exit_file("inst/extdata/tiny.bcf missing from this install of Rpgen")
+    }
 
-        vcf_path <- tempfile(fileext = ".vcf")
-        bcf_path <- tempfile(fileext = ".bcf")
-        writeLines(vcf_lines, vcf_path)
-        on.exit(unlink(c(vcf_path, bcf_path)), add = TRUE)
+    ## The genotypes of tiny.vcf/tiny.bcf, same as test_import_vcf.R:
+    ##   rs1 A/G: 0/0 0/1 1/1   rs2 C/T: 0/1 1/1 0/0
+    ##   rs3 G/A: ./. 0/0 1/1   rs4 T/C: 1/1 0/1 0/0
+    expected_hc <- matrix(
+        c(
+            0L, 1L, 2L,
+            1L, 2L, 0L,
+            NA, 0L, 2L,
+            2L, 1L, 0L
+        ),
+        nrow = 3L, ncol = 4L
+    )
 
-        status <- system2("bcftools", c("view", shQuote(vcf_path), "-Ob", "-o", shQuote(bcf_path)),
-            stdout = FALSE, stderr = FALSE
-        )
-        if (status != 0 || !file.exists(bcf_path)) {
-            exit_file("bcftools failed to produce a .bcf fixture in this environment")
-        }
+    pgen_path <- tempfile(fileext = ".pgen")
+    import_result <- tryCatch(
+        rpgen_import_bcf(bcf_path, pgen_path),
+        error = function(e) e
+    )
+    if (inherits(import_result, "error")) {
+        exit_file(paste(
+            "rpgen_import_bcf() failed in this environment:",
+            conditionMessage(import_result)
+        ))
+    }
+    on.exit(cleanup_pgen(pgen_path), add = TRUE)
 
-        pgen_path <- tempfile(fileext = ".pgen")
-        import_result <- tryCatch(
-            rpgen_import_bcf(bcf_path, pgen_path),
-            error = function(e) e
-        )
-        if (inherits(import_result, "error")) {
-            exit_file(paste(
-                "rpgen_import_bcf() failed in this environment:",
-                conditionMessage(import_result)
-            ))
-        }
-        on.exit(cleanup_pgen(pgen_path), add = TRUE)
+    expect_identical(import_result, pgen_path)
+    info <- rpgen_info(pgen_path)
+    expect_equal(info$n_sample, 3L)
+    expect_equal(info$n_variant, 4L)
 
-        expect_identical(import_result, pgen_path)
-        info <- rpgen_info(pgen_path)
-        expect_equal(info$n_sample, 3L)
-        expect_equal(info$n_variant, 4L)
-
-        hc <- rpgen_read_hardcalls(pgen_path)
-        expect_true(all(hc == expected_hc | (is.na(hc) & is.na(expected_hc))),
-            info = "rpgen_import_bcf() genotypes match the same known genotypes as test_import_vcf.R's VCF fixture"
-        )
-    })()
-} else {
-    message("Skipping rpgen_import_bcf() round-trip test: bcftools not found on PATH")
-}
+    hc <- rpgen_read_hardcalls(pgen_path)
+    expect_true(all(hc == expected_hc | (is.na(hc) & is.na(expected_hc))),
+        info = "rpgen_import_bcf() genotypes match the same known genotypes as test_import_vcf.R's VCF fixture"
+    )
+})()
 
 ## -- rpgen_import_bgen(): BGEN v1.1 (external .sample) and v1.3 (embedded
 ## sample IDs, sample = NULL), full round-trip against committed fixtures --
