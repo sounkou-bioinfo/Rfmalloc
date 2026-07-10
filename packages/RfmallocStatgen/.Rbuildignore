@@ -1,0 +1,14 @@
+^\.github$
+^\.git$
+^\.gitignore$
+^AGENTS\.md$
+^ROADMAP\.md$
+^\.Rcheck$
+^\.\.?Rcheck$
+^.*\.Rcheck$
+^.*\.tar\.gz$
+^\.Rproj\.user$
+^.*\.Rproj$
+^README\.Rmd$
+^README\.html$
+^README\.knit\.md$
