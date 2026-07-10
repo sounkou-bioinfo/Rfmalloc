@@ -3,5 +3,6 @@
 export(statgen_coloc_bf)
 export(statgen_gwas_lin)
 export(statgen_pca)
+export(statgen_snp_cor)
 import(Rfmalloc)
 useDynLib(RfmallocStatgen, .registration = TRUE)

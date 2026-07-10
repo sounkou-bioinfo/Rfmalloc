@@ -14,8 +14,10 @@ the methods, never lift code).
 - Univariate GWAS regression, linear and logistic (bigstatsr
   `big_univLinReg`/`big_univLogReg`). [linear: SHIPPED as the first method,
   `statgen_gwas_lin()`]
-- `snp_cor`: windowed LD correlation into a sparse LD matrix (Rfmalloc
-  `sparse` codec).
+- `snp_cor`: windowed LD correlation into a banded LD matrix (Rfmalloc `ld`
+  codec). [SHIPPED as `statgen_snp_cor()`: streams the genotype tensor one
+  variant column at a time, packs the banded correlations into an `fmalloc_ld`
+  store; validated against `stats::cor()` and `bigsnpr::snp_cor()`]
 - LD clumping and pruning.
 - Genetic relatedness matrix (GRM) / `tcrossprodSelf`.
 - Randomized-SVD PCA with iterative LD-region removal (`autoSVD`), PCA

@@ -31,6 +31,20 @@
   the out-of-core result equals the in-core path on the same standardized
   tensor to floating point, independent of the streaming block size, for both
   `bed` and `dosage`.
+- `statgen_snp_cor()`: windowed LD (correlation) matrix from a `bed`/`dosage`
+  fmalloc genotype tensor, packed into a banded `Rfmalloc::fmalloc_ld` store.
+  The genotype tensor is streamed one variant column at a time through
+  `Rfmalloc_tensor_decode` (the dense samples x variants matrix is never
+  materialized, only a sliding window of unit columns bounded by the window
+  width); each column is mean-imputed, centred and unit-L2-normalized, and the
+  correlation of two nearby variants is the dot product of their unit columns -
+  the fused form `bigsnpr::snp_cor()` uses. The window is `size` variants each
+  side by index, or `size` kb of physical distance when `infos_pos` is given
+  (bigsnpr's convention). `inst/tinytest/test_snp_cor.R` checks the banded
+  result equals `stats::cor()` on the decoded matrix within the int8/int16
+  quantization tolerance (max |diff| ~3.9e-3 at int8), the position-based
+  window and `thr_r2` behaviour, and - guarded by `requireNamespace` - matches
+  `bigsnpr::snp_cor()` on the same complete-data matrix.
 - `statgen_coloc_bf()`: all-pairs Bayesian colocalisation of two traits'
   signals, coloc's `coloc.bf_bf` recast as a single matrix multiply. Stacking
   each trait's per-SNP log approximate Bayes factors as a matrix of signals,
