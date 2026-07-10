@@ -12,8 +12,9 @@
 #   make clean                 # scrub build artifacts everywhere
 
 # Dependency order matters: Rfmalloc and Rggml are roots, Rgguf needs
-# Rfmalloc, Rllm needs all three.
-PKGS = Rfmalloc Rggml Rgguf Rllm Rpgen
+# Rfmalloc, Rllm needs all three, Rpgen and RfmallocStatgen need only
+# Rfmalloc.
+PKGS = Rfmalloc Rggml Rgguf Rllm Rpgen RfmallocStatgen
 
 .PHONY: all install test check rd rdm fixtures clean
 

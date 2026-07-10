@@ -66,6 +66,13 @@ jobs:
           - {pkg: Rgguf,    os: windows-latest, r: 'release'}
           - {pkg: Rllm,     os: windows-latest, r: 'release'}
           - {pkg: Rpgen,    os: windows-latest, r: 'release'}
+          # RfmallocStatgen: pure R over Rfmalloc's tensors, no compiled code
+          # of its own, so the full platform matrix is free.
+          - {pkg: RfmallocStatgen, os: ubuntu-latest,  r: 'release'}
+          - {pkg: RfmallocStatgen, os: ubuntu-latest,  r: 'devel'}
+          - {pkg: RfmallocStatgen, os: macos-latest,   r: 'release'}
+          - {pkg: RfmallocStatgen, os: ubuntu-24.04-arm, r: 'release'}
+          - {pkg: RfmallocStatgen, os: windows-latest, r: 'release'}
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -96,6 +103,7 @@ jobs:
             Rgguf) siblings="Rfmalloc" ;;
             Rpgen) siblings="Rfmalloc" ;;
             Rllm)  siblings="Rfmalloc Rggml Rgguf" ;;
+            RfmallocStatgen) siblings="Rfmalloc" ;;
             *)     siblings="" ;;
           esac
           for s in $siblings; do
@@ -172,7 +180,7 @@ jobs:
       # installed with R CMD INSTALL in dependency order (no Remotes solving).
       - name: Install the whole stack in dependency order
         run: |
-          for p in Rfmalloc Rggml Rgguf Rllm Rpgen; do
+          for p in Rfmalloc Rggml Rgguf Rllm Rpgen RfmallocStatgen; do
             echo "==== R CMD INSTALL packages/$p ===="
             R CMD INSTALL "packages/$p" || exit 1
           done
