@@ -34,6 +34,25 @@ struct RsvdResult {
 RsvdResult rsvd_incore(const double* X, int n, int m, int k, int p, int s,
                        int method, double tol, int seed);
 
+// A caller-supplied decoder for one variant-column range of an opaque tensor:
+// writes n_elems doubles (column-major, nsamples-fastest) for the flat element
+// range [elem_offset, elem_offset + n_elems) into out; returns 0 on success.
+// This is Rfmalloc_tensor_decode bound to a tensor, expressed R-free so the
+// PCAone backend links without R headers (the glue supplies the adapter).
+typedef int (*decode_range_fn)(void* tensor, long long elem_offset,
+                               long long n_elems, double* out);
+
+// Out-of-core randomized SVD (single-pass sSVD) of an n x m (samples x variants)
+// tensor, streamed one variant-column block at a time via decode: the full
+// n x m double matrix is never materialized, only one n x block_size panel at a
+// time. Standardization is a property of the tensor (pass a standardized tensor
+// to get a standardized PCA), so it is baked into what decode returns. Produces
+// the same triplet as rsvd_incore() on the fully decoded matrix, up to
+// block-summation order. block_size is the number of variants per streamed
+// block (>= 1). May throw std::exception (e.g. on a decode failure).
+RsvdResult rsvd_ooc(void* tensor, decode_range_fn decode, int n, int m,
+                    int k, int p, int s, double tol, int seed, int block_size);
+
 }  // namespace rfmstatgen
 
 #endif  // RFMSTATGEN_PCAONE_BACKEND_H

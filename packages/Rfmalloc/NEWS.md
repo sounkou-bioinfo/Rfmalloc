@@ -2,6 +2,19 @@
 
 ## 0.1.0 (unreleased)
 
+- C-callable API version 7: added `Rfmalloc_tensor_decode(tensor, elem_offset,
+  n_elems, out)`, a streaming decode primitive that decodes one block-aligned
+  element range of a typed tensor into a caller-owned `double*` buffer using the
+  tensor's own codec. This is the read primitive an out-of-core consumer needs
+  to pull one variant-column range at a time instead of materializing the whole
+  matrix; because standardization is a property of the tensor (a standardized
+  `bed`/`dosage` payload decodes centred/scaled and mean-imputed), no
+  standardize flag is needed. It returns a status code rather than calling
+  `Rf_error`, so a C++ caller can turn a failure into its own control flow with
+  no longjmp through its stack. RfmallocStatgen's out-of-core PCA is the first
+  consumer. Additive, so existing API-6 consumers are unaffected. Exercised by
+  `inst/tinytest/test_tensor_decode_range.R`.
+
 - Added `fmalloc_haplotypes()` / `fmalloc_hap_materialize()`: a phased-
   haplotype fmalloc store at **one bit per call**, a SIBLING interface to the
   matmul tensor codec ABI rather than an instance of it. Haplotype HMM methods

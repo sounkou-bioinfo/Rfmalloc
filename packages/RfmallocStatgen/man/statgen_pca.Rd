@@ -12,12 +12,21 @@ statgen_pca(
   center = FALSE,
   scale = FALSE,
   tol = 1e-04,
-  seed = 112L
+  seed = 112L,
+  block_size = NULL
 )
 }
 \arguments{
 \item{X}{A numeric matrix (samples x variants), or anything
-\code{\link[base:matrix]{base::as.matrix()}} turns into one.}
+\code{\link[base:matrix]{base::as.matrix()}} turns into one; or a two-dimensional \code{bed}/\code{dosage}
+\link[Rfmalloc:fmalloc_tensor]{Rfmalloc::fmalloc_tensor} (samples x variants), which is decomposed
+\emph{out of core}: the tensor is streamed one variant-column block at a time
+and the dense matrix is never materialized. To get a standardized PCA of a
+tensor, standardize the tensor itself first
+(\code{\link[Rfmalloc:fmalloc_bed_standardize]{Rfmalloc::fmalloc_bed_standardize()}} /
+\code{\link[Rfmalloc:fmalloc_dosage_standardize]{Rfmalloc::fmalloc_dosage_standardize()}}) - standardization is a property
+of the tensor, fused into its decode, so \code{center}/\code{scale} do not apply to
+a tensor input.}
 
 \item{k}{Number of principal components to return (a positive integer,
 \code{k >= 1}).}
@@ -38,6 +47,11 @@ the top-\code{k} subspace agree to \code{tol}.}
 
 \item{seed}{Integer seed for the Gaussian random test matrix (default
 \code{112}, PCAone's own default), so runs are reproducible.}
+
+\item{block_size}{For a tensor input, the number of variant columns decoded
+per streamed block (bounds the resident memory). \code{NULL} (default) picks a
+size that splits the variants into a handful of blocks. Ignored for a
+matrix input.}
 }
 \value{
 A list with elements \code{d} (length-\code{k} singular values), \code{u}

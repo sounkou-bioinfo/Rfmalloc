@@ -20,5 +20,14 @@
   first time (`LinkingTo: RcppEigen`, C++17). Stage 1 drives the vendored
   core over an in-memory matrix; `inst/tinytest/test_pca.R` matches
   `base::svd()`, `stats::prcomp()`, and `pcaone::pcaone()` to ~1e-6 (in
-  practice machine precision on a decaying spectrum). The streaming
-  out-of-core path over fmalloc genotype tensors is the next stage.
+  practice machine precision on a decaying spectrum).
+- `statgen_pca()` now also takes a 2-D `bed`/`dosage` fmalloc genotype tensor
+  and decomposes it **out of core**: the tensor is streamed one variant-column
+  block at a time through Rfmalloc's fused-standardize decode (the new
+  `Rfmalloc_tensor_decode` C-callable, API v7) and the dense samples x variants
+  matrix is never materialized. To get a standardized PCA, standardize the
+  tensor first (`fmalloc_bed_standardize()` / `fmalloc_dosage_standardize()`) -
+  standardization rides the decode. `inst/tinytest/test_pca_ooc.R` checks that
+  the out-of-core result equals the in-core path on the same standardized
+  tensor to floating point, independent of the streaming block size, for both
+  `bed` and `dosage`.

@@ -10,7 +10,7 @@ extern "C" {
 #endif
 
 /*
- * Rfmalloc C-callable API, version 6.
+ * Rfmalloc C-callable API, version 7.
  *
  * These functions are resolved with R_GetCCallable(). Packages should import
  * Rfmalloc at runtime before calling them, for example by listing Rfmalloc in
@@ -91,6 +91,21 @@ typedef int (*Rfmalloc_typed_gemm_fn)(const char *codec,
 typedef int (*Rfmalloc_register_matmul_backend_ex_fun)(const char *name,
                                                        Rfmalloc_gemm_fn fn,
                                                        Rfmalloc_typed_gemm_fn typed_fn);
+
+/*
+ * Streaming decode primitive (API version 7). Decode a flat, block-aligned
+ * element range [elem_offset, elem_offset + n_elems) of a typed tensor into a
+ * caller-owned double buffer, using the tensor's own registered codec, so an
+ * out-of-core consumer can decode one column range at a time instead of
+ * materializing the whole matrix. Standardization is a property of the tensor
+ * (a standardized 'bed'/'dosage' payload decodes centred/scaled and
+ * mean-imputed), so no flag is needed: pass a standardized tensor to stream
+ * standardized values. 'tensor' is the fmalloc tensor object (the ALTREP
+ * payload with its 'rfm_dtype' and 'dim' attributes). Returns 0 on success and
+ * non-zero on any error; it never calls Rf_error.
+ */
+typedef int (*Rfmalloc_tensor_decode_range_fun)(SEXP tensor, R_xlen_t elem_offset,
+                                                R_xlen_t n_elems, double *out);
 
 static inline Rfmalloc_api_version_fun Rfmalloc_api_version_ptr(void)
 {
@@ -300,6 +315,17 @@ static inline int Rfmalloc_register_matmul_backend_ex(const char *name,
                                                       Rfmalloc_typed_gemm_fn typed_fn)
 {
     return Rfmalloc_register_matmul_backend_ex_ptr()(name, fn, typed_fn);
+}
+
+static inline Rfmalloc_tensor_decode_range_fun Rfmalloc_tensor_decode_ptr(void)
+{
+    return (Rfmalloc_tensor_decode_range_fun) R_GetCCallable("Rfmalloc", "Rfmalloc_tensor_decode");
+}
+
+static inline int Rfmalloc_tensor_decode(SEXP tensor, R_xlen_t elem_offset,
+                                         R_xlen_t n_elems, double *out)
+{
+    return Rfmalloc_tensor_decode_ptr()(tensor, elem_offset, n_elems, out);
 }
 
 #ifdef __cplusplus

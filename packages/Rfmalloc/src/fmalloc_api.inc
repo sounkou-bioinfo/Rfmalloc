@@ -468,12 +468,93 @@ SEXP cleanup_fmalloc_impl(SEXP runtime_xptr)
 
 int Rfmalloc_api_version(void)
 {
-    return 6;
+    return 7;
 }
 
 SEXP fmalloc_api_version_impl(void)
 {
     return Rf_ScalarInteger(Rfmalloc_api_version());
+}
+
+/*
+ * Decode a flat, block-aligned element range of a typed fmalloc tensor into a
+ * caller-owned double buffer, using the tensor's own registered codec (API
+ * version 7). This is the streaming read primitive an out-of-core consumer
+ * (e.g. RfmallocStatgen's RSVD) needs: decode one column range of variants at a
+ * time instead of materializing the whole matrix. Because standardization is a
+ * property of the tensor - a standardized 'bed'/'dosage' payload decodes
+ * centred/scaled, mean-imputed - no standardize flag is needed here; pass a
+ * standardized tensor to stream standardized values.
+ *
+ * 'tensor' is an fmalloc tensor (the ALTREP payload carrying 'rfm_dtype' and
+ * 'dim' attributes, as fmalloc_tensor() builds it). The range is
+ * [elem_offset, elem_offset + n_elems) in column-major (dim[0]-fastest) element
+ * order; the codec requires it to be block-aligned (whole variant columns for
+ * 'bed'/'dosage'), and 'out' must hold at least n_elems doubles. Returns 0 on
+ * success and non-zero on any error (not a tensor, unknown codec, out-of-range
+ * request, or a codec-level failure). It never calls Rf_error, so a C++ caller
+ * can turn a failure into its own control flow with no longjmp through its stack.
+ */
+int Rfmalloc_tensor_decode(SEXP tensor, R_xlen_t elem_offset, R_xlen_t n_elems,
+                           double *out)
+{
+    if (!out || elem_offset < 0 || n_elems < 0) {
+        return -1;
+    }
+    fm_vector *vec = maybe_vector_from_altrep(tensor);
+    if (!vec || vec->type != RAWSXP || !vec->runtime || !vec->runtime->info) {
+        return -1;
+    }
+    SEXP dtype = Rf_getAttrib(tensor, Rf_install("rfm_dtype"));
+    if (TYPEOF(dtype) != STRSXP || XLENGTH(dtype) != 1) {
+        return -1;
+    }
+    const rfm_tensor_codec *codec = tensor_codec_lookup(CHAR(STRING_ELT(dtype, 0)));
+    if (!codec || !codec->decode) {
+        return -1;
+    }
+    // Bound the request against the tensor's declared element count. Tensor
+    // dims live in the 'rfm_dims' attribute (dim() is an S3 method over it),
+    // not R's DimSymbol.
+    SEXP dims = Rf_getAttrib(tensor, Rf_install("rfm_dims"));
+    if (TYPEOF(dims) != INTSXP || XLENGTH(dims) < 1) {
+        return -1;
+    }
+    R_xlen_t total = 1;
+    for (R_xlen_t i = 0; i < XLENGTH(dims); i++) {
+        R_xlen_t d = (R_xlen_t)INTEGER(dims)[i];
+        if (d < 0) {
+            return -1;
+        }
+        total *= d;
+    }
+    if (elem_offset > total || n_elems > total - elem_offset) {
+        return -1;
+    }
+    if (n_elems == 0) {
+        return 0;
+    }
+    return codec->decode(vector_data_or_dummy(vec), elem_offset, n_elems, out);
+}
+
+// R-level wrapper, so Rfmalloc's own tests can exercise Rfmalloc_tensor_decode
+// without a second package. Offset/length come in as doubles (they can exceed
+// int range); returns the decoded range as a plain numeric vector.
+SEXP rfm_tensor_decode_range_impl(SEXP tensor, SEXP offset_sexp, SEXP n_sexp)
+{
+    R_xlen_t elem_offset = (R_xlen_t)Rf_asReal(offset_sexp);
+    R_xlen_t n_elems = (R_xlen_t)Rf_asReal(n_sexp);
+    if (n_elems < 0) {
+        Rf_error("n must be non-negative");
+    }
+    SEXP out = PROTECT(Rf_allocVector(REALSXP, n_elems));
+    int rc = Rfmalloc_tensor_decode(tensor, elem_offset, n_elems, REAL(out));
+    if (rc != 0) {
+        UNPROTECT(1);
+        Rf_error("Rfmalloc_tensor_decode failed (code %d)", rc);
+    }
+    UNPROTECT(1);
+    return out;
 }
 
 SEXP Rfmalloc_default_runtime(void)
@@ -627,6 +708,7 @@ static void register_c_callables(void)
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_register_tensor_codec", (DL_FUNC)Rfmalloc_register_tensor_codec);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_register_matmul_backend", (DL_FUNC)Rfmalloc_register_matmul_backend);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_register_matmul_backend_ex", (DL_FUNC)Rfmalloc_register_matmul_backend_ex);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_tensor_decode", (DL_FUNC)Rfmalloc_tensor_decode);
 }
 
 static const R_CallMethodDef CallEntries[] = {
@@ -654,6 +736,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"rfm_can_handle_ops_pair", (DL_FUNC)&rfm_can_handle_ops_pair, 3},
     {"rfm_tensor_matmul_impl", (DL_FUNC)&rfm_tensor_matmul_impl, 7},
     {"rfm_tensor_materialize_impl", (DL_FUNC)&rfm_tensor_materialize_impl, 3},
+    {"rfm_tensor_decode_range_impl", (DL_FUNC)&rfm_tensor_decode_range_impl, 3},
     {"rfm_tensor_codec_info_impl", (DL_FUNC)&rfm_tensor_codec_info_impl, 1},
     {"rfm_tensor_codec_list_impl", (DL_FUNC)&rfm_tensor_codec_list_impl, 0},
     {"rfm_tensor_bed_encode_impl", (DL_FUNC)&rfm_tensor_bed_encode_impl, 2},

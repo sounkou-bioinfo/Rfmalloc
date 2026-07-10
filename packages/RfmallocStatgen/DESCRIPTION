@@ -24,7 +24,8 @@ Depends:
 Imports:
     stats
 LinkingTo:
-    RcppEigen
+    RcppEigen,
+    Rfmalloc
 Suggests:
     Rpgen,
     tinytest,
