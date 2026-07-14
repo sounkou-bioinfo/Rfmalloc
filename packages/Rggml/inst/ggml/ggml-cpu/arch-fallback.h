@@ -78,7 +78,6 @@
 // Rggml: on aarch64 we compile GGML's hand-tuned NEON vec_dot kernels
 // (ggml-cpu/arch/arm/quants.c) while keeping the portable repack path. The
 // remaining canonical symbols resolve to the generic implementation.
-#define ggml_vec_dot_q1_0_q8_0_generic ggml_vec_dot_q1_0_q8_0
 #define ggml_gemm_iq4_nl_4x4_q8_0_generic ggml_gemm_iq4_nl_4x4_q8_0
 #define ggml_gemm_q2_K_8x8_q8_K_generic ggml_gemm_q2_K_8x8_q8_K
 #define ggml_gemm_q4_0_4x4_q8_0_generic ggml_gemm_q4_0_4x4_q8_0
