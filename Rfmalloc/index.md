@@ -844,14 +844,14 @@ local({
   inspect_vec[] <- 1:4
   .Internal(inspect(inspect_vec))
 })
-#> @5974f994f6d0 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x7557f0e023e8 mode=persistent runtime=open offset=9192 uuid=20b3a58d161a6a3cbe353d543f750d34 file=/tmp/RtmpT3DoL8/file1765e46e4ba43c.bin
+#> @5dcc14552328 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x761d840023e8 mode=persistent runtime=open offset=9192 uuid=a3b9def9de0b562062364b3c51054a6b file=/tmp/RtmpSNEKSq/file1d6a3b42cff3fe.bin
 #> ATTRIB:
-#>   @5974f9952540 02 LISTSXP g0c0 [REF(1)]
-#>     TAG: @5974f53753f0 01 SYMSXP g1c0 [MARK,REF(38555),LCK,gp=0x6000] "class" (has value)
-#>     @5974fa458a48 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)
-#>       @5974fa93edc8 09 CHARSXP g0c2 [MARK,REF(58),gp=0x60] [ASCII] [cached] "fmalloc_vector"
-#>       @5974fa2afdb8 09 CHARSXP g0c1 [MARK,REF(210),gp=0x60] [ASCII] [cached] "fmalloc"
-#>       @5974f53a83a8 09 CHARSXP g1c1 [MARK,REF(623),gp=0x61] [ASCII] [cached] "integer"
+#>   @5dcc14555198 02 LISTSXP g0c0 [REF(1)]
+#>     TAG: @5dcc0ff78400 01 SYMSXP g1c0 [MARK,REF(38555),LCK,gp=0x6000] "class" (has value)
+#>     @5dcc1505b0d8 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)
+#>       @5dcc15541458 09 CHARSXP g0c2 [MARK,REF(58),gp=0x60] [ASCII] [cached] "fmalloc_vector"
+#>       @5dcc14eb2508 09 CHARSXP g0c1 [MARK,REF(210),gp=0x60] [ASCII] [cached] "fmalloc"
+#>       @5dcc0ffab3b8 09 CHARSXP g1c1 [MARK,REF(623),gp=0x61] [ASCII] [cached] "integer"
 ```
 
 `inspect()` output is an internal R diagnostic, so exact formatting can
@@ -1214,17 +1214,17 @@ runtime; ordinary R objects such as base vectors, data frames, or
 arbitrary lists are rejected. This keeps lists inside the same
 file-backed object universe.
 
-For persistent runtimes, list containers now serialize as reference
-state when all children are recoverable fmalloc vectors. The serialized
-state stores per-slot child descriptors, so nested list containers can
-reopen recursively from the same backing file without carrying
-session-local `SEXP` pointers.
+For persistent runtimes, list containers serialize as reference state
+when all children are recoverable fmalloc vectors. The serialized state
+stores per-slot child descriptors, so nested list containers can reopen
+recursively from the same backing file without carrying session-local
+`SEXP` pointers.
 
 This is reference-based recovery, not name-based object discovery. The
 catalog stores physical allocation records, not user variable names.
 Serialized references use the catalog record offset and generation for
-validation; the catalog can be listed, but it is not yet a high-level
-object store for recovering vectors by name.
+validation; the catalog can be listed, but it does not provide a
+high-level object store for recovering vectors by name.
 
 ## List constraints and recovery examples
 
@@ -1407,14 +1407,14 @@ perf_result
 #> # A tibble: 8 × 5
 #>   expression               median `itr/sec` mem_alloc `gc/sec`
 #>   <bch:expr>             <bch:tm>     <dbl> <bch:byt>    <dbl>
-#> 1 base_sequential_sum     33.62µs    28003.        0B        0
-#> 2 fmalloc_sequential_sum  47.43µs    21811.        0B        0
-#> 3 base_scalar_read        32.08µs    28584.   24.55KB        0
-#> 4 fmalloc_scalar_read    753.91µs     1326.        0B        0
-#> 5 base_subset_copy         4.25µs   221226.    7.86KB        0
-#> 6 fmalloc_subset_copy     18.22µs    47315.        0B        0
-#> 7 base_indexed_write      26.59µs    36114.  390.67KB        0
-#> 8 fmalloc_indexed_write  176.56µs     5548.        0B        0
+#> 1 base_sequential_sum      81.6µs    12141.        0B        0
+#> 2 fmalloc_sequential_sum   53.4µs    19479.        0B        0
+#> 3 base_scalar_read           36µs    26237.   24.55KB        0
+#> 4 fmalloc_scalar_read     836.6µs     1188.        0B        0
+#> 5 base_subset_copy          4.7µs   207911.    7.86KB        0
+#> 6 fmalloc_subset_copy      20.9µs    41830.        0B        0
+#> 7 base_indexed_write       28.4µs    34379.  390.67KB        0
+#> 8 fmalloc_indexed_write   197.2µs     4973.        0B        0
 ```
 
 ## Native C API for Other Packages

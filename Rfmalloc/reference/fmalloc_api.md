@@ -8,8 +8,6 @@ API.
 ## Usage
 
 ``` r
-fmalloc_api_version()
-
 fmalloc_default_runtime()
 
 is_fmalloc_runtime(x)
@@ -53,4 +51,4 @@ fmalloc_vector_payload_ptr(x)
 ## Value
 
 Depends on the helper: logical predicates, runtime external pointers,
-integer API versions, metadata lists, or payload external pointers.
+metadata lists, or payload external pointers.

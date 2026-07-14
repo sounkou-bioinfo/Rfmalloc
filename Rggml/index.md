@@ -133,8 +133,7 @@ Declared in the installed header `inst/include/Rggml.h`, registered from
 `src/rggml_init.c`, implemented in `src/rggml_api.c`:
 
 ``` c
-/* version / identity */
-int            Rggml_api_version(void);
+/* upstream identity */
 const char    *Rggml_version(void);
 
 /* context lifecycle */

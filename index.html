@@ -429,17 +429,34 @@ original mapping. The model keeps quantized weights quantized; GGML
 consumes those blocks directly; only the KV cache and transient graph
 state require new storage.</p>
 <div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(Rllm)</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>rt <span class="ot">&lt;-</span> Rfmalloc<span class="sc">::</span><span class="fu">open_fmalloc</span>(<span class="st">&quot;rllm-work.bin&quot;</span>, <span class="at">size_gb =</span> <span class="dv">2</span>)</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>model <span class="ot">&lt;-</span> <span class="fu">rllm_gguf_model</span>(<span class="st">&quot;SmolLM2-135M.Q4_K_M.gguf&quot;</span>, <span class="at">runtime =</span> rt)</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>gen <span class="ot">&lt;-</span> <span class="fu">rllm_generate</span>(</span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>  model,</span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">charToRaw</span>(<span class="st">&quot;The capital of France is Paris. The capital of Germany is&quot;</span>),</span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">n_new =</span> <span class="dv">16</span><span class="dt">L</span>,</span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>  <span class="at">runtime =</span> rt</span>
-<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="fu">rawToChar</span>(gen<span class="sc">$</span>raw)</span></code></pre></div>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Rllm: ggml quantized matmul backend registered and active for Rfmalloc typed tensors (disable with rllm_use_ggml(FALSE)).</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="fu">local</span>({</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>  backing <span class="ot">&lt;-</span> <span class="fu">tempfile</span>(<span class="at">fileext =</span> <span class="st">&quot;.bin&quot;</span>)</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>  rt <span class="ot">&lt;-</span> Rfmalloc<span class="sc">::</span><span class="fu">open_fmalloc</span>(backing, <span class="at">mode =</span> <span class="st">&quot;scratch&quot;</span>, <span class="at">size_gb =</span> <span class="fl">0.1</span>)</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">on.exit</span>({</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    Rfmalloc<span class="sc">::</span><span class="fu">cleanup_fmalloc</span>(rt)</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    <span class="fu">unlink</span>(backing)</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>  }, <span class="at">add =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>  model_path <span class="ot">&lt;-</span> <span class="fu">system.file</span>(</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;extdata&quot;</span>, <span class="st">&quot;tiny-byte-model.gguf&quot;</span>, <span class="at">package =</span> <span class="st">&quot;Rllm&quot;</span>, <span class="at">mustWork =</span> <span class="cn">TRUE</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>  model <span class="ot">&lt;-</span> <span class="fu">rllm_gguf_model</span>(model_path, <span class="at">runtime =</span> rt)</span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>  gen <span class="ot">&lt;-</span> <span class="fu">rllm_generate</span>(</span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>    model,</span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>    <span class="fu">charToRaw</span>(<span class="st">&quot;The capital of France is Paris. The capital of Germany is&quot;</span>),</span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>    <span class="at">n_new =</span> <span class="dv">16</span><span class="dt">L</span>,</span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>    <span class="at">runtime =</span> rt</span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rawToChar</span>(gen<span class="sc">$</span>raw)</span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>})</span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] &quot;!!!!!!!!!!!!!!!!&quot;</span></span></code></pre></div>
+<p>The bundled model is deliberately tiny and deterministic: it makes
+the evaluated example traverse the real GGUF loader, borrowed weight
+spans, transformer graph, KV cache, generation loop and byte decoder
+without a model download. Its output is a systems check, not a
+language-quality claim.</p>
 <p>The I/O boundary is bytes, not a hidden theory of text. The tokenizer
 is an edge codec built from GGUF metadata, generation returns raw
 output, and <code>rawToChar()</code> is the caller’s interpretation. On
@@ -452,12 +469,12 @@ forward to the tolerance imposed by the quantized weights, and cached
 CUDA logits are checked against both whole-batch CUDA and CPU cache
 handoffs.</p>
 <p>ALP is a useful counterexample to protecting a beautiful idea from a
-bad measurement. The current decimal ALP codec is lossless and effective
-for analytical values with decimal structure. On a model-like 2048 by
-2048 Q4_K weight, however, it expands the values to 64.2 bits each and
-its scalar decode plus BLAS takes 20.75 ms for batch one. Native Q4_K
+bad measurement. The decimal ALP codec is lossless and effective for
+analytical values with decimal structure. On a model-like 2048 by 2048
+Q4_K weight, however, it expands the values to 64.2 bits each and its
+scalar decode plus BLAS takes 20.75 ms for batch one. Native Q4_K
 occupies 4.5 bits and its GGML product takes 0.30 ms. The LLM version of
-the lossless-compressed bet now has to earn its way back through ALP-RD,
+the lossless-compressed bet has to earn its way back through ALP-RD,
 SIMD decode or a fused compressed dot kernel. The failed form is
 evidence, not an API to preserve.</p>
 <h2 id="compute-follows-storage">Compute follows storage</h2>
@@ -478,8 +495,8 @@ same correctness graph can run on a real GPU or, with
 allocation, tensor upload, graph execution and download pass through
 backend-neutral GGML interfaces rather than Vulkan-shaped application
 code.</p>
-<p>CUDA now comes from the exact same pinned GGML source as the core. It
-is an opt-in <code>nvcc</code> build, and Rllm’s model-owned context
+<p>CUDA comes from the exact same pinned GGML source as the core. It is
+an opt-in <code>nvcc</code> build, and Rllm’s model-owned context
 uploads codec-native weights once and reuses them while the host GGUF
 mapping remains authoritative. The RTX 5050 rig passes the full Rggml,
 Rgguf and Rllm suites, including whole-graph CUDA, plain and fmalloc KV
@@ -490,8 +507,8 @@ per second with CUDA graphs disabled and 460.1 with them enabled. This
 stack reaches 69.7. Replacing each pass’s activation buffer with GGML’s
 persistent backend scheduler reduced it to 63.7, while enabling graph
 capture reached 62.6 because the graph and attention extent change on
-every token. That machinery was removed. The next experiment must make
-execution reusable, most likely through stable attention shapes and
+every token. That machinery was removed. Closing the gap requires
+reusable execution, most likely through stable attention shapes and
 device-resident mutable cache state; another storage API cannot solve
 it.</p>
 <h2 id="one-monorepo-because-the-abstractions-cross-packages">One

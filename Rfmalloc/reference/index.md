@@ -25,8 +25,7 @@
   : Explicitly destroy a fmalloc vector
 - [`diagnose_fmalloc_runtime()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/diagnose_fmalloc_runtime.md)
   : Diagnose fmalloc runtime state
-- [`fmalloc_api_version()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_api.md)
-  [`fmalloc_default_runtime()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_api.md)
+- [`fmalloc_default_runtime()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_api.md)
   [`is_fmalloc_runtime()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_api.md)
   [`is_fmalloc_vector()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_api.md)
   [`fmalloc_runtime()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_api.md)
@@ -51,7 +50,7 @@
 - [`fmalloc_dosage_standardize()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_dosage_standardize.md)
   : Bake per-variant standardization into a dosage tensor
 - [`fmalloc_hap_materialize()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_hap_materialize.md)
-  : Materialize a bit-packed haplotype store into a 0/1 matrix
+  : Adapt a bit-packed haplotype store to a 0/1 matrix
 - [`fmalloc_haplotypes()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_haplotypes.md)
   [`create_fmalloc_haplotypes()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_haplotypes.md)
   [`dim(`*`<fmalloc_haplotypes>`*`)`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_haplotypes.md)

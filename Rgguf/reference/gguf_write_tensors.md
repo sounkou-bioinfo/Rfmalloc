@@ -26,10 +26,12 @@ gguf_write_tensors(path, tensors, metadata = list())
 
 - metadata:
 
-  A named list of metadata key-value pairs to write. Each value must be
-  a single (length-1), non-missing string or numeric value; numeric
-  values are written as 64-bit floats (`FLOAT64`). Defaults to
-  [`list()`](https://rdrr.io/r/base/list.html) (no metadata).
+  A named list of metadata key-value pairs to write. Values may be
+  non-missing character vectors or single non-missing numeric values.
+  Character vectors of length other than one are written as GGUF string
+  arrays; numeric values are written as 64-bit floats (`FLOAT64`).
+  Defaults to [`list()`](https://rdrr.io/r/base/list.html) (no
+  metadata).
 
 ## Value
 

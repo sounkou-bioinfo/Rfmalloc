@@ -49,14 +49,33 @@ pure-codec models later.
 
 ``` r
 
-rt <- Rfmalloc::open_fmalloc("work.bin", size_gb = 0.5)    # outputs and KV cache
-model <- rllm_gguf_model("SmolLM2-135M.Q4_K_M.gguf", runtime = rt)
-model
+local({
+  backing <- tempfile(fileext = ".bin")
+  rt <- Rfmalloc::open_fmalloc(backing, mode = "scratch", size_gb = 0.1)
+  on.exit({
+    Rfmalloc::cleanup_fmalloc(rt)
+    unlink(backing)
+  }, add = TRUE)
 
-gen <- rllm_generate(model, charToRaw(
-    "The capital of France is Paris. The capital of Germany is"), n_new = 16L)
-rawToChar(gen$raw)
+  model_path <- system.file(
+    "extdata", "tiny-byte-model.gguf", package = "Rllm", mustWork = TRUE
+  )
+  model <- rllm_gguf_model(model_path, runtime = rt)
+  gen <- rllm_generate(
+    model,
+    charToRaw("The capital of France is Paris. The capital of Germany is"),
+    n_new = 16L,
+    runtime = rt
+  )
+  rawToChar(gen$raw)
+})
+#> [1] "!!!!!!!!!!!!!!!!"
 ```
+
+The bundled model is deliberately tiny and deterministic. It drives the
+real GGUF loader, borrowed weight spans, transformer graph, KV cache,
+generation loop and raw-byte decoder without downloading a model; its
+output is a systems check rather than a language-quality claim.
 
 A recorded run with SmolLM2-135M `Q4_K_M` (30 layers, grouped-query
 attention, a `q5_0`-dominant quantization mix) used a 12-token prompt
@@ -109,16 +128,16 @@ subsequent forward passes move only mutable inputs, cache state and
 logits through Rggml’s backend-neutral transfer interface. The host GGUF
 mapping remains the authoritative storage, while device residency is an
 execution decision rather than another model format. Vulkan also ships
-in Rggml, but Rllm does not yet select it. The rig suite checks
-whole-batch and cached CUDA logits, plain and fmalloc cache slabs, and
-cache handoff in both directions between CPU and CUDA.
+in Rggml, but Rllm does not select it. The rig suite checks whole-batch
+and cached CUDA logits, plain and fmalloc cache slabs, and cache handoff
+in both directions between CPU and CUDA.
 
 Persistent allocation by itself is not the missing acceleration. A
 measured GGML scheduler experiment reduced CUDA decode from 69.7 to 63.7
 tokens/s, and CUDA graph capture reached 62.6 because the attention
 extent and graph properties change at every token. Both experiments were
 removed from the default path. Stable graph shapes and a device-resident
-mutable KV cache are the next execution questions; the storage and GGUF
+mutable KV cache remain open execution questions; the storage and GGUF
 interfaces need no fork for either.
 
 ## Install
@@ -133,5 +152,5 @@ install.packages("Rllm",
 
 or via a GitHub subdir ref:
 `pak::pak("sounkou-bioinfo/Rfmalloc/packages/Rllm")`. The CPU stack
-targets Linux, macOS and Windows; the optional CUDA build is currently
-Unix-like. GPL (\>= 2).
+targets Linux, macOS and Windows; the optional CUDA build is Unix-like.
+GPL (\>= 2).
