@@ -23,8 +23,6 @@ Description: Computes on arrays that do not fit in memory. Vectors, matrices and
     lifecycle management, multiple runtime handles per session, and out-of-core
     reductions and principal components for genomics-scale matrices.
 License: GPL (>= 2)
-Author: Sounkou Mahamane Toure [aut, cre], Kenichi Yasukata [cph] (fmalloc), Wolfram Gloger [cph] (ptmalloc3), Free Software Foundation, Inc. [cph] (selected GNU C Library support files)
-Maintainer: Sounkou Mahamane Toure <sounkoutoure@gmail.com>
 Encoding: UTF-8
 Imports:
     methods

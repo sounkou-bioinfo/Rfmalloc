@@ -12,15 +12,6 @@ Authors@R: c(
     person(given = "Mutsuo", family = "Saito", role = "cph", comment = "Co-author of included SFMT library"),
     person(given = "Makoto", family = "Matsumoto", role = "cph", comment = "Co-author of included SFMT library")
     )
-Author: Sounkou Mahamane Toure [aut, cre], Christopher Chang [cph] (Author
-    of the vendored pgenlib library and plink2 program), Shaun Purcell [cph]
-    (Co-author of the vendored plink2 format-import closure), Eric Biggers
-    [cph] (Author of included libdeflate library), Yann Collet [cph] (Author
-    of included Zstd library), Meta Platforms, Inc. [cph] (Zstd library),
-    Evan Nemerson [cph] (Author of included SIMDe library), Mutsuo Saito
-    [cph] (Co-author of included SFMT library), Makoto Matsumoto [cph]
-    (Co-author of included SFMT library)
-Maintainer: Sounkou Mahamane Toure <sounkoutoure@gmail.com>
 Description: Uses the 'PLINK 2' pgenlib library and its native importers
     (<https://github.com/chrchang/plink-ng>) to ingest PGEN, PLINK 1 BED,
     PED/MAP, TPED/TFAM, VCF/BCF, BGEN, Oxford GEN, HAPS/legend, EIGENSTRAT,

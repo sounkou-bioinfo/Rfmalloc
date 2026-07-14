@@ -52,12 +52,16 @@ as one commit and is validated as one unit.
   in dependency order Rfmalloc, Rggml, Rgguf, Rllm, Rpgen; Rpgen needs only
   Rfmalloc).
 - Focused: `Rscript -e "tinytest::run_test_file('packages/<pkg>/inst/tinytest/<file>.R')"`.
-- Before finishing: `R CMD check --no-manual packages/<pkg>` for every package
-  you touched; CI additionally runs the full-stack integration job.
+- Before finishing: build every package you touched with `R CMD build`, then run
+  `R CMD check --no-manual` on the resulting tarball; CI additionally runs the
+  full-stack integration job. Checking the source directory skips the build
+  step that derives standard metadata from `Authors@R`.
 
 ## Conventions
 - `NAMESPACE` and `man/*.Rd` are roxygen2-generated; edit roxygen comments,
   then `Rscript -e "roxygen2::roxygenise('packages/<pkg>')"`.
+- `DESCRIPTION` uses `Authors@R` as the sole author source. Do not duplicate it
+  with hand-written `Author` or `Maintainer` fields; `R CMD build` derives them.
 - `NEWS.md` per package, newest entries on top; one bullet per user-visible
   change.
 - Tests are tinytest, in `packages/<pkg>/inst/tinytest/`.

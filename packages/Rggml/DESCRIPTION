@@ -7,11 +7,6 @@ Authors@R: c(
     person(given = "The ggml.ai / llama.cpp contributors", role = "cph", comment = "GGML CPU backend contributors"),
     person(given = "Yuri", family = "Baramykov", role = "ctb", comment = "Author of the ggmlR R/CRAN-compliance I/O shim adapted here")
     )
-Author: Sounkou Mahamane Toure [aut, cre], Georgi Gerganov [cph] (Author of
-    the GGML library), The ggml.ai / llama.cpp contributors [cph] (GGML CPU
-    backend contributors), Yuri Baramykov [ctb] (Author of the ggmlR
-    R/CRAN-compliance I/O shim adapted here)
-Maintainer: Sounkou Mahamane Toure <sounkoutoure@gmail.com>
 Description: Vendors the core, official 'GGUF' implementation, and CPU
     backend of the 'GGML' tensor library
     (<https://github.com/ggml-org/ggml>) as a static library and exposes its

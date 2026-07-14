@@ -4,8 +4,6 @@ Version: 0.1.0
 Authors@R:
     person(given = "Sounkou Mahamane", family = "Toure",
            email = "sounkoutoure@gmail.com", role = c("aut", "cre"))
-Author: Sounkou Mahamane Toure [aut, cre]
-Maintainer: Sounkou Mahamane Toure <sounkoutoure@gmail.com>
 Description: The composition layer of the 'Rfmalloc' ecosystem: it registers
     'Rggml' (a vendored 'GGML' build with runtime-SIMD-dispatched quantized
     kernels) as a codec-aware matrix-multiply backend for 'Rfmalloc', so that
