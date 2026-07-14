@@ -58,7 +58,6 @@
 </h2>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/sounkou-bioinfo/Rfmalloc" class="external-link">Rllm</a></span><span class="op">)</span>   <span class="co"># registers + selects the ggml backend</span></span>
-<span><span class="co">#&gt; Rllm: ggml quantized matmul backend registered and active for Rfmalloc typed tensors (disable with rllm_use_ggml(FALSE)).</span></span>
 <span></span>
 <span><span class="va">rt</span> <span class="op">&lt;-</span> <span class="fu">Rfmalloc</span><span class="fu">::</span><span class="fu"><a href="https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/open_fmalloc.html" class="external-link">open_fmalloc</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".bin"</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
@@ -86,16 +85,17 @@
 <span>    <span class="st">"extdata"</span>, <span class="st">"tiny-byte-model.gguf"</span>, package <span class="op">=</span> <span class="st">"Rllm"</span>, mustWork <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span>  <span class="op">)</span></span>
 <span>  <span class="va">model</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rllm_gguf_model.html">rllm_gguf_model</a></span><span class="op">(</span><span class="va">model_path</span>, runtime <span class="op">=</span> <span class="va">rt</span><span class="op">)</span></span>
+<span>  <span class="va">probe</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rawConversion.html" class="external-link">charToRaw</a></span><span class="op">(</span><span class="st">"systems-path probe"</span><span class="op">)</span></span>
 <span>  <span class="va">gen</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rllm_generate.html">rllm_generate</a></span><span class="op">(</span></span>
 <span>    <span class="va">model</span>,</span>
-<span>    <span class="fu"><a href="https://rdrr.io/r/base/rawConversion.html" class="external-link">charToRaw</a></span><span class="op">(</span><span class="st">"The capital of France is Paris. The capital of Germany is"</span><span class="op">)</span>,</span>
+<span>    <span class="va">probe</span>,</span>
 <span>    n_new <span class="op">=</span> <span class="fl">16L</span>,</span>
 <span>    runtime <span class="op">=</span> <span class="va">rt</span></span>
 <span>  <span class="op">)</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/rawConversion.html" class="external-link">rawToChar</a></span><span class="op">(</span><span class="va">gen</span><span class="op">$</span><span class="va">raw</span><span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; [1] "!!!!!!!!!!!!!!!!"</span></span></code></pre></div>
-<p>The bundled model is deliberately tiny and deterministic. It drives the real GGUF loader, borrowed weight spans, transformer graph, KV cache, generation loop and raw-byte decoder without downloading a model; its output is a systems check rather than a language-quality claim.</p>
+<p>The bundled model is deliberately tiny and deterministic. It emits <code>!</code> as a sentinel while driving the real GGUF loader, borrowed weight spans, transformer graph, KV cache, generation loop and raw-byte decoder without downloading a model. Its output is a systems check rather than a language-quality claim.</p>
 <p>A recorded run with SmolLM2-135M <code>Q4_K_M</code> (30 layers, grouped-query attention, a <code>q5_0</code>-dominant quantization mix) used a 12-token prompt and 128 greedy decode tokens. The median of three complete generations was 40.2 tokens/s on CPU and 69.7 tokens/s on the RTX 5050 CUDA path after its one-time weight upload.</p>
 <p><code><a href="reference/rllm_gguf_model.html">rllm_gguf_model()</a></code> reads the hyperparameters and borrows every weight’s exact read-only span. No weight is copied into the Rfmalloc work file. On CPU, <code><a href="reference/rllm_forward.html">rllm_forward()</a></code> points GGML tensors at those bytes while assembling RMSNorm, RoPE, causal grouped-query attention and SwiGLU through Rggml’s C-callables; Rllm links no private GGML copy.</p>
 <p><code><a href="reference/rllm_kv_cache.html">rllm_kv_cache()</a></code> allocates one key and value slab per layer in plain R memory or in fmalloc storage. The latter makes the cache file-backed, evictable and open to a different cache codec without changing the graph. <code><a href="reference/rllm_generate.html">rllm_generate()</a></code> prefills that cache and then performs EOS-aware decoding one token at a time.</p>

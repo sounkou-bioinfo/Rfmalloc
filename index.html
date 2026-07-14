@@ -443,20 +443,21 @@ state require new storage.</p>
 <span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;extdata&quot;</span>, <span class="st">&quot;tiny-byte-model.gguf&quot;</span>, <span class="at">package =</span> <span class="st">&quot;Rllm&quot;</span>, <span class="at">mustWork =</span> <span class="cn">TRUE</span></span>
 <span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>  )</span>
 <span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>  model <span class="ot">&lt;-</span> <span class="fu">rllm_gguf_model</span>(model_path, <span class="at">runtime =</span> rt)</span>
-<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>  gen <span class="ot">&lt;-</span> <span class="fu">rllm_generate</span>(</span>
-<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>    <span class="fu">charToRaw</span>(<span class="st">&quot;The capital of France is Paris. The capital of Germany is&quot;</span>),</span>
-<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>    <span class="at">n_new =</span> <span class="dv">16</span><span class="dt">L</span>,</span>
-<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>    <span class="at">runtime =</span> rt</span>
-<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>  )</span>
-<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rawToChar</span>(gen<span class="sc">$</span>raw)</span>
-<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>})</span>
-<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] &quot;!!!!!!!!!!!!!!!!&quot;</span></span></code></pre></div>
-<p>The bundled model is deliberately tiny and deterministic: it makes
-the evaluated example traverse the real GGUF loader, borrowed weight
-spans, transformer graph, KV cache, generation loop and byte decoder
-without a model download. Its output is a systems check, not a
-language-quality claim.</p>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>  probe <span class="ot">&lt;-</span> <span class="fu">charToRaw</span>(<span class="st">&quot;systems-path probe&quot;</span>)</span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>  gen <span class="ot">&lt;-</span> <span class="fu">rllm_generate</span>(</span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>    model,</span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>    probe,</span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>    <span class="at">n_new =</span> <span class="dv">16</span><span class="dt">L</span>,</span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>    <span class="at">runtime =</span> rt</span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rawToChar</span>(gen<span class="sc">$</span>raw)</span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>})</span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] &quot;!!!!!!!!!!!!!!!!&quot;</span></span></code></pre></div>
+<p>The bundled model is deliberately tiny and deterministic: it emits
+<code>!</code> as a sentinel. The evaluated example traverses the real
+GGUF loader, borrowed weight spans, transformer graph, KV cache,
+generation loop and byte decoder without a model download. Its output is
+a systems check, not a language-quality claim.</p>
 <p>The I/O boundary is bytes, not a hidden theory of text. The tokenizer
 is an edge codec built from GGUF metadata, generation returns raw
 output, and <code>rawToChar()</code> is the caller’s interpretation. On
