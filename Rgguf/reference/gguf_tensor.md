@@ -6,7 +6,7 @@ into a fresh Rfmalloc-backed ALTREP matrix or array of doubles.
 ## Usage
 
 ``` r
-gguf_tensor(x, name, runtime = NULL, as = c("numeric", "native"))
+gguf_tensor(x, name, runtime = NULL, as = c("numeric", "native", "view"))
 ```
 
 ## Arguments
@@ -31,21 +31,23 @@ gguf_tensor(x, name, runtime = NULL, as = c("numeric", "native"))
 - as:
 
   `"numeric"` (default) dequantizes the whole tensor into an fmalloc
-  double matrix/array. `"native"` instead copies the tensor's raw,
-  still-encoded payload into fmalloc storage and returns an
+  double matrix/array. `"native"` copies the tensor's raw, still-encoded
+  payload into fmalloc storage and returns an
   [`Rfmalloc::create_fmalloc_tensor()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_tensor.html)
   typed tensor: it keeps the GGUF storage density (e.g. 4.5 bits/weight
   for `q4_k`) and is decoded in bounded panels only when used in matrix
-  products. Native mode requires a 2-dimensional tensor whose type has a
-  registered Rfmalloc codec.
+  products. `"view"` returns the same typed tensor without copying: it
+  borrows the exact read-only span in the original GGUF mapping and
+  keeps that mapping alive. Native mode requires two dimensions; view
+  mode accepts any rank. Both require a registered Rfmalloc codec.
 
 ## Value
 
 For `as = "numeric"`, an `Rfmalloc`-backed ALTREP matrix (if the tensor
 has 2 dimensions) or array (otherwise) of doubles, with
 [`dim()`](https://rdrr.io/r/base/dim.html) equal to the tensor's GGUF
-dimensions in `c(dim[0], dim[1], ...)` order. For `as = "native"`, an
-`fmalloc_tensor` with the same dims.
+dimensions in `c(dim[0], dim[1], ...)` order. For `as = "native"` or
+`"view"`, an `fmalloc_tensor` with the same dims.
 
 ## Details
 

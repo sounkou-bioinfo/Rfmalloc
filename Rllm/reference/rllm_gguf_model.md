@@ -3,12 +3,10 @@
 Reads the hyperparameters and weights of a llama-architecture 'GGUF'
 file into an `rllm_model` object usable with
 [`rllm_forward()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_forward.md).
-2-d weight tensors are imported with
-`Rgguf::gguf_tensor(as = "native")`: their payloads keep the GGUF
-storage density (still `q4_k`/`f32`/... encoded) in Rfmalloc-backed,
-memory-mapped storage, and the forward pass points GGML tensors at them
-zero-copy. 1-d norm weights are small and are staged as packed `f32`
-buffers.
+Every weight is a borrowed view over its exact read-only span in the
+original GGUF mapping. Quantized and floating-point payloads keep their
+on-disk encoding, and the forward pass points GGML tensors at those
+bytes without copying them into a second backing file.
 
 ## Usage
 
@@ -26,8 +24,9 @@ rllm_gguf_model(path, runtime = NULL, rope_mode = 0L)
 
   Optional
   [`Rfmalloc::open_fmalloc()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/open_fmalloc.html)
-  runtime for the weight payloads; `NULL` uses Rfmalloc's default
-  runtime.
+  runtime attached to the borrowed tensor views. It supplies the
+  allocation context for operations which produce fmalloc results; the
+  weight bytes remain in the GGUF mapping.
 
 - rope_mode:
 

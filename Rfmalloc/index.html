@@ -83,6 +83,17 @@
 <code><a href="reference/fmalloc_tensor.html">as_fmalloc_tensor()</a></code> stores a matrix under a codec - lossless <code>"alp"</code> for decimal-scaled doubles, <code>"sparse"</code> for mostly-zero (single-cell/count) data - and the compressed tensor still participates in the panel-streamed matrix products;</li>
 <li>codecs are a registry (<code><a href="reference/fmalloc_tensor.html">fmalloc_tensor_codecs()</a></code>); downstream packages add their own (Rgguf registers the quantized GGUF formats).</li>
 </ul>
+<p>Genomic record layouts:</p>
+<ul>
+<li>hardcalls (<code>bed</code>), fixed-point dosages, full-precision dosages, and phased haplotypes share one native record-panel transfer context. Sources declare the panel type while Rfmalloc owns allocation, packing, alignment, and the persistent layout;</li>
+<li>phased haplotypes are stored locus-major, with all donor haplotypes for one variant in a contiguous, 64-byte-aligned bit row. This is the traversal used by Li and Stephens HMM kernels such as kalis Forward/Backward.</li>
+</ul>
+<p>Borrowed storage:</p>
+<ul>
+<li>typed tensors may borrow a read-only byte span already owned by another mapping. The view retains its owner, so GGUF weights enter codecs and compute backends without being copied into a second fmalloc file;</li>
+<li>
+<code><a href="reference/fmalloc_storage_advise.html">fmalloc_storage_advise()</a></code> expresses sequential, prefetch, and release intentions over those spans. The policy remains with the graph or algorithm that knows its access phases.</li>
+</ul>
 <p>In-place mutation:</p>
 <ul>
 <li>
@@ -90,7 +101,7 @@
 </ul>
 <p>Native surface:</p>
 <ul>
-<li>explicit <code><a href="reference/destroy_fmalloc_vector.html">destroy_fmalloc_vector()</a></code>, an in-file persistent allocation catalog, runtime/vector introspection, and an installed C header with <code>R_RegisterCCallable()</code> entry points (API version 5), including tensor codec and matmul backend registration for downstream packages.</li>
+<li>explicit <code><a href="reference/destroy_fmalloc_vector.html">destroy_fmalloc_vector()</a></code>, an in-file persistent allocation catalog, runtime/vector introspection, and an installed C header with <code>R_RegisterCCallable()</code> entry points, including tensor codec and matmul backend registration for downstream packages.</li>
 </ul>
 <p>Known base-fallback boundaries:</p>
 <ul>
@@ -150,19 +161,19 @@
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; $integer</span></span>
 <span><span class="co">#&gt; [1] 1 2 3</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $numeric</span></span>
 <span><span class="co">#&gt; [1] 1.1 2.2 3.3</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $raw</span></span>
 <span><span class="co">#&gt; [1] 01 02 03 04</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $complex</span></span>
 <span><span class="co">#&gt; [1] 1+1i 2+2i 3+3i 4+4i</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $character</span></span>
-<span><span class="co">#&gt; [1] "alpha" "beta"  NA     </span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; [1] "alpha" "beta"  NA</span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $list_first</span></span>
 <span><span class="co">#&gt; [1] 1 2</span></span></code></pre></div>
 <p>For multiple backing files or explicit lifetime management, prefer runtime handles returned by <code><a href="reference/open_fmalloc.html">open_fmalloc()</a></code>:</p>
@@ -221,19 +232,19 @@
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; $a_head</span></span>
 <span><span class="co">#&gt; [1] 1 2 3 4 5</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $b_head</span></span>
 <span><span class="co">#&gt; [1]  6  7  8  9 10</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $sum_head</span></span>
 <span><span class="co">#&gt; [1]  7  9 11 13 15</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $sum_length</span></span>
 <span><span class="co">#&gt; [1] 10000000</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $sum_managed</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $allocations_delta</span></span>
 <span><span class="co">#&gt; [1] 3</span></span></code></pre></div>
 </div>
@@ -272,53 +283,53 @@
 <span><span class="co">#&gt; $add</span></span>
 <span><span class="co">#&gt; [1] 11 22 33 NA 55</span></span>
 <span><span class="co">#&gt; attr(,"class")</span></span>
-<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "integer"       </span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "integer"</span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $sub</span></span>
 <span><span class="co">#&gt; [1]  9 18 27 NA 45</span></span>
 <span><span class="co">#&gt; attr(,"class")</span></span>
-<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "integer"       </span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "integer"</span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $mul</span></span>
 <span><span class="co">#&gt; [1]  10  40  90  NA 250</span></span>
 <span><span class="co">#&gt; attr(,"class")</span></span>
-<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "integer"       </span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "integer"</span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $div</span></span>
 <span><span class="co">#&gt; [1] 10 10 10 NA 10</span></span>
 <span><span class="co">#&gt; attr(,"class")</span></span>
-<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "numeric"       </span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "numeric"</span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $idiv</span></span>
 <span><span class="co">#&gt; [1] 10 10 10 NA 10</span></span>
 <span><span class="co">#&gt; attr(,"class")</span></span>
-<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "integer"       </span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "integer"</span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $mod</span></span>
 <span><span class="co">#&gt; [1]  0  0  0 NA  0</span></span>
 <span><span class="co">#&gt; attr(,"class")</span></span>
-<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "integer"       </span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "integer"</span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $pow</span></span>
 <span><span class="co">#&gt; [1]  100  400  900   NA 2500</span></span>
 <span><span class="co">#&gt; attr(,"class")</span></span>
-<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "numeric"       </span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "numeric"</span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $cmp_eq</span></span>
 <span><span class="co">#&gt; [1] FALSE FALSE FALSE    NA FALSE</span></span>
 <span><span class="co">#&gt; attr(,"class")</span></span>
-<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "logical"       </span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "logical"</span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $cmp_lt</span></span>
 <span><span class="co">#&gt; [1]  TRUE FALSE FALSE    NA FALSE</span></span>
 <span><span class="co">#&gt; attr(,"class")</span></span>
-<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "logical"       </span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "logical"</span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $unary_neg</span></span>
 <span><span class="co">#&gt; [1] -10 -20 -30  NA -50</span></span>
 <span><span class="co">#&gt; attr(,"class")</span></span>
-<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "integer"       </span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "integer"</span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $unary_not</span></span>
 <span><span class="co">#&gt; [1]  TRUE  TRUE FALSE    NA FALSE</span></span>
 <span><span class="co">#&gt; attr(,"class")</span></span>
@@ -348,28 +359,28 @@
 <span><span class="co">#&gt; $fm_plus_scalar</span></span>
 <span><span class="co">#&gt; [1] 11.5 12.5 13.5 14.5</span></span>
 <span><span class="co">#&gt; attr(,"class")</span></span>
-<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "numeric"       </span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "numeric"</span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $scalar_plus_fm</span></span>
 <span><span class="co">#&gt; [1] 11.5 12.5 13.5 14.5</span></span>
 <span><span class="co">#&gt; attr(,"class")</span></span>
-<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "numeric"       </span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "numeric"</span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $fm_plus_base</span></span>
 <span><span class="co">#&gt; [1] 101.5 202.5 303.5 404.5</span></span>
 <span><span class="co">#&gt; attr(,"class")</span></span>
-<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "numeric"       </span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "numeric"</span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $base_plus_fm</span></span>
 <span><span class="co">#&gt; [1] 2.5 4.5 6.5 8.5</span></span>
 <span><span class="co">#&gt; attr(,"class")</span></span>
-<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "numeric"       </span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "numeric"</span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $recycling_ok</span></span>
 <span><span class="co">#&gt; [1] 11.5 22.5 13.5 24.5</span></span>
 <span><span class="co">#&gt; attr(,"class")</span></span>
-<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "numeric"       </span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; [1] "fmalloc_vector" "fmalloc"        "numeric"</span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $logical_op</span></span>
 <span><span class="co">#&gt; [1] FALSE  TRUE  TRUE  TRUE</span></span>
 <span><span class="co">#&gt; attr(,"class")</span></span>
@@ -403,10 +414,10 @@
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; $dims</span></span>
 <span><span class="co">#&gt; [1] 200  30</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $fmalloc_backed</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $matches_base</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
 </div>
@@ -443,17 +454,17 @@
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; &lt;fmalloc_tensor alp [20000 x 10], 279720 payload bytes&gt;</span></span>
 <span><span class="co">#&gt; $codecs</span></span>
-<span><span class="co">#&gt; [1] "f64"    "f32"    "f16"    "bf16"   "alp"    "sparse"</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; [1] "f64"    "f32"    "f16"    "bf16"   "alp"    "sparse" "bed"    "dosage"</span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $compression_ratio</span></span>
 <span><span class="co">#&gt; [1] 0.174825</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $lossless</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $product_fmalloc_backed</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $product_matches_base</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
 <p>The <code>"sparse"</code> codec stores only the nonzeros of each chunk, for mostly-zero data such as single-cell counts - it compresses heavily and still multiplies through the panel engine:</p>
@@ -481,13 +492,13 @@
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; $dtype</span></span>
 <span><span class="co">#&gt; [1] "sparse"</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $compression_ratio</span></span>
 <span><span class="co">#&gt; [1] 0.1522</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $lossless</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $product_matches_base</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
 </div>
@@ -523,10 +534,10 @@
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; $gram_matches_base</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $gram_is_fmalloc_backed</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $auto_routed_matches</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
 </div>
@@ -552,7 +563,7 @@
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; $x</span></span>
 <span><span class="co">#&gt; [1] 22 38 22 38 22 22</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $alias_y</span></span>
 <span><span class="co">#&gt; [1] 22 38 22 38 22 22</span></span></code></pre></div>
 </div>
@@ -599,7 +610,7 @@
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; $destroy_rejected_with_parent</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $destroy_succeeded_after_unset</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
 <p>In persistent mode, destroying with default semantics retains payload bytes so the recorded on-disk allocation remains recoverable by normal <code><a href="https://rdrr.io/r/base/serialize.html" class="external-link">serialize()</a></code> flows. Use <code>destroy_fmalloc_vector(x, unsafe = TRUE)</code> to reclaim persistent payload memory and mark the catalog entry as non-recoverable.</p>
@@ -634,7 +645,7 @@
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; $keep_recovered_ok</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $drop_recover_fails</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
 </div>
@@ -681,14 +692,14 @@
 <span>  <span class="va">inspect_vec</span><span class="op">[</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fl">1</span><span class="op">:</span><span class="fl">4</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/Internal.html" class="external-link">.Internal</a></span><span class="op">(</span><span class="fu">inspect</span><span class="op">(</span><span class="va">inspect_vec</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
-<span><span class="co">#&gt; @61b0e667a468 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x7f1b0d4023e8 mode=persistent runtime=open offset=9192 uuid=2e66609e226ea0edbc65a25c831e8d37 file=/tmp/Rtmp3rxYYx/file155444f317dea.bin</span></span>
+<span><span class="co">#&gt; @5f9cd7135778 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x7578d90023e8 mode=persistent runtime=open offset=9192 uuid=40cd4dfc3dc27c04a2658d6de13be5ef file=/tmp/RtmpmwFJ51/file39e868326cc9ac.bin</span></span>
 <span><span class="co">#&gt; ATTRIB:</span></span>
-<span><span class="co">#&gt;   @61b0e66794a8 02 LISTSXP g0c0 [REF(1)] </span></span>
-<span><span class="co">#&gt;     TAG: @61b0e20c7e40 01 SYMSXP g1c0 [MARK,REF(38399),LCK,gp=0x6000] "class" (has value)</span></span>
-<span><span class="co">#&gt;     @61b0e7224e98 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)</span></span>
-<span><span class="co">#&gt;       @61b0e75f28c8 09 CHARSXP g0c2 [MARK,REF(58),gp=0x60] [ASCII] [cached] "fmalloc_vector"</span></span>
-<span><span class="co">#&gt;       @61b0e6fa2cc0 09 CHARSXP g0c1 [MARK,REF(210),gp=0x60] [ASCII] [cached] "fmalloc"</span></span>
-<span><span class="co">#&gt;       @61b0e20fadf8 09 CHARSXP g1c1 [MARK,REF(623),gp=0x61] [ASCII] [cached] "integer"</span></span></code></pre></div>
+<span><span class="co">#&gt;   @5f9cd71385e8 02 LISTSXP g0c0 [REF(1)]</span></span>
+<span><span class="co">#&gt;     TAG: @5f9cd2b50550 01 SYMSXP g1c0 [MARK,REF(38567),LCK,gp=0x6000] "class" (has value)</span></span>
+<span><span class="co">#&gt;     @5f9cd7c36948 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)</span></span>
+<span><span class="co">#&gt;       @5f9cd81150f8 09 CHARSXP g0c2 [MARK,REF(58),gp=0x60] [ASCII] [cached] "fmalloc_vector"</span></span>
+<span><span class="co">#&gt;       @5f9cd7a972c8 09 CHARSXP g0c1 [MARK,REF(210),gp=0x60] [ASCII] [cached] "fmalloc"</span></span>
+<span><span class="co">#&gt;       @5f9cd2b83508 09 CHARSXP g1c1 [MARK,REF(623),gp=0x61] [ASCII] [cached] "integer"</span></span></code></pre></div>
 <p><code>inspect()</code> output is an internal R diagnostic, so exact formatting can vary between R versions. The <code>fmalloc_altrep ...</code> line comes from Rfmalloc’s ALTREP <code>Inspect</code> method.</p>
 </div>
 <div class="section level2">
@@ -718,7 +729,7 @@
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; $chars</span></span>
 <span><span class="co">#&gt; [1] "one"   NA      "three"</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $from_integer</span></span>
 <span><span class="co">#&gt; [1] "1" "2" "3"</span></span></code></pre></div>
 </div>
@@ -764,13 +775,13 @@
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; $matrix_dims</span></span>
 <span><span class="co">#&gt; [1] 2 3</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $metadata_shares_payload</span></span>
 <span><span class="co">#&gt; [1] 13 88</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $array_dims</span></span>
 <span><span class="co">#&gt; [1] 2 1 3</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $df_columns</span></span>
 <span><span class="co">#&gt; [1] "a" "b"</span></span></code></pre></div>
 </div>
@@ -822,19 +833,19 @@
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; $default_row_sums_in_memory</span></span>
 <span><span class="co">#&gt; [1] FALSE</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $compact_row_sums_filebacked</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $default_range_in_memory</span></span>
 <span><span class="co">#&gt; [1] FALSE</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $compact_range_filebacked</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $rowSums_values</span></span>
 <span><span class="co">#&gt; [1] 28 32 36 40</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $expected_rowSums</span></span>
 <span><span class="co">#&gt; [1] 28 32 36 40</span></span></code></pre></div>
 </div>
@@ -875,7 +886,7 @@
 <span><span class="co">#&gt;   vector value</span></span>
 <span><span class="co">#&gt; 1  vec_a   101</span></span>
 <span><span class="co">#&gt; 2  vec_b   202</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $vec_a_after_cleanup</span></span>
 <span><span class="co">#&gt; [1] 101</span></span></code></pre></div>
 <p>Calling <code>cleanup_fmalloc(rt_a)</code> marks <code>rt_a</code> closed. If vectors from <code>rt_a</code> are still reachable, the native mapping is kept alive until those vectors are garbage-collected. This is implemented with a native live-vector count and an ALTREP-held external pointer for each fmalloc-backed vector; no user-visible attribute is added to the vector.</p>
@@ -927,10 +938,10 @@
 <span><span class="co">#&gt;   record_offset generation      type length</span></span>
 <span><span class="co">#&gt; 1          9440          2 character      3</span></span>
 <span><span class="co">#&gt; 2          9224          1   integer      4</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $integers</span></span>
 <span><span class="co">#&gt; [1] 101 102 103 104</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $characters</span></span>
 <span><span class="co">#&gt; [1] "alpha" NA      "gamma"</span></span></code></pre></div>
 </div>
@@ -963,19 +974,19 @@
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; $mode</span></span>
 <span><span class="co">#&gt; [1] "persistent"</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $pre_records</span></span>
 <span><span class="co">#&gt; [1] 2</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $pre_committed</span></span>
 <span><span class="co">#&gt; [1] 2</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $post_records</span></span>
 <span><span class="co">#&gt; [1] 2</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $post_tombstones</span></span>
 <span><span class="co">#&gt; [1] 1</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $compaction_implemented</span></span>
 <span><span class="co">#&gt; [1] FALSE</span></span></code></pre></div>
 <p>Scratch runtimes use ordinary R serialization instead. Their serialized values do not depend on reopening the scratch backing file.</p>
@@ -1029,7 +1040,7 @@
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; $same_runtime_child</span></span>
 <span><span class="co">#&gt; [1] 1 2</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $rejected_non_fmalloc_payload</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
 <p>Nested fmalloc lists recover recursively when serialized and unserialized from a persistent backing file.</p>
@@ -1065,7 +1076,7 @@
 <span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; $recovered_nested</span></span>
 <span><span class="co">#&gt; [1] 1 2</span></span>
-<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;</span></span>
 <span><span class="co">#&gt; $recovered_labels</span></span>
 <span><span class="co">#&gt; [1] "alpha" "beta"</span></span></code></pre></div>
 <p>Cross-runtime insertion is also rejected.</p>
@@ -1162,20 +1173,20 @@
 <span><span class="co">#&gt; # A tibble: 8 × 5</span></span>
 <span><span class="co">#&gt;   expression               median `itr/sec` mem_alloc `gc/sec`</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt;             &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;    &lt;dbl&gt;</span></span>
-<span><span class="co">#&gt; 1 base_sequential_sum     38.74µs    25035.        0B        0</span></span>
-<span><span class="co">#&gt; 2 fmalloc_sequential_sum  47.35µs    20462.        0B        0</span></span>
-<span><span class="co">#&gt; 3 base_scalar_read        36.99µs    24770.        0B        0</span></span>
-<span><span class="co">#&gt; 4 fmalloc_scalar_read      1.02ms      953.   24.55KB        0</span></span>
-<span><span class="co">#&gt; 5 base_subset_copy         4.82µs   189354.    7.86KB        0</span></span>
-<span><span class="co">#&gt; 6 fmalloc_subset_copy     21.93µs    39509.        0B        0</span></span>
-<span><span class="co">#&gt; 7 base_indexed_write      27.04µs    35321.  390.67KB        0</span></span>
-<span><span class="co">#&gt; 8 fmalloc_indexed_write  206.74µs     4782.        0B        0</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 base_sequential_sum     40.84µs    23444.        0B        0</span></span>
+<span><span class="co">#&gt; 2 fmalloc_sequential_sum   52.2µs    19566.        0B        0</span></span>
+<span><span class="co">#&gt; 3 base_scalar_read        34.56µs    27289.   24.55KB        0</span></span>
+<span><span class="co">#&gt; 4 fmalloc_scalar_read    772.05µs     1292.        0B        0</span></span>
+<span><span class="co">#&gt; 5 base_subset_copy         3.55µs   246030.    7.86KB        0</span></span>
+<span><span class="co">#&gt; 6 fmalloc_subset_copy     19.16µs    45433.        0B        0</span></span>
+<span><span class="co">#&gt; 7 base_indexed_write      27.63µs    34469.  390.67KB        0</span></span>
+<span><span class="co">#&gt; 8 fmalloc_indexed_write  189.24µs     5222.        0B        0</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="native-c-api-for-other-packages">Native C API for Other Packages<a class="anchor" aria-label="anchor" href="#native-c-api-for-other-packages"></a>
 </h2>
 <p>Rfmalloc installs <code>inst/include/Rfmalloc.h</code> and registers C-callable entry points with <code>R_RegisterCCallable()</code>. Downstream packages can add Rfmalloc to <code>LinkingTo</code> and <code>Imports</code>, include the header, and use the inline wrappers.</p>
-<p>The current native surface (API version 5) exposes runtime open/cleanup, vector creation, default-runtime lookup and synchronization, catalog listing, runtime/vector introspection, vector destruction, an API-version query, and the two extension registries: <code>Rfmalloc_register_tensor_codec</code> (plug an element encoding into the panel-streamed matrix products - <a href="https://github.com/sounkou-bioinfo/Rgguf" class="external-link">Rgguf</a> uses this for the quantized GGUF formats) and <code>Rfmalloc_register_matmul_backend</code> (plug a GEMM kernel behind the matrix products). Returned <code>SEXP</code> objects follow normal R API ownership rules.</p>
+<p>The native surface exposes runtime open/cleanup, vector creation, default-runtime lookup and synchronization, catalog listing, runtime/vector introspection, vector destruction, typed tensor access, the record-panel transfer context, and two extension registries: <code>Rfmalloc_register_tensor_codec</code> (plug an element encoding into the panel-streamed matrix products - <a href="https://github.com/sounkou-bioinfo/Rgguf" class="external-link">Rgguf</a> uses this for the quantized GGUF formats) and <code>Rfmalloc_register_matmul_backend</code> (plug a GEMM kernel behind the matrix products). Returned <code>SEXP</code> objects follow normal R API ownership rules.</p>
 </div>
 <div class="section level2">
 <h2 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a>

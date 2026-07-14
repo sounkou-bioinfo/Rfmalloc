@@ -432,16 +432,17 @@ GGUF metadata - text is the caller’s interpretation,
 <code>rawToChar()</code>):</p>
 <div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(Rllm)</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>rt <span class="ot">&lt;-</span> Rfmalloc<span class="sc">::</span><span class="fu">open_fmalloc</span>(<span class="st">&quot;weights.bin&quot;</span>, <span class="at">size_gb =</span> <span class="dv">2</span>)  <span class="co"># the memory-mapped store</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>rt <span class="ot">&lt;-</span> Rfmalloc<span class="sc">::</span><span class="fu">open_fmalloc</span>(<span class="st">&quot;rllm-work.bin&quot;</span>, <span class="at">size_gb =</span> <span class="dv">2</span>)</span>
 <span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>model <span class="ot">&lt;-</span> <span class="fu">rllm_gguf_model</span>(<span class="st">&quot;SmolLM2-135M.Q4_K_M.gguf&quot;</span>, <span class="at">runtime =</span> rt)</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Weights land in that mmap&#39;d file still quantized (q4_k/q5_0/q6_k/q8_0): the</span></span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="co"># import copies the raw GGUF blocks over without decoding them. From then on the</span></span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="co"># forward pass points GGML tensors straight at those payloads, zero-copy.</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Every weight borrows its exact read-only span in the original GGUF mapping.</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="co"># The encoded q4_k/q5_0/q6_k/q8_0 bytes are neither decoded nor copied into a</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="co"># second backing file, and the forward pass points GGML tensors at them directly.</span></span>
 <span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>gen <span class="ot">&lt;-</span> <span class="fu">rllm_generate</span>(model, <span class="fu">charToRaw</span>(</span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;The capital of France is Paris. The capital of Germany is&quot;</span>), <span class="at">n_new =</span> <span class="dv">16</span><span class="dt">L</span>)</span>
-<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="fu">rawToChar</span>(gen<span class="sc">$</span>raw)</span>
-<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] &quot; Berlin. The capital of Italy is Rome. The capital of Spain is Madrid.&quot;</span></span></code></pre></div>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;The capital of France is Paris. The capital of Germany is&quot;</span>), <span class="at">n_new =</span> <span class="dv">16</span><span class="dt">L</span>,</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">runtime =</span> rt) <span class="co"># the optional KV cache, not the weights, uses this store</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="fu">rawToChar</span>(gen<span class="sc">$</span>raw)</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] &quot; Berlin. The capital of Italy is Rome. The capital of Spain is Madrid.&quot;</span></span></code></pre></div>
 <p>That is a real recorded run (SmolLM2-135M <code>Q4_K_M</code>, 30
 layers, grouped-query attention): ~16 tokens/s CPU decode with the KV
 cache, 8.5× over cache-less re-forwards, and - checked against a pure-R
@@ -480,7 +481,7 @@ is backend agnostic, so CUDA reuses it; what remains is vendoring
 <code>nvcc</code> rules to the build.</li>
 </ul>
 <h2 id="the-packages">The packages</h2>
-<p>Five packages, one stack. Each links to its reference documentation;
+<p>Six packages, one stack. Each links to its reference documentation;
 the sources live under <a
 href="https://github.com/sounkou-bioinfo/Rfmalloc/tree/main/packages"><code>packages/</code></a>
 in this repository.</p>
@@ -504,16 +505,16 @@ fused standardization</td>
 <tr>
 <td><a
 href="https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/"><strong>Rgguf</strong></a></td>
-<td>GGUF model files: metadata, tensor directory, dequantized or
-<strong>native (still-quantized)</strong> imports into fmalloc
-storage</td>
+<td>GGUF model files through GGML’s official parser: metadata, tensor
+directory, explicit decoded copies, encoded copies, or borrowed
+read-only tensor views</td>
 </tr>
 <tr>
 <td><a
 href="https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/"><strong>Rggml</strong></a></td>
-<td>compute carrier: vendored GGML with a BLAS backend (R’s own BLAS via
-a <code>cblas</code>→Fortran shim) and runtime-SIMD-dispatched quantized
-kernels</td>
+<td>compute and format authority: vendored GGML kernels and official
+GGUF implementation, with BLAS and runtime-SIMD-dispatched quantized
+backends</td>
 </tr>
 <tr>
 <td><a
@@ -525,9 +526,15 @@ byte-level generation</td>
 <tr>
 <td><a
 href="https://github.com/sounkou-bioinfo/Rfmalloc/tree/main/packages/Rpgen"><strong>Rpgen</strong></a></td>
-<td>genomics I/O: a native PLINK2 <code>.pgen</code> reader in C
-(vendored pgenlib, GPL-3) exposing the C-callable API pgenlibr lacks,
-the on-disk source the genotype codecs pack from</td>
+<td>genomics I/O: bounded ingestion from PGEN, BED, PED/MAP, TPED/TFAM,
+BGEN, VCF/BCF, GEN, HAPS/legend, EIGENSTRAT, and legacy dosage into
+hardcall, dosage, haplotype, or dense stores</td>
+</tr>
+<tr>
+<td><a
+href="https://github.com/sounkou-bioinfo/Rfmalloc/tree/main/packages/RfmallocStatgen"><strong>RfmallocStatgen</strong></a></td>
+<td>statistical genetics over those stores: streamed regression/PCA,
+banded LD, LDpred2, and matrix-form colocalisation</td>
 </tr>
 </tbody>
 </table>
@@ -538,12 +545,13 @@ href="https://sounkou-bioinfo.r-universe.dev">r-universe</a>:</p>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">repos =</span> <span class="fu">c</span>(<span class="st">&quot;https://sounkou-bioinfo.r-universe.dev&quot;</span>, <span class="fu">getOption</span>(<span class="st">&quot;repos&quot;</span>)))</span></code></pre></div>
 <p>or a GitHub subdir ref:
 <code>pak::pak("sounkou-bioinfo/Rfmalloc/packages/Rllm")</code>.</p>
-<p>All five packages target Linux, macOS and Windows (Rtools), and all
-five are verified on ARM in CI: Apple Silicon and Linux aarch64. On
-Windows, Rgguf’s vendored GGUF parser maps files through a small
-<code>CreateFileMapping</code> shim in place of <code>mmap</code>, and
-Rpgen’s vendored pgenlib builds with the same <code>Makevars.win</code>
-that carries pgenlibr on CRAN.</p>
+<p>All six packages target Linux, macOS and Windows (Rtools), and all
+six are verified on ARM in CI: Apple Silicon and Linux aarch64. On
+Windows, Rgguf maps the tensor bytes through a small
+<code>CreateFileMapping</code> shim in place of <code>mmap</code>, while
+Rggml remains the official parser authority. Rpgen’s vendored pgenlib
+builds with the same <code>Makevars.win</code> pattern that carries
+pgenlibr on CRAN.</p>
 <h2 id="correctness-discipline">Correctness discipline</h2>
 <p>Every quantized codec decoder is pinned
 <strong>bit-identical</strong> to GGML’s reference
@@ -558,7 +566,8 @@ lossless codecs round-trip exactly. The integration CI job installs the
 whole stack and runs every package’s test suite against it
 (<code>tests/integration.R</code>).</p>
 <h2 id="layout--provenance">Layout &amp; provenance</h2>
-<pre><code>packages/    the four R packages (independent installable units)
+<pre><code>packages/    the six R packages (independent installable units)
+experiments/ falsifiable probes of storage and compute bets
 tests/       cross-package integration entry points (run in CI)
 tools/       fixture generators and shared scripts</code></pre>
 <p>The vendored GGML is currently <strong>v0.9.5</strong> (via the
@@ -574,8 +583,11 @@ update policy.</p>
 href="https://github.com/sounkou-bioinfo/RsimdDispatch">RsimdDispatch</a>
 (the runtime-SIMD staging pattern Rggml adopts).</p>
 <h2 id="license">License</h2>
-<p>GPL (&gt;= 2). Vendored third-party components (fmalloc, gguflib,
-GGML via ggmlR) keep their upstream licenses; see each package’s
+<p>The stack is GPL (&gt;= 2). Rpgen is GPL-3 because it combines
+PLINK2’s GPL-3 import closure with LGPL (&gt;= 3) pgenlib, and
+RfmallocStatgen is GPL-3 because its pinned PCAone workhorse is GPL-3.
+Vendored third-party components (fmalloc, GGML, pgenlib, PCAone, and
+ALP) keep their upstream licenses; see each package’s
 <code>inst/COPYRIGHTS</code>.</p>
 </body>
 </html>

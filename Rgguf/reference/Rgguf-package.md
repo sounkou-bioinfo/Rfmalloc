@@ -1,10 +1,11 @@
-# Rgguf: Read 'GGUF' Model Files into 'Rfmalloc'-Backed Arrays
+# Rgguf: Official GGUF parsing and typed storage views
 
 Rgguf reads 'GGUF' model files, the file format used by the 'llama.cpp'
 project to store large language model tensors and metadata, and exposes
-their tensors as Rfmalloc-backed, file-backed ALTREP matrices and
-arrays. Quantized tensor types supported by the vendored 'gguflib'
-parser are dequantized on demand as they are read.
+their tensors as decoded Rfmalloc arrays, owned native-codec copies, or
+borrowed read-only views. Parsing, writing, and quantized decoding use
+the official GGUF and type-traits implementation carried by the sibling
+Rggml package.
 
 ## Main Functions
 
@@ -22,11 +23,11 @@ parser are dequantized on demand as they are read.
 
 - [`gguf_tensor`](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/reference/gguf_tensor.md):
 
-  Read and dequantize a single tensor into an Rfmalloc-backed array.
+  Read, copy, or borrow one tensor.
 
 - [`gguf_import`](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/reference/gguf_import.md):
 
-  Read some or all tensors into a named list of Rfmalloc-backed arrays.
+  Apply the same storage choice to several tensors.
 
 - [`gguf_write_tensors`](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/reference/gguf_write_tensors.md):
 
@@ -42,26 +43,14 @@ Rfmalloc's full `Ops`/matrix-product dispatch already working. Native
 code only ever fills that destination in place (dequantizing as it
 goes); it never allocates R vectors of tensor size itself.
 
-## Known Limitations
+## Storage
 
-- Not every GGUF tensor type is dequantizable: the vendored 'gguflib'
-  parser implements dequantization for `f32`, `f16`, `bf16`, `f64`, the
-  plain integer types, and the `q8_0`, `q4_0`, `q4_1`, `q2_k`, `q4_k`,
-  and `q6_k` quantized block formats. Other quantized formats (e.g.
-  `q5_0`, `q5_1`, `q3_k`, `q5_k`, `q8_k`, and the `iq*` formats) are not
-  supported and
-  [`gguf_tensor`](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/reference/gguf_tensor.md)
-  errors clearly for them.
+- GGUF files are mapped read-only. Metadata and tensor geometry are
+  parsed once by Rggml's official GGUF implementation.
 
-- The vendored 'gguflib' parser memory-maps GGUF files read/write, so
-  [`gguf_open`](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/reference/gguf_open.md)
-  requires the file to be writable even when only reading tensors from
-  it.
-
-- Dequantizing a quantized tensor type currently goes through an
-  intermediate `malloc()`'d float buffer (freed immediately after
-  widening to double); a future version could dequantize block-by-block
-  directly into the destination.
+- Numeric import decodes through GGML in bounded chunks into the fmalloc
+  destination. Native import copies encoded bytes into owned fmalloc
+  storage. View import borrows the original mapped span.
 
 ## See also
 
@@ -76,10 +65,3 @@ Useful links:
 ## Author
 
 **Maintainer**: Sounkou Mahamane Toure <sounkoutoure@gmail.com>
-
-Other contributors:
-
-- Salvatore Sanfilippo (gguf-tools/gguflib) \[copyright holder\]
-
-- Georgi Gerganov (GGUF format enums/structures adapted from ggml)
-  \[copyright holder\]

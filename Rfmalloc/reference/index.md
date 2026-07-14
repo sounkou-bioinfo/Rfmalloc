@@ -53,6 +53,7 @@
 - [`fmalloc_hap_materialize()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_hap_materialize.md)
   : Materialize a bit-packed haplotype store into a 0/1 matrix
 - [`fmalloc_haplotypes()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_haplotypes.md)
+  [`create_fmalloc_haplotypes()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_haplotypes.md)
   [`dim(`*`<fmalloc_haplotypes>`*`)`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_haplotypes.md)
   [`print(`*`<fmalloc_haplotypes>`*`)`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_haplotypes.md)
   : Phased haplotypes as a 1-bit fmalloc store
@@ -83,6 +84,8 @@
   [`rowMeans()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_reduction_methods.md)
   [`colMeans()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_reduction_methods.md)
   : Matrix reduction helpers for fmalloc-backed matrices
+- [`fmalloc_storage_advise()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_storage_advise.md)
+  : Give the pager an access hint for typed storage
 - [`fmalloc_sync()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_sync.md)
   : Flush an fmalloc runtime's backing store to disk
 - [`fmalloc_tensor_codecs()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_tensor.md)

@@ -7,7 +7,8 @@ by
 [`gguf_tensor()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/reference/gguf_tensor.md),
 and
 [`gguf_import()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/reference/gguf_import.md).
-The file is memory-mapped by the vendored 'gguflib' parser and unmapped
+Metadata and the tensor directory are parsed by Rggml's official GGUF
+implementation. Tensor bytes are mapped read-only and unmapped
 automatically when the returned object is garbage collected, or earlier
 if you call
 [`gguf_import()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/reference/gguf_import.md)/friends
@@ -30,13 +31,6 @@ gguf_open(path)
 
 An object of class `"gguf_ctx"`: an external pointer to the underlying
 parser context, with a finalizer that closes it.
-
-## Details
-
-The vendored parser memory-maps the file read/write
-(`mmap(..., PROT_READ | PROT_WRITE, MAP_SHARED, ...)`), so `path` must
-point to a *writable* file even if you only intend to read tensors from
-it.
 
 ## Examples
 

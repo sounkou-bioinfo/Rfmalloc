@@ -1,15 +1,14 @@
 # Rggml
 
-Rggml is a **carrier package**: it vendors the CPU backend of the
-[GGML](https://github.com/ggml-org/ggml) tensor library as a static
-library, installs its headers, and exposes GGML’s core tensor-context
-and matrix-multiply compute path through `R_RegisterCCallable()`
-C-callable entry points. It is **not** a modeling or ops API - the only
-R-level surface is
-[`ggml_version()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/reference/ggml_version.md)
-and an internal smoke-test helper. The point of the package is for
-*other* R packages to link against it and drive GGML tensor math from
-their own C/C++ code, without each vendoring GGML themselves.
+Rggml is a low-level **carrier package** for
+[GGML](https://github.com/ggml-org/ggml). It vendors the core, CPU and
+BLAS backends, optional Vulkan backend, and official GGUF implementation
+as one generated static library. It exposes them through
+`R_RegisterCCallable()` so sibling packages can build tensor graphs,
+inspect GGUF files, and compute without separately vendoring or linking
+GGML. Its small R surface provides diagnostics and direct matrix
+multiplication; model composition belongs in Rllm and GGUF’s R-facing
+storage integration belongs in Rgguf.
 
 ``` r
 
@@ -20,38 +19,34 @@ ggml_version()
 
 ## What’s vendored
 
-A CPU-only, architecture-generic subset of GGML (~5,100 lines across ~35
-vendored `.c`/`.cpp`/`.h` files, see `inst/COPYRIGHTS` for the exact
-file list and provenance): tensor/context/graph core, the backend
-abstraction, tensor-level quantize/dequantize (including K-quants such
-as `Q4_K`), the CPU backend’s compute kernels, and the **BLAS backend**.
+A generated, pinned subset of GGML: tensor/context/graph core, the
+official `gguf.cpp` reader and writer, tensor-level quantize/dequantize,
+CPU kernels, the **BLAS backend**, and the opt-in Vulkan source and
+shaders. See `inst/COPYRIGHTS` and `tools/vendor-ggml/PROVENANCE.md` for
+the exact recipe.
 
-The CPU kernels are built with `-DGGML_CPU_GENERIC` (the portable
-scalar/reference path - no `-march` SIMD flags, no OpenMP, no
-hand-written x86 SIMD kernel files). But dense matrix products do
-**not** run scalar: GGML’s BLAS backend (`-DGGML_USE_BLAS`) offloads F32
-`mul_mat` to whatever BLAS the R build links against (reference
-`libRblas`, OpenBLAS, MKL, Accelerate, …) - BLAS is universal in R, so
-this needs no extra system dependency. GGML’s BLAS backend is written
-against the C `cblas_sgemm` interface, which R does *not* guarantee (R
-guarantees only the Fortran `sgemm_`); Rggml bridges the gap with a
-small portable shim (`inst/ggml/cblas.h` + `rggml_cblas.c`) that
-forwards `cblas_sgemm` to Fortran `sgemm_` via R’s `F77_NAME()`
-convention, linking `$(BLAS_LIBS) $(FLIBS)`.
+Dense matrix products do **not** run scalar: GGML’s BLAS backend
+(`-DGGML_USE_BLAS`) offloads F32 `mul_mat` to whatever BLAS the R build
+links against (reference `libRblas`, OpenBLAS, MKL, Accelerate, …) -
+BLAS is universal in R, so this needs no extra system dependency. GGML’s
+BLAS backend is written against the C `cblas_sgemm` interface, which R
+does *not* guarantee (R guarantees only the Fortran `sgemm_`); Rggml
+bridges the gap with a small portable shim (`inst/ggml/cblas.h` +
+`rggml_cblas.c`) that forwards `cblas_sgemm` to Fortran `sgemm_` via R’s
+`F77_NAME()` convention, linking `$(BLAS_LIBS) $(FLIBS)`.
 
-And the quantized dequant-dot path that BLAS cannot cover is **not**
-scalar either: the hot `q4_K x q8_K` vec-dot is compiled by `configure`
-into ISA-specific variants - `-mavx2 -mfma -O3` on x86 (including Intel
-macOS) and `-O3` NEON on aarch64 (Apple Silicon, ARM Linux/Graviton,
-Windows-on-ARM) - and a CPUID dispatcher (`tools/simd/`) picks the best
-at runtime, falling back to GGML’s scalar reference. This follows the
+The quantized dequant-dot path that BLAS cannot cover is
+architecture-aware. On aarch64, GGML’s complete NEON kernel set is the
+mandatory baseline. On x86, hot kernels are compiled by `configure` into
+ISA-specific variants, beginning with `q4_K x q8_K` under
+`-mavx2 -mfma -O3`; a CPUID dispatcher (`tools/simd/`) picks the best at
+runtime and otherwise uses GGML’s scalar reference. This follows the
 [RsimdDispatch](https://github.com/sounkou-bioinfo/RsimdDispatch)
 strategy: the ISA flags live in `configure`, never in R’s recorded
 package flags, so R CMD check raises no “non-portable flags” NOTE, and a
 variant is only ever called after its ISA is confirmed at runtime
 (single `.so`, no `dlopen`). On x86 the AVX2 q4_K dot measures ~6-7x
-faster than the scalar reference. More kernels (`q6_K`, `q8_0`) and
-hand-tuned intrinsics are the next steps.
+faster than the scalar reference.
 
 (GGML’s own `GGML_CPU_ALL_VARIANTS` is deliberately *not* used: it
 requires `GGML_BACKEND_DL` + separate per-variant shared libraries

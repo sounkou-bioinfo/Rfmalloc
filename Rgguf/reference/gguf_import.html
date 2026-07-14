@@ -52,7 +52,7 @@ a single open file handle across all of them.</p>
 <span>  <span class="va">path_or_ctx</span>,</span>
 <span>  tensors <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  runtime <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  as <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"numeric"</span>, <span class="st">"native"</span><span class="op">)</span></span>
+<span>  as <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"numeric"</span>, <span class="st">"native"</span>, <span class="st">"view"</span><span class="op">)</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -79,15 +79,15 @@ each tensor.</p></dd>
 
 <dt id="arg-as">as<a class="anchor" aria-label="anchor" href="#arg-as"></a></dt>
 <dd><p>Passed through to <code><a href="gguf_tensor.html">gguf_tensor()</a></code>: <code>"numeric"</code> dequantizes to
-fmalloc double matrices/arrays, <code>"native"</code> keeps the GGUF payload
-encoding and returns typed <code>fmalloc_tensor</code> objects.</p></dd>
+fmalloc double matrices/arrays, <code>"native"</code> copies the encoded bytes into
+fmalloc storage, and <code>"view"</code> borrows the original read-only GGUF spans.</p></dd>
 
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>A named list of <code>Rfmalloc</code>-backed matrices/arrays, one per
-imported tensor, in the order requested (or file order, if <code>tensors</code> is
-<code>NULL</code>).</p>
+    <p>A named list of tensors, in the order requested (or file order, if
+<code>tensors</code> is <code>NULL</code>). Numeric and native imports own fmalloc allocations;
+views are read-only spans over the original GGUF mapping.</p>
     </div>
 
     <div class="section level2">

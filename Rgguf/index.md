@@ -4,29 +4,33 @@ Rgguf reads
 [GGUF](https://github.com/ggerganov/ggml/blob/master/docs/gguf.md) model
 files - the format used by
 [llama.cpp](https://github.com/ggerganov/llama.cpp) to store large
-language model tensors and metadata - and exposes their tensors directly
-as [Rfmalloc](https://github.com/sounkou-bioinfo/Rfmalloc)-backed,
-file-backed ALTREP matrices and arrays, dequantizing quantized tensor
-types on demand as they are read.
+language model tensors and metadata - and exposes their tensors as
+decoded Rfmalloc arrays, copied native codecs, or zero-copy read-only
+views over the original model mapping.
 
-GGUF parsing is done by a vendored, MIT-licensed copy of Salvatore
-Sanfilippo’s (antirez’s)
-[gguflib](https://github.com/antirez/gguf-tools) (`src/gguflib.c`,
-`fp16.c`, `bf16.h`); see `inst/COPYRIGHTS` for full attribution.
+GGUF parsing and writing use the official implementation from GGML,
+carried once by the sibling Rggml package. Rgguf maps tensor data
+read-only and owns no second GGUF parser.
 
 ## Design
 
-Allocation happens on the R side, filling happens in C:
+There are three storage paths:
 
-1.  R allocates the destination with
+1.  `as = "numeric"`: R allocates the destination with
     [`Rfmalloc::create_fmalloc_matrix()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/create_fmalloc_matrix.html)/[`create_fmalloc_array()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/create_fmalloc_array.html),
     which returns a properly classed, file-backed ALTREP object -
     `Rfmalloc`’s `Ops`/matrix-product dispatch already works on it.
-2.  Native code locates the requested tensor in the memory-mapped GGUF
-    file and writes dequantized values directly into the destination’s
-    `REAL()` payload (the ALTREP `Dataptr` exposes the file-backed
-    `fmalloc` memory directly - no extra copy back into an ordinary R
-    vector).
+    Rggml’s official parser locates the tensor in the read-only GGUF
+    mapping. Native code writes dequantized values directly into the
+    destination’s `REAL()` payload (the ALTREP `Dataptr` exposes the
+    file-backed `fmalloc` memory directly - no extra copy back into an
+    ordinary R vector).
+2.  `as = "native"`: encoded bytes are copied into owned fmalloc
+    storage. This is useful when the GGUF file may disappear or the
+    payload needs an independent lifetime.
+3.  `as = "view"`: the tensor borrows its exact span in the original
+    read-only mapping. The view keeps the mapping alive and gives codecs
+    or GGML the same pointer, so model loading performs no weight copy.
 
 GGML/GGUF tensors store `dim[0]` as the fastest-varying (contiguous)
 dimension. R arrays are column-major (the first dimension varies
@@ -104,7 +108,7 @@ local({
 #> [1] 0
 ```
 
-## Native typed tensors
+## Native typed tensors and borrowed views
 
 `gguf_tensor(as = "native")` skips dequantization at import: the
 tensor’s raw GGUF payload is copied into fmalloc storage at its original
@@ -112,10 +116,17 @@ density (4.5 bits/weight for `q4_k`) and returned as an
 [`Rfmalloc::fmalloc_tensor`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_tensor.html).
 Matrix products against dense operands decode the payload in bounded,
 block-aligned panels streamed through BLAS `dgemm`, so the full double
-representation is never materialized. Rgguf registers gguflib’s `q4_0`,
-`q4_1`, `q8_0`, `q2_k`, `q4_k`, and `q6_k` dequantizers as Rfmalloc
-tensor codecs; `f32`, `f16`, `bf16`, and `f64` codecs are built into
-Rfmalloc.
+representation is never materialized. Rgguf registers GGML-backed codecs
+for `q4_0`, `q4_1`, `q5_0`, `q5_1`, `q8_0`, `q2_k`, `q3_k`, `q4_k`,
+`q5_k`, and `q6_k`; `f32`, `f16`, `bf16`, and `f64` codecs are built
+into Rfmalloc.
+
+`gguf_tensor(as = "view")` has the same typed-tensor interface but does
+not copy the payload. It is the inference path: Rllm points GGML
+directly at the borrowed bytes.
+[`Rfmalloc::fmalloc_storage_advise()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_storage_advise.html)
+can express sequential, prefetch, and release intentions over the view
+for out-of-core schedulers.
 
 ``` r
 
@@ -152,31 +163,21 @@ local({
 
 ## Supported tensor types
 
-[`gguf_tensor()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/reference/gguf_tensor.md)/[`gguf_import()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/reference/gguf_import.md)
-dequantize:
-
-- Direct/streamed (no intermediate buffer): `f32`, `f16`, `bf16`, `f64`,
-  `i8`, `i16`, `i32`, `i64`.
-- Via the vendored `gguflib`’s own `gguf_tensor_to_float()` (through a
-  transient `malloc()`’d float buffer, freed immediately after widening
-  to double - a known v1 memory cost): `q8_0`, `q4_0`, `q4_1`, `q2_k`,
-  `q4_k`, `q6_k`.
-
-Other quantized formats (`q5_0`, `q5_1`, `q8_1`, `q3_k`, `q5_k`, `q8_k`,
-and the `iq*` formats) are not implemented by the vendored parser;
 [`gguf_tensor()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/reference/gguf_tensor.md)
-errors clearly instead of guessing at them.
+and
+[`gguf_import()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/reference/gguf_import.md)
+use GGML’s authoritative decoder for the file’s declared type. Plain
+numeric types are widened directly. Quantized types decode through a
+fixed 64 KiB float scratch into the caller-owned double destination,
+independent of tensor size.
 
 ## Note on `gguf_open()`
 
-The vendored parser memory-maps GGUF files read/write
-(`mmap(..., PROT_READ|PROT_WRITE, MAP_SHARED, ...)`), so
 [`gguf_open()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/reference/gguf_open.md)
-requires the file to be writable even when you only intend to read
-tensors from it.
+parses metadata once and maps tensor bytes read-only. A readable model
+file is sufficient; Rgguf never modifies it.
 
 ## License
 
-GPL (\>= 2). Bundled third-party code (gguflib, fp16, bf16) remains
-under its upstream MIT license, which is GPL-compatible; it is
-documented and separately attributed in `inst/COPYRIGHTS`.
+GPL (\>= 2). Rgguf contains no vendored third-party source. Rggml
+documents the pinned official GGML sources it provides.

@@ -3,7 +3,7 @@
 Rllm is the **composition layer** of the
 [Rfmalloc](https://github.com/sounkou-bioinfo/Rfmalloc) out-of-core
 array stack: it wires (file-backed, memory-mapped storage), (GGUF model
-files as fmalloc tensors) and (vendored GGML compute with
+files as typed storage views) and (vendored GGML compute with
 runtime-SIMD-dispatched quantized kernels) into LLM inference -
 quantized weights stay in their GGUF encoding, memory-mapped from disk,
 and are never decoded to double on the compute path.
@@ -47,7 +47,7 @@ pure-codec models later.
 
 ``` r
 
-rt <- Rfmalloc::open_fmalloc("weights.bin", size_gb = 2)   # the memory-mapped store
+rt <- Rfmalloc::open_fmalloc("work.bin", size_gb = 0.5)    # outputs and KV cache
 model <- rllm_gguf_model("SmolLM2-135M.Q4_K_M.gguf", runtime = rt)
 model
 #> <rllm_model llama: 30 layers, n_embd 576, 9/3 heads, n_ff 1536,
@@ -67,9 +67,9 @@ re-forwards, identical outputs.
 What the engine does:
 
 - [`rllm_gguf_model()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_gguf_model.md)
-  reads hyperparameters from GGUF metadata and imports 2-d weights
-  **natively** (still quantized) into fmalloc-backed storage; the
-  forward pass points GGML tensors at those payloads zero-copy.
+  reads hyperparameters from GGUF metadata and borrows every weight’s
+  exact read-only span. No weight is copied into the Rfmalloc work file;
+  the forward pass points GGML tensors at the original GGUF bytes.
 - [`rllm_forward()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_forward.md)
   assembles the GGML graph (RMSNorm, RoPE, causal self-attention with
   GQA, SwiGLU) and computes it on the GGML CPU backend through ’s

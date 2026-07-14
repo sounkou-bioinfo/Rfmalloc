@@ -42,15 +42,16 @@
 <div class="section level2">
 <h2 id="what-this-repo-is">What this repo is<a class="anchor" aria-label="anchor" href="#what-this-repo-is"></a></h2>
 <ul><li>
-<code>Rggml</code> is a <strong>carrier package</strong>: it vendors the CPU backend of the <a href="https://github.com/ggml-org/ggml" class="external-link">GGML</a> tensor library as a static library, installs its headers, and exposes GGML’s core tensor-context and matrix-multiply compute path through <code>R_RegisterCCallable()</code> C-callable entry points.</li>
-<li>It has no high-level R modeling API of its own. The only R surface is <code><a href="reference/ggml_version.html">ggml_version()</a></code> plus an internal smoke-test helper. Downstream packages <code>LinkingTo: Rggml</code> and drive GGML from their own C/C++ code.</li>
-<li>The vendored subset is CPU-only and architecture-generic (<code>-DGGML_CPU_GENERIC</code>): correctness/portability over raw speed. No SIMD flags, no OpenMP, no Vulkan/CUDA/Metal/BLAS backends.</li>
+<code>Rggml</code> is a low-level <strong>carrier package</strong>. Its generated static library contains GGML’s core, official GGUF implementation, CPU and BLAS backends, and the opt-in Vulkan backend. Sibling packages consume these through <code>R_RegisterCCallable()</code> rather than re-vendoring GGML.</li>
+<li>Model composition belongs in Rllm and the R-facing GGUF storage layer belongs in Rgguf. Rggml’s small R surface provides diagnostics and direct matrix multiplication.</li>
+<li>On x86, selected kernels are staged with ISA flags by <code>configure</code> and chosen by runtime dispatch. On aarch64, GGML’s NEON kernels are the baseline. ISA flags must never appear in R’s recorded package flags.</li>
 </ul></div>
 <div class="section level2">
 <h2 id="first-load-instructions">First-load instructions<a class="anchor" aria-label="anchor" href="#first-load-instructions"></a></h2>
 <ol style="list-style-type: decimal"><li>Before making package changes, load the package-development guidance in <code>r-package-development</code>: <code>/root/.pi/agent/git/github.com/sounkou-bioinfo/pi-skills/skills/r-package-development/SKILL.md</code>.</li>
 <li>Follow the repo’s existing conventions for <code>R/</code>, <code>src/</code>, <code>inst/ggml/</code>, <code>inst/include/</code>, <code>man/</code>, and <code>inst/tinytest/</code>.</li>
 <li>The vendored GGML is built by <code>./configure</code> into <code>inst/ggml/libggml.a</code>; <code>src/Makevars</code> (generated) links against it. Do not hand-edit <code>src/Makevars</code>.</li>
+<li>Never hand-edit <code>inst/ggml</code>. Change <code>tools/vendor-ggml/manifest.txt</code>, a patch, or an overlay file and run <code>vendorggml.R vendor</code>.</li>
 </ol></div>
 <div class="section level2">
 <h2 id="test-workflow">Test workflow<a class="anchor" aria-label="anchor" href="#test-workflow"></a></h2>
@@ -76,8 +77,7 @@
 <ul><li>
 <code>NAMESPACE</code> and <code>man/*.Rd</code> are roxygen-generated; update source roxygen in <code>R/*.R</code> first, then regenerate.</li>
 <li>Use <code>tinytest</code> in <code>inst/tinytest/</code> for regression coverage. The end-to-end proof is <code>test_mul_mat.R</code>, which drives GGML entirely through the <em>registered</em> C-callables (the same path a <code>LinkingTo</code> package would use).</li>
-<li>
-<code>OS_type: unix</code>; keep the build portable across Linux and macOS. GGML’s sources guard <code>_WIN32</code> throughout, so a Windows port is plausible but not attempted here.</li>
+<li>Linux, macOS, and Windows are supported. <code>configure.win</code> reuses the main configure path; keep platform-specific behavior there rather than forking the build recipe.</li>
 <li>Attribution/licensing lives in <code>inst/COPYRIGHTS</code> (GGML and ggmlR are MIT; Rggml’s own code is GPL (&gt;= 2)).</li>
 </ul></div>
 </div>

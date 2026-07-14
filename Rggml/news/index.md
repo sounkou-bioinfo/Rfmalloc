@@ -2,6 +2,11 @@
 
 ## Rggml 0.1.0 (unreleased)
 
+- Added GGML’s official `gguf.cpp` to the generated vendor recipe and
+  exposed its indexed reader and writer as opaque C-callable services.
+  Rgguf now owns only its R surface and read-only tensor mapping; the
+  partial second parser and duplicate quantized decoders are gone.
+
 - Added `rggml_mul_mat(A, B, backend)`, a public GEMM
   (`crossprod(A, B)`) on the `"cpu"`, `"blas"`, or `"vulkan"` backend
   via GGML’s device-buffer residency path - the supported entry point

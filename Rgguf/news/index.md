@@ -2,41 +2,35 @@
 
 ## Rgguf 0.1.0 (unreleased)
 
-- `gguf_tensor(as = "native")` no longer requires gguflib dequantization
-  support for the tensor’s type - a native import copies the raw,
-  still-encoded payload, so it only needs a registered Rfmalloc codec
-  (which another package may provide: Rllm registers GGML-backed codecs
-  for `q5_0`/ `q5_1`/`q3_k`/`q5_k`, all common in real `Q4_K_M` model
-  files). The gguflib-support check now applies only to
-  `as = "numeric"`, whose error message points at the native path.
-- **Fixed a Q4_K dequantization bug inherited from upstream
-  gguf-tools**: in `gguf_q4_k_to_float()`, the high-nibble half of every
-  64-weight group (the odd sub-blocks 1, 3, 5, 7 of each super-block)
-  was dequantized with the *previous* sub-block’s scale/min, making
-  `q4_k` decodes ~33% wrong in relative Frobenius norm (GGML’s reference
-  uses scale `is+0` for the low nibbles and `is+1` for the high
-  nibbles). Since `Q4_K_M` is the most common real-model quantization,
-  this affected `gguf_tensor(as = "numeric")` and
-  [`fmalloc_tensor_materialize()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_tensor.html)
-  for typical GGUF files. All six registered quantized codecs (`q4_0`,
-  `q4_1`, `q8_0`, `q2_k`, `q4_k`, `q6_k`) now decode **bit-identically**
-  to GGML’s own type-traits `to_float` reference, verified by a new
-  regression test (`test_gguf_codec_ggml_ref.R`) against a committed
-  fixture of GGML-quantized payloads and their GGML-decoded expected
-  values.
+- Added `gguf_tensor(as = "view")` and `gguf_import(as = "view")`. A
+  view borrows the tensor’s exact read-only span in the original GGUF
+  mapping, keeps that mapping alive, and enters Rfmalloc/GGML compute
+  without copying the encoded payload into a second file.
+- Removed the partial vendored `gguflib` parser. Rggml now carries
+  GGML’s official `gguf.cpp`; Rgguf uses its indexed metadata, tensor
+  directory, writer, and type-traits decoders, while mapping tensor
+  bytes read-only. Numeric decode uses bounded scratch, and the ten
+  common quantized codecs are registered here rather than split between
+  Rgguf and Rllm.
+- `gguf_tensor(as = "native")` copies the raw encoded payload and only
+  needs a registered Rfmalloc codec. `as = "numeric"` decodes through
+  GGML’s reference implementation.
+- Removed the inherited Q4_K scale-indexing bug by deleting the
+  independent decoder. Codec outputs are pinned to GGML by
+  `test_gguf_codec_ggml_ref.R`.
 - Added native typed imports: `gguf_tensor(as = "native")` (and
   `gguf_import(as = "native")`) copy a 2-d tensor’s raw GGUF payload
   into fmalloc storage at its original density (e.g. 4.5 bits/weight for
   `q4_k`) and return an
   [`Rfmalloc::fmalloc_tensor`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_tensor.html),
   decoded in bounded panels only inside matrix products. Registers
-  gguflib’s `q4_0`/`q4_1`/`q8_0`/`q2_k`/ `q4_k`/`q6_k` dequantizers as
-  Rfmalloc tensor codecs (requires Rfmalloc C API version 4).
+  GGML-backed codecs for `q4_0`, `q4_1`, `q5_0`, `q5_1`, `q8_0`, `q2_k`,
+  `q3_k`, `q4_k`, `q5_k`, and `q6_k`.
 - Initial release.
 - Added
   [`gguf_open()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/reference/gguf_open.md)
-  to memory-map a GGUF file (via a vendored copy of antirez’s `gguflib`)
-  and return a `gguf_ctx` handle with a closing finalizer.
+  to parse and map a GGUF file read-only and return a `gguf_ctx` handle
+  with a closing finalizer.
 - Added
   [`gguf_metadata()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/reference/gguf_metadata.md)
   to read all metadata key-value pairs (scalars and arrays of the
@@ -67,15 +61,8 @@
   (fastest-varying/contiguous dimension) maps directly onto R’s first,
   column-major dimension, so tensor dimensions need no transposition:
   `dim(gguf_tensor(x, name)) == c(dim[0], dim[1], ...)`.
-- Direct (non-quantized) dequantization support for `f32`, `f16`,
-  `bf16`, `f64`, and the plain `i8`/`i16`/`i32`/`i64` integer tensor
-  types, plus quantized-block dequantization (via the vendored
-  `gguflib`’s own `gguf_tensor_to_float()`) for `q8_0`, `q4_0`, `q4_1`,
-  `q2_k`, `q4_k`, and `q6_k`. Other quantized formats (`q5_0`, `q5_1`,
-  `q3_k`, `q5_k`, `q8_k`, and the `iq*` formats) are not implemented by
-  the vendored parser and
-  [`gguf_tensor()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/reference/gguf_tensor.md)
-  errors clearly for them instead of guessing.
+- Numeric decoding uses GGML’s storage-type implementation for plain and
+  quantized tensors.
 - Documented (README, `inst/smoke_test.R`) a discovered `Rfmalloc` 0.1.0
   limitation, not an `Rgguf` bug: `%*%`/`crossprod`/`tcrossprod` on
   fmalloc-backed operands with \>= 64 elements currently fail once the
@@ -84,8 +71,3 @@
   `Rfmalloc` does not unwrap.
   [`gguf_tensor()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/reference/gguf_tensor.md)/[`gguf_import()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/reference/gguf_import.md)
   themselves are unaffected at any size.
-- `R CMD check` reports one NOTE about `printf`/`puts`/`putchar` calls
-  found in `gguflib.o`; these come from vendored, unused pretty-printing
-  helpers in `gguflib.c` (`gguf_print_value()` and friends, used only by
-  upstream’s
-  151. that `Rgguf` never calls and does not export.

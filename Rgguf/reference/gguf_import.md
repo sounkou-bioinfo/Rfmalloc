@@ -13,7 +13,7 @@ gguf_import(
   path_or_ctx,
   tensors = NULL,
   runtime = NULL,
-  as = c("numeric", "native")
+  as = c("numeric", "native", "view")
 )
 ```
 
@@ -41,13 +41,14 @@ gguf_import(
   Passed through to
   [`gguf_tensor()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/reference/gguf_tensor.md):
   `"numeric"` dequantizes to fmalloc double matrices/arrays, `"native"`
-  keeps the GGUF payload encoding and returns typed `fmalloc_tensor`
-  objects.
+  copies the encoded bytes into fmalloc storage, and `"view"` borrows
+  the original read-only GGUF spans.
 
 ## Value
 
-A named list of `Rfmalloc`-backed matrices/arrays, one per imported
-tensor, in the order requested (or file order, if `tensors` is `NULL`).
+A named list of tensors, in the order requested (or file order, if
+`tensors` is `NULL`). Numeric and native imports own fmalloc
+allocations; views are read-only spans over the original GGUF mapping.
 
 ## Examples
 

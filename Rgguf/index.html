@@ -5,14 +5,14 @@
 <meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-<title>Read GGUF Model Files into Rfmalloc-Backed Arrays • Rgguf</title>
+<title>Official GGUF Parsing and Typed Storage Views • Rgguf</title>
 <script src="deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 <link href="deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet">
 <script src="deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
-<script src="deps/headroom-0.11.0/headroom.min.js"></script><script src="deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="deps/search-1.0.0/fuse.min.js"></script><script src="deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="pkgdown.js"></script><meta property="og:title" content="Read GGUF Model Files into Rfmalloc-Backed Arrays">
-<meta name="description" content="Reads GGUF model files, the file format used by the llama.cpp project (&lt;https://github.com/ggerganov/llama.cpp&gt;) to store large language model tensors and metadata, and exposes their tensors directly as Rfmalloc-backed, file-backed ALTREP matrices and arrays. Quantized tensor types supported by the vendored gguflib parser (&lt;https://github.com/antirez/gguf-tools&gt;) are dequantized on demand. Metadata key-value pairs and the tensor directory are exposed as ordinary R lists and data frames. A minimal writer is included to create GGUF files containing 32-bit floating point tensors, primarily to support round-trip testing.">
-<meta property="og:description" content="Reads GGUF model files, the file format used by the llama.cpp project (&lt;https://github.com/ggerganov/llama.cpp&gt;) to store large language model tensors and metadata, and exposes their tensors directly as Rfmalloc-backed, file-backed ALTREP matrices and arrays. Quantized tensor types supported by the vendored gguflib parser (&lt;https://github.com/antirez/gguf-tools&gt;) are dequantized on demand. Metadata key-value pairs and the tensor directory are exposed as ordinary R lists and data frames. A minimal writer is included to create GGUF files containing 32-bit floating point tensors, primarily to support round-trip testing.">
+<script src="deps/headroom-0.11.0/headroom.min.js"></script><script src="deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="deps/search-1.0.0/fuse.min.js"></script><script src="deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="pkgdown.js"></script><meta property="og:title" content="Official GGUF Parsing and Typed Storage Views">
+<meta name="description" content="Reads GGUF model files, the file format used by the llama.cpp project (&lt;https://github.com/ggerganov/llama.cpp&gt;) to store large language model tensors and metadata. Tensors can be decoded into file-backed Rfmalloc arrays, copied at their native codec density, or borrowed as zero-copy read-only spans over the original model mapping. Parsing, writing, and quantized decoding use the official GGML GGUF implementation exposed by the sibling Rggml package. Metadata key-value pairs and the tensor directory are exposed as ordinary R lists and data frames. A minimal writer is included to create GGUF files containing 32-bit floating point tensors, primarily to support round-trip testing.">
+<meta property="og:description" content="Reads GGUF model files, the file format used by the llama.cpp project (&lt;https://github.com/ggerganov/llama.cpp&gt;) to store large language model tensors and metadata. Tensors can be decoded into file-backed Rfmalloc arrays, copied at their native codec density, or borrowed as zero-copy read-only spans over the original model mapping. Parsing, writing, and quantized decoding use the official GGML GGUF implementation exposed by the sibling Rggml package. Metadata key-value pairs and the tensor directory are exposed as ordinary R lists and data frames. A minimal writer is included to create GGUF files containing 32-bit floating point tensors, primarily to support round-trip testing.">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -51,15 +51,19 @@
 </h1></div>
 <!-- badges: start -->
 
-<p>Rgguf reads <a href="https://github.com/ggerganov/ggml/blob/master/docs/gguf.md" class="external-link">GGUF</a> model files - the format used by <a href="https://github.com/ggerganov/llama.cpp" class="external-link">llama.cpp</a> to store large language model tensors and metadata - and exposes their tensors directly as <a href="https://github.com/sounkou-bioinfo/Rfmalloc" class="external-link">Rfmalloc</a>-backed, file-backed ALTREP matrices and arrays, dequantizing quantized tensor types on demand as they are read.</p>
-<p>GGUF parsing is done by a vendored, MIT-licensed copy of Salvatore Sanfilippo’s (antirez’s) <a href="https://github.com/antirez/gguf-tools" class="external-link">gguflib</a> (<code>src/gguflib.c</code>, <code>fp16.c</code>, <code>bf16.h</code>); see <code>inst/COPYRIGHTS</code> for full attribution.</p>
+<p>Rgguf reads <a href="https://github.com/ggerganov/ggml/blob/master/docs/gguf.md" class="external-link">GGUF</a> model files - the format used by <a href="https://github.com/ggerganov/llama.cpp" class="external-link">llama.cpp</a> to store large language model tensors and metadata - and exposes their tensors as decoded Rfmalloc arrays, copied native codecs, or zero-copy read-only views over the original model mapping.</p>
+<p>GGUF parsing and writing use the official implementation from GGML, carried once by the sibling Rggml package. Rgguf maps tensor data read-only and owns no second GGUF parser.</p>
 <div class="section level2">
 <h2 id="design">Design<a class="anchor" aria-label="anchor" href="#design"></a>
 </h2>
-<p>Allocation happens on the R side, filling happens in C:</p>
+<p>There are three storage paths:</p>
 <ol style="list-style-type: decimal">
-<li>R allocates the destination with <code><a href="https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/create_fmalloc_matrix.html" class="external-link">Rfmalloc::create_fmalloc_matrix()</a></code>/<code><a href="https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/create_fmalloc_array.html" class="external-link">create_fmalloc_array()</a></code>, which returns a properly classed, file-backed ALTREP object - <code>Rfmalloc</code>’s <code>Ops</code>/matrix-product dispatch already works on it.</li>
-<li>Native code locates the requested tensor in the memory-mapped GGUF file and writes dequantized values directly into the destination’s <code>REAL()</code> payload (the ALTREP <code>Dataptr</code> exposes the file-backed <code>fmalloc</code> memory directly - no extra copy back into an ordinary R vector).</li>
+<li>
+<code>as = "numeric"</code>: R allocates the destination with <code><a href="https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/create_fmalloc_matrix.html" class="external-link">Rfmalloc::create_fmalloc_matrix()</a></code>/<code><a href="https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/create_fmalloc_array.html" class="external-link">create_fmalloc_array()</a></code>, which returns a properly classed, file-backed ALTREP object - <code>Rfmalloc</code>’s <code>Ops</code>/matrix-product dispatch already works on it. Rggml’s official parser locates the tensor in the read-only GGUF mapping. Native code writes dequantized values directly into the destination’s <code>REAL()</code> payload (the ALTREP <code>Dataptr</code> exposes the file-backed <code>fmalloc</code> memory directly - no extra copy back into an ordinary R vector).</li>
+<li>
+<code>as = "native"</code>: encoded bytes are copied into owned fmalloc storage. This is useful when the GGUF file may disappear or the payload needs an independent lifetime.</li>
+<li>
+<code>as = "view"</code>: the tensor borrows its exact span in the original read-only mapping. The view keeps the mapping alive and gives codecs or GGML the same pointer, so model loading performs no weight copy.</li>
 </ol>
 <p>GGML/GGUF tensors store <code>dim[0]</code> as the fastest-varying (contiguous) dimension. R arrays are column-major (the first dimension varies fastest), so <code>dim[0]</code> maps directly onto R’s first dimension: <code>dim(gguf_tensor(x, name)) == c(dim[0], dim[1], ...)</code>, with no transposition needed. This is verified by a dedicated round-trip test (<code>inst/tinytest/test_gguf_roundtrip.R</code>).</p>
 </div>
@@ -125,9 +129,10 @@
 <span><span class="co">#&gt; [1] 0</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="native-typed-tensors">Native typed tensors<a class="anchor" aria-label="anchor" href="#native-typed-tensors"></a>
+<h2 id="native-typed-tensors-and-borrowed-views">Native typed tensors and borrowed views<a class="anchor" aria-label="anchor" href="#native-typed-tensors-and-borrowed-views"></a>
 </h2>
-<p><code>gguf_tensor(as = "native")</code> skips dequantization at import: the tensor’s raw GGUF payload is copied into fmalloc storage at its original density (4.5 bits/weight for <code>q4_k</code>) and returned as an <code><a href="https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_tensor.html" class="external-link">Rfmalloc::fmalloc_tensor</a></code>. Matrix products against dense operands decode the payload in bounded, block-aligned panels streamed through BLAS <code>dgemm</code>, so the full double representation is never materialized. Rgguf registers gguflib’s <code>q4_0</code>, <code>q4_1</code>, <code>q8_0</code>, <code>q2_k</code>, <code>q4_k</code>, and <code>q6_k</code> dequantizers as Rfmalloc tensor codecs; <code>f32</code>, <code>f16</code>, <code>bf16</code>, and <code>f64</code> codecs are built into Rfmalloc.</p>
+<p><code>gguf_tensor(as = "native")</code> skips dequantization at import: the tensor’s raw GGUF payload is copied into fmalloc storage at its original density (4.5 bits/weight for <code>q4_k</code>) and returned as an <code><a href="https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_tensor.html" class="external-link">Rfmalloc::fmalloc_tensor</a></code>. Matrix products against dense operands decode the payload in bounded, block-aligned panels streamed through BLAS <code>dgemm</code>, so the full double representation is never materialized. Rgguf registers GGML-backed codecs for <code>q4_0</code>, <code>q4_1</code>, <code>q5_0</code>, <code>q5_1</code>, <code>q8_0</code>, <code>q2_k</code>, <code>q3_k</code>, <code>q4_k</code>, <code>q5_k</code>, and <code>q6_k</code>; <code>f32</code>, <code>f16</code>, <code>bf16</code>, and <code>f64</code> codecs are built into Rfmalloc.</p>
+<p><code>gguf_tensor(as = "view")</code> has the same typed-tensor interface but does not copy the payload. It is the inference path: Rllm points GGML directly at the borrowed bytes. <code><a href="https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/fmalloc_storage_advise.html" class="external-link">Rfmalloc::fmalloc_storage_advise()</a></code> can express sequential, prefetch, and release intentions over the view for out-of-core schedulers.</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="va">gguf_file</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".gguf"</span><span class="op">)</span></span>
@@ -162,23 +167,18 @@
 <div class="section level2">
 <h2 id="supported-tensor-types">Supported tensor types<a class="anchor" aria-label="anchor" href="#supported-tensor-types"></a>
 </h2>
-<p><code><a href="reference/gguf_tensor.html">gguf_tensor()</a></code>/<code><a href="reference/gguf_import.html">gguf_import()</a></code> dequantize:</p>
-<ul>
-<li>Direct/streamed (no intermediate buffer): <code>f32</code>, <code>f16</code>, <code>bf16</code>, <code>f64</code>, <code>i8</code>, <code>i16</code>, <code>i32</code>, <code>i64</code>.</li>
-<li>Via the vendored <code>gguflib</code>’s own <code>gguf_tensor_to_float()</code> (through a transient <code>malloc()</code>’d float buffer, freed immediately after widening to double - a known v1 memory cost): <code>q8_0</code>, <code>q4_0</code>, <code>q4_1</code>, <code>q2_k</code>, <code>q4_k</code>, <code>q6_k</code>.</li>
-</ul>
-<p>Other quantized formats (<code>q5_0</code>, <code>q5_1</code>, <code>q8_1</code>, <code>q3_k</code>, <code>q5_k</code>, <code>q8_k</code>, and the <code>iq*</code> formats) are not implemented by the vendored parser; <code><a href="reference/gguf_tensor.html">gguf_tensor()</a></code> errors clearly instead of guessing at them.</p>
+<p><code><a href="reference/gguf_tensor.html">gguf_tensor()</a></code> and <code><a href="reference/gguf_import.html">gguf_import()</a></code> use GGML’s authoritative decoder for the file’s declared type. Plain numeric types are widened directly. Quantized types decode through a fixed 64 KiB float scratch into the caller-owned double destination, independent of tensor size.</p>
 </div>
 <div class="section level2">
 <h2 id="note-on-gguf_open">Note on <code>gguf_open()</code>
 <a class="anchor" aria-label="anchor" href="#note-on-gguf_open"></a>
 </h2>
-<p>The vendored parser memory-maps GGUF files read/write (<code>mmap(..., PROT_READ|PROT_WRITE, MAP_SHARED, ...)</code>), so <code><a href="reference/gguf_open.html">gguf_open()</a></code> requires the file to be writable even when you only intend to read tensors from it.</p>
+<p><code><a href="reference/gguf_open.html">gguf_open()</a></code> parses metadata once and maps tensor bytes read-only. A readable model file is sufficient; Rgguf never modifies it.</p>
 </div>
 <div class="section level2">
 <h2 id="license">License<a class="anchor" aria-label="anchor" href="#license"></a>
 </h2>
-<p>GPL (&gt;= 2). Bundled third-party code (gguflib, fp16, bf16) remains under its upstream MIT license, which is GPL-compatible; it is documented and separately attributed in <code>inst/COPYRIGHTS</code>.</p>
+<p>GPL (&gt;= 2). Rgguf contains no vendored third-party source. Rggml documents the pinned official GGML sources it provides.</p>
 </div>
 </div>
   </main><aside class="col-md-3"><div class="links">
@@ -208,7 +208,6 @@
 <h2 data-toc-skip>Developers</h2>
 <ul class="list-unstyled">
 <li>Sounkou Mahamane Toure <br><small class="roles"> Author, maintainer </small>   </li>
-<li><a href="authors.html">More about authors...</a></li>
 </ul>
 </div>
 
