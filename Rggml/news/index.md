@@ -8,6 +8,11 @@
   split translation units are gone. Only ggmlR’s R-safe I/O shim
   remains, with its MIT attribution.
 
+- Corrected the aarch64 fallback map so the generic Q1 dot product keeps
+  its `_generic` name while GGML’s ARM translation unit owns the
+  canonical NEON symbol. Rggml now links cleanly on both Apple Silicon
+  and Linux aarch64.
+
 - Added an opt-in `--with-cuda` build from the content-pinned official
   GGML v0.11.0 CUDA sources.
   [`rggml_cuda_info()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/reference/rggml_cuda_info.md)
