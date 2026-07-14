@@ -26,6 +26,9 @@
 #ifdef RGGML_HAVE_VULKAN
 #include <ggml-vulkan.h>
 #endif
+#ifdef RGGML_HAVE_CUDA
+#include <ggml-cuda.h>
+#endif
 
 #include "rggml_api.h"
 
@@ -193,6 +196,41 @@ int Rggml_backend_vulkan_device_description(int device, char *buf, size_t buf_si
     if (!buf || buf_size == 0) return -1;
     if (device < 0 || device >= ggml_backend_vk_get_device_count()) return -1;
     ggml_backend_vk_get_device_description(device, buf, buf_size);
+    return 0;
+#else
+    (void) device; (void) buf; (void) buf_size;
+    return -1;
+#endif
+}
+
+/* CUDA is the same optional-backend contract as Vulkan: the C-callables are
+ * always present, while a non-CUDA build reports no devices and declines init. */
+int Rggml_backend_cuda_device_count(void)
+{
+#ifdef RGGML_HAVE_CUDA
+    return ggml_backend_cuda_get_device_count();
+#else
+    return 0;
+#endif
+}
+
+ggml_backend_t Rggml_backend_cuda_init(int device)
+{
+#ifdef RGGML_HAVE_CUDA
+    if (device < 0 || device >= ggml_backend_cuda_get_device_count()) return NULL;
+    return ggml_backend_cuda_init(device);
+#else
+    (void) device;
+    return NULL;
+#endif
+}
+
+int Rggml_backend_cuda_device_description(int device, char *buf, size_t buf_size)
+{
+#ifdef RGGML_HAVE_CUDA
+    if (!buf || buf_size == 0) return -1;
+    if (device < 0 || device >= ggml_backend_cuda_get_device_count()) return -1;
+    ggml_backend_cuda_get_device_description(device, buf, buf_size);
     return 0;
 #else
     (void) device; (void) buf; (void) buf_size;

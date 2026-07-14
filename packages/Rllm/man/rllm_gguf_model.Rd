@@ -17,9 +17,9 @@ which produce fmalloc results; the weight bytes remain in the GGUF mapping.}
 (NEOX-style, e.g. qwen2). Defaults to \code{0}.}
 }
 \value{
-An object of class \code{rllm_model}: a list with \code{hparams} (named
-numeric list), \code{tensors} (named list of weight payloads), and
-\code{rope_mode}.
+An object of class \code{rllm_model} containing its hyperparameters,
+borrowed weight payloads, tokenizer metadata, and model-owned backend
+contexts created lazily by \code{\link[=rllm_forward]{rllm_forward()}}.
 }
 \description{
 Reads the hyperparameters and weights of a llama-architecture 'GGUF' file

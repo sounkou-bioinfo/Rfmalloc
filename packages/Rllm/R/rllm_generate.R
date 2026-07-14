@@ -172,6 +172,8 @@ rllm_encode <- function(model, x) {
 #'   fresh cache sized `length(prompt) + n_new` is created.
 #' @param runtime Optional [Rfmalloc::open_fmalloc()] runtime for the cache
 #'   slabs (file-backed cache).
+#' @param backend Compute backend passed to [rllm_forward()]. `"cuda"`
+#'   requires a CUDA-enabled Rggml build.
 #'
 #' @return A list with `ids` (prompt + generated, 0-based), `new_ids` (the
 #'   generated tokens), and `raw` (the generated tokens decoded to bytes, or
@@ -179,7 +181,7 @@ rllm_encode <- function(model, x) {
 #' @export
 rllm_generate <- function(model, prompt, n_new = 32L, temperature = 0,
                           top_k = 0L, top_p = 1, seed = NULL, cache = NULL,
-                          runtime = NULL) {
+                          runtime = NULL, backend = c("cpu", "cuda")) {
     if (!inherits(model, "rllm_model")) {
         stop("model must be an rllm_model from rllm_gguf_model()")
     }
@@ -191,6 +193,7 @@ rllm_generate <- function(model, prompt, n_new = 32L, temperature = 0,
     if (length(ids) < 1L || anyNA(ids)) stop("empty or invalid prompt")
     n_new <- as.integer(n_new)
     top_k <- as.integer(top_k)
+    backend <- match.arg(backend)
     if (!is.null(seed)) set.seed(as.integer(seed))
 
     if (is.null(cache)) {
@@ -199,14 +202,14 @@ rllm_generate <- function(model, prompt, n_new = 32L, temperature = 0,
     }
     eos <- if (!is.null(model$eos_id)) as.integer(model$eos_id) else NA_integer_
 
-    logits <- rllm_forward(model, ids, cache)          # prefill
+    logits <- rllm_forward(model, ids, cache, backend) # prefill
     new_ids <- integer(0)
     for (step in seq_len(n_new)) {
         nxt <- .rllm_sample_next(logits[, ncol(logits)], temperature, top_k, top_p)
         new_ids <- c(new_ids, nxt)
         if (!is.na(eos) && nxt == eos) break
         if (step < n_new) {
-            logits <- rllm_forward(model, nxt, cache)  # one token per step
+            logits <- rllm_forward(model, nxt, cache, backend)
         }
     }
     list(

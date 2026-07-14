@@ -402,15 +402,103 @@ SEXP RC_rggml_test_mul_mat_q4k(SEXP A_sexp, SEXP B_sexp)
     return result;
 }
 
+/* Quantized device-residency proof. Unlike the host-pointer helper above,
+ * this allocates Q4_K weights, F32 activations and the result in the selected
+ * backend buffer, then uploads, computes and downloads through the same
+ * interface used by a complete model graph. */
+SEXP RC_rggml_test_mul_mat_q4k_backend(SEXP A_sexp, SEXP B_sexp,
+                                        SEXP backend_sexp)
+{
+    if (TYPEOF(A_sexp) != REALSXP || TYPEOF(B_sexp) != REALSXP) {
+        Rf_error("A and B must be numeric matrices");
+    }
+    SEXP dimA = Rf_getAttrib(A_sexp, R_DimSymbol);
+    SEXP dimB = Rf_getAttrib(B_sexp, R_DimSymbol);
+    if (Rf_length(dimA) != 2 || Rf_length(dimB) != 2) Rf_error("A and B must be matrices");
+    int64_t k = INTEGER(dimA)[0], nA = INTEGER(dimA)[1];
+    int64_t kB = INTEGER(dimB)[0], nB = INTEGER(dimB)[1];
+    if (k != kB) Rf_error("nrow(A) must equal nrow(B)");
+    if (k % 256 != 0) Rf_error("nrow(A) must be a multiple of 256 (QK_K)");
+    int which = Rf_asInteger(backend_sexp);
+
+    ggml_backend_t backend = NULL;
+    switch (which) {
+    case 0: backend = Rggml_backend_cpu_init_ptr()(); break;
+    case 1: backend = Rggml_backend_blas_init_ptr()(); break;
+    case 2: backend = Rggml_backend_vulkan_init_ptr()(0); break;
+    case 3: backend = Rggml_backend_cuda_init_ptr()(0); break;
+    default: Rf_error("backend must be 0 (cpu), 1 (blas), 2 (vulkan) or 3 (cuda)");
+    }
+    if (!backend) Rf_error("backend %d unavailable (GPU backends require an enabled build and a device)", which);
+
+    /* Initialize CPU type traits before host-side quantization even when the
+     * graph itself is destined for a GPU. */
+    ggml_backend_t cpu = Rggml_backend_cpu_init_ptr()();
+    if (!cpu) {
+        Rggml_backend_free_ptr()(backend);
+        Rf_error("CPU type-trait initialization failed");
+    }
+
+    R_xlen_t nElemA = (R_xlen_t) k * nA;
+    R_xlen_t nElemB = (R_xlen_t) k * nB;
+    float *af = (float *) R_alloc((size_t) nElemA, sizeof(float));
+    float *bf = (float *) R_alloc((size_t) nElemB, sizeof(float));
+    for (R_xlen_t i = 0; i < nElemA; i++) af[i] = (float) REAL(A_sexp)[i];
+    for (R_xlen_t i = 0; i < nElemB; i++) bf[i] = (float) REAL(B_sexp)[i];
+
+    size_t qa_bytes = ggml_row_size(GGML_TYPE_Q4_K, k) * (size_t) nA;
+    void *qa = R_alloc(qa_bytes > 0 ? qa_bytes : 1, 1);
+    ggml_quantize_chunk(GGML_TYPE_Q4_K, af, qa, 0, nA, k, NULL);
+    Rggml_backend_free_ptr()(cpu);
+
+    Rggml_context_create_fun ctx_create = Rggml_context_create_ptr();
+    Rggml_context_free_fun ctx_free = Rggml_context_free_ptr();
+    Rggml_backend_free_fun bfree = Rggml_backend_free_ptr();
+    Rggml_tensor_overhead_fun t_over = Rggml_tensor_overhead_ptr();
+    Rggml_graph_overhead_fun g_over = Rggml_graph_overhead_ptr();
+    size_t mem = (size_t) 8 * t_over() + g_over(8) + 4096;
+    struct ggml_context *ctx = ctx_create(mem, /*no_alloc=*/1);
+    if (!ctx) { bfree(backend); Rf_error("context creation failed"); }
+
+    int64_t neA[2] = { k, nA }, neB[2] = { k, nB };
+    struct ggml_tensor *tA = Rggml_new_tensor_ptr()(ctx, GGML_TYPE_Q4_K, 2, neA, NULL);
+    struct ggml_tensor *tB = Rggml_new_tensor_ptr()(ctx, GGML_TYPE_F32, 2, neB, NULL);
+    struct ggml_tensor *tC = (tA && tB) ? Rggml_mul_mat_ptr()(ctx, tA, tB) : NULL;
+    if (!tC) { ctx_free(ctx); bfree(backend); Rf_error("graph construction failed"); }
+    struct ggml_cgraph *gf = Rggml_new_graph_ptr()(ctx, 8);
+    if (!gf) { ctx_free(ctx); bfree(backend); Rf_error("graph allocation failed"); }
+    Rggml_build_forward_expand_ptr()(gf, tC);
+
+    ggml_backend_buffer_t buf = Rggml_backend_alloc_ctx_tensors_ptr()(ctx, backend);
+    if (!buf) { ctx_free(ctx); bfree(backend); Rf_error("backend buffer allocation failed"); }
+    Rggml_backend_tensor_set_ptr()(tA, qa, 0, qa_bytes);
+    Rggml_backend_tensor_set_ptr()(tB, bf, 0, (size_t) nElemB * sizeof(float));
+
+    int rc = Rggml_backend_graph_compute_ptr()(backend, gf);
+    SEXP out = PROTECT(Rf_allocMatrix(REALSXP, (int) nA, (int) nB));
+    if (rc == 0) {
+        R_xlen_t n = (R_xlen_t) nA * nB;
+        float *cf = (float *) R_alloc((size_t) n, sizeof(float));
+        Rggml_backend_tensor_get_ptr()(tC, cf, 0, (size_t) n * sizeof(float));
+        for (R_xlen_t i = 0; i < n; i++) REAL(out)[i] = (double) cf[i];
+    }
+    Rggml_backend_buffer_free_ptr()(buf);
+    ctx_free(ctx);
+    bfree(backend);
+    if (rc != 0) { UNPROTECT(1); Rf_error("Q4_K graph compute failed with status %d", rc); }
+    UNPROTECT(1);
+    return out;
+}
+
 /*
  * RC_rggml_test_mul_mat_backend(A, B, backend)
  *
  * The backend-agnostic path: build the mul_mat graph in a no_alloc context,
  * let the backend allocate every tensor in one of its own buffers, upload the
- * inputs, compute, download the result. Identical code for CPU (0), BLAS (1)
- * and Vulkan (2) - which is exactly the point: a GPU backend's tensors live in
- * device memory, so the host-pointer shortcut Rggml_compute_mul_mat() takes
- * cannot work there.
+ * inputs, compute, download the result. Identical code for CPU (0), BLAS (1),
+ * Vulkan (2) and CUDA (3) - which is exactly the point: a GPU backend's
+ * tensors live in device memory, so the host-pointer shortcut
+ * Rggml_compute_mul_mat() takes cannot work there.
  *
  * Returns a numeric matrix, dim (ncol(A), ncol(B)) = crossprod(A, B).
  */
@@ -447,9 +535,10 @@ SEXP RC_rggml_test_mul_mat_backend(SEXP A_sexp, SEXP B_sexp, SEXP backend_sexp)
     case 0: backend = Rggml_backend_cpu_init_ptr()(); break;
     case 1: backend = Rggml_backend_blas_init_ptr()(); break;
     case 2: backend = Rggml_backend_vulkan_init_ptr()(0); break;
-    default: Rf_error("backend must be 0 (cpu), 1 (blas) or 2 (vulkan)");
+    case 3: backend = Rggml_backend_cuda_init_ptr()(0); break;
+    default: Rf_error("backend must be 0 (cpu), 1 (blas), 2 (vulkan) or 3 (cuda)");
     }
-    if (!backend) Rf_error("backend %d unavailable (Vulkan needs --with-vulkan and a device)", which);
+    if (!backend) Rf_error("backend %d unavailable (GPU backends require an enabled build and a device)", which);
 
     size_t mem = (size_t) 8 * t_over() + g_over(8) + 4096;
     struct ggml_context *ctx = ctx_create(mem, /*no_alloc=*/1);
@@ -520,8 +609,33 @@ SEXP RC_rggml_vulkan_info(void)
     return out;
 }
 
+/* RC_rggml_cuda_info() -> list(n_devices, description of device 0 or NA) */
+SEXP RC_rggml_cuda_info(void)
+{
+    int n = Rggml_backend_cuda_device_count_ptr()();
+    SEXP out = PROTECT(Rf_allocVector(VECSXP, 2));
+    SET_VECTOR_ELT(out, 0, Rf_ScalarInteger(n));
+    if (n > 0) {
+        char buf[256];
+        buf[0] = '\0';
+        if (Rggml_backend_cuda_device_description_ptr()(0, buf, sizeof(buf)) == 0) {
+            SET_VECTOR_ELT(out, 1, Rf_mkString(buf));
+        } else {
+            SET_VECTOR_ELT(out, 1, Rf_ScalarString(NA_STRING));
+        }
+    } else {
+        SET_VECTOR_ELT(out, 1, Rf_ScalarString(NA_STRING));
+    }
+    SEXP nm = PROTECT(Rf_allocVector(STRSXP, 2));
+    SET_STRING_ELT(nm, 0, Rf_mkChar("n_devices"));
+    SET_STRING_ELT(nm, 1, Rf_mkChar("device"));
+    Rf_setAttrib(out, R_NamesSymbol, nm);
+    UNPROTECT(2);
+    return out;
+}
+
 /*
- * RC_rggml_cpu_info() -> list(arch_kernels, simd_dispatch, sgemm, vulkan)
+ * RC_rggml_cpu_info() -> list(arch_kernels, simd_dispatch, sgemm, vulkan, cuda)
  *
  * Reports what configure actually compiled, read straight off the preprocessor
  * symbols it put in PKG_CPPFLAGS. This exists because a build that silently
@@ -556,18 +670,26 @@ SEXP RC_rggml_cpu_info(void)
 #else
         FALSE;
 #endif
+    const Rboolean cuda =
+#ifdef RGGML_HAVE_CUDA
+        TRUE;
+#else
+        FALSE;
+#endif
 
-    SEXP out = PROTECT(Rf_allocVector(VECSXP, 4));
+    SEXP out = PROTECT(Rf_allocVector(VECSXP, 5));
     SET_VECTOR_ELT(out, 0, Rf_mkString(kernels));
     SET_VECTOR_ELT(out, 1, Rf_ScalarLogical(dispatch));
     SET_VECTOR_ELT(out, 2, Rf_ScalarLogical(sgemm));
     SET_VECTOR_ELT(out, 3, Rf_ScalarLogical(vulkan));
+    SET_VECTOR_ELT(out, 4, Rf_ScalarLogical(cuda));
 
-    SEXP nm = PROTECT(Rf_allocVector(STRSXP, 4));
+    SEXP nm = PROTECT(Rf_allocVector(STRSXP, 5));
     SET_STRING_ELT(nm, 0, Rf_mkChar("arch_kernels"));
     SET_STRING_ELT(nm, 1, Rf_mkChar("simd_dispatch"));
     SET_STRING_ELT(nm, 2, Rf_mkChar("sgemm"));
     SET_STRING_ELT(nm, 3, Rf_mkChar("vulkan"));
+    SET_STRING_ELT(nm, 4, Rf_mkChar("cuda"));
     Rf_setAttrib(out, R_NamesSymbol, nm);
     UNPROTECT(2);
     return out;

@@ -487,7 +487,7 @@ void ggml_backend_tensor_copy(const struct ggml_tensor * src, struct ggml_tensor
     } else if (!ggml_backend_buffer_copy_tensor(src, dst)) {
 #ifndef NDEBUG
         GGML_LOG_DEBUG("%s: warning: slow copy from %s to %s\n", __func__, ggml_backend_buffer_name(src->buffer), ggml_backend_buffer_name(dst->buffer));
-#endif
+#endif // NDEBUG
         size_t nbytes = ggml_nbytes(src);
         void * data = malloc(nbytes);
         ggml_backend_tensor_get(src, data, 0, nbytes);
@@ -753,7 +753,7 @@ static bool ggml_is_view_op(enum ggml_op op) {
 #endif
 
 #ifndef GGML_SCHED_MAX_SPLIT_INPUTS
-#define GGML_SCHED_MAX_SPLIT_INPUTS 64
+#define GGML_SCHED_MAX_SPLIT_INPUTS 30
 #endif
 
 #ifndef GGML_SCHED_MAX_COPIES
@@ -1238,15 +1238,6 @@ void ggml_backend_sched_split_graph(ggml_backend_sched_t sched, struct ggml_cgra
         for (int b = 0; b < sched->n_backends && *cur_backend_id == -1; b++) {
             ggml_backend_sched_set_if_supported(sched, node, b, cur_backend_id);
         }
-        /* Debug: uncomment to diagnose unsupported ops
-        if (*cur_backend_id == -1) {
-            fprintf(stderr, "[sched] no backend for node: op=%s name=%s ne=[%lld,%lld,%lld,%lld,%lld]\n",
-                    ggml_op_name(node->op), node->name,
-                    (long long)node->ne[0],(long long)node->ne[1],
-                    (long long)node->ne[2],(long long)node->ne[3],
-                    (long long)node->ne[4]);
-        }
-        */
         GGML_ASSERT(*cur_backend_id != -1);
     }
 
@@ -1553,17 +1544,6 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
     ggml_tensor * prev_ids_tensor = nullptr;
     std::vector<int32_t> ids;
     std::vector<ggml_bitset_t> used_ids;
-
-    if (getenv("GGML_VKG_SUBMITS")) {
-        int n_cpu = 0, n_gpu = 0, tot_inputs = 0;
-        for (int s = 0; s < sched->n_splits; s++) {
-            const char * bn = ggml_backend_name(sched->backends[sched->splits[s].backend_id]);
-            if (bn && (bn[0] == 'C' || bn[0] == 'c')) n_cpu++; else n_gpu++;
-            tot_inputs += sched->splits[s].n_inputs;
-        }
-        fprintf(stderr, "[SCHED_SPLITS] n_splits=%d (gpu~%d cpu~%d) tot_split_inputs=%d\n",
-                sched->n_splits, n_gpu, n_cpu, tot_inputs);
-    }
 
     for (int split_id = 0; split_id < sched->n_splits; split_id++) {
         struct ggml_backend_sched_split * split = &splits[split_id];
@@ -1907,7 +1887,6 @@ enum ggml_status ggml_backend_sched_graph_compute(ggml_backend_sched_t sched, st
 
 enum ggml_status ggml_backend_sched_graph_compute_async(ggml_backend_sched_t sched, struct ggml_cgraph * graph) {
     GGML_ASSERT(sched);
-
     if (!sched->is_reset && !sched->is_alloc) {
         ggml_backend_sched_reset(sched);
     }
@@ -2268,30 +2247,6 @@ static void ggml_backend_cpu_buffer_get_tensor(ggml_backend_buffer_t buffer, con
     GGML_UNUSED(buffer);
 }
 
-static void ggml_backend_cpu_buffer_set_tensor_2d(ggml_backend_buffer_t buffer, struct ggml_tensor * tensor, const void * data, size_t offset, size_t size,
-        size_t n_copies, size_t stride_tensor, size_t stride_data) {
-    GGML_ASSERT(tensor);
-    char * dst = (char *) tensor->data + offset;
-    const char * src = (const char *) data;
-    for (size_t i = 0; i < n_copies; i++) {
-        memcpy(dst + i*stride_tensor, src + i*stride_data, size);
-    }
-
-    GGML_UNUSED(buffer);
-}
-
-static void ggml_backend_cpu_buffer_get_tensor_2d(ggml_backend_buffer_t buffer, const struct ggml_tensor * tensor, void * data, size_t offset, size_t size,
-        size_t n_copies, size_t stride_tensor, size_t stride_data) {
-    GGML_ASSERT(tensor);
-    const char * src = (const char *) tensor->data + offset;
-    char * dst = (char *) data;
-    for (size_t i = 0; i < n_copies; i++) {
-        memcpy(dst + i*stride_data, src + i*stride_tensor, size);
-    }
-
-    GGML_UNUSED(buffer);
-}
-
 static bool ggml_backend_cpu_buffer_cpy_tensor(ggml_backend_buffer_t buffer, const struct ggml_tensor * src, struct ggml_tensor * dst) {
     GGML_ASSERT(src);
     if (ggml_backend_buffer_is_host(src->buffer)) {
@@ -2315,8 +2270,8 @@ static const struct ggml_backend_buffer_i ggml_backend_cpu_buffer_i = {
     /* .memset_tensor   = */ ggml_backend_cpu_buffer_memset_tensor,
     /* .set_tensor      = */ ggml_backend_cpu_buffer_set_tensor,
     /* .get_tensor      = */ ggml_backend_cpu_buffer_get_tensor,
-    /* .set_tensor_2d   = */ ggml_backend_cpu_buffer_set_tensor_2d,
-    /* .get_tensor_2d   = */ ggml_backend_cpu_buffer_get_tensor_2d,
+    /* .set_tensor_2d   = */ NULL,
+    /* .get_tensor_2d   = */ NULL,
     /* .cpy_tensor      = */ ggml_backend_cpu_buffer_cpy_tensor,
     /* .clear           = */ ggml_backend_cpu_buffer_clear,
     /* .reset           = */ NULL,
@@ -2329,8 +2284,8 @@ static const struct ggml_backend_buffer_i ggml_backend_cpu_buffer_from_ptr_i = {
     /* .memset_tensor   = */ ggml_backend_cpu_buffer_memset_tensor,
     /* .set_tensor      = */ ggml_backend_cpu_buffer_set_tensor,
     /* .get_tensor      = */ ggml_backend_cpu_buffer_get_tensor,
-    /* .set_tensor_2d   = */ ggml_backend_cpu_buffer_set_tensor_2d,
-    /* .get_tensor_2d   = */ ggml_backend_cpu_buffer_get_tensor_2d,
+    /* .set_tensor_2d   = */ NULL,
+    /* .get_tensor_2d   = */ NULL,
     /* .cpy_tensor      = */ ggml_backend_cpu_buffer_cpy_tensor,
     /* .clear           = */ ggml_backend_cpu_buffer_clear,
     /* .reset           = */ NULL,

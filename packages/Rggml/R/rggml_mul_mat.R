@@ -13,20 +13,22 @@
 #'   \code{"blas"} (offloads the dense F32 product to whatever BLAS the R build
 #'   links against), or \code{"vulkan"} (a Vulkan device; requires Rggml built
 #'   with \code{--with-vulkan} and a visible device, see
-#'   [rggml_vulkan_info()]). Errors if the requested backend is unavailable.
+#'   [rggml_vulkan_info()]), or \code{"cuda"} (an NVIDIA CUDA device;
+#'   requires Rggml built with \code{--with-cuda}, see
+#'   [rggml_cuda_info()]). Errors if the requested backend is unavailable.
 #' @return A numeric matrix, dim \code{c(ncol(A), ncol(B))}, equal to
 #'   \code{crossprod(A, B)} up to single-precision rounding.
-#' @seealso [rggml_vulkan_info()], [rggml_cpu_info()]
+#' @seealso [rggml_vulkan_info()], [rggml_cuda_info()], [rggml_cpu_info()]
 #' @examples
 #' A <- matrix(rnorm(12), 4, 3)
 #' B <- matrix(rnorm(8), 4, 2)
 #' rggml_mul_mat(A, B)               # == crossprod(A, B) to fp32
 #' @export
-rggml_mul_mat <- function(A, B, backend = c("cpu", "blas", "vulkan")) {
+rggml_mul_mat <- function(A, B, backend = c("cpu", "blas", "vulkan", "cuda")) {
     backend <- match.arg(backend)
     if (!is.matrix(A) || !is.matrix(B)) stop("A and B must be matrices")
     storage.mode(A) <- "double"
     storage.mode(B) <- "double"
-    code <- c(cpu = 0L, blas = 1L, vulkan = 2L)[[backend]]
+    code <- c(cpu = 0L, blas = 1L, vulkan = 2L, cuda = 3L)[[backend]]
     .Call("RC_rggml_test_mul_mat_backend", A, B, code)
 }

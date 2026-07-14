@@ -54,10 +54,10 @@ remotes::install_github("sounkou-bioinfo/Rgguf")
 
 ## Usage
 
-The example runs inside `local()` so its `on.exit()` cleanup stays
-scoped to the snippet while the README is rendered; in your own code,
-keep the runtime handle you need and call `Rfmalloc::cleanup_fmalloc()`
-when finished.
+The example uses `local()` so its `on.exit()` cleanup stays scoped to
+the snippet. In your own code, keep the runtime handle for as long as
+its arrays are live and call `Rfmalloc::cleanup_fmalloc()` when
+finished.
 
 ``` r
 library(Rgguf)

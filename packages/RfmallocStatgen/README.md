@@ -38,8 +38,8 @@ The active directions are logistic regression, clumping and pruning,
 GRM, autoSVD and projection, lassosum2, LD score regression, split-LD,
 and direct locus-row access for Li and Stephens or kalis-class HMMs. GPU
 composition stays behind the same backend boundary; the current WSL rig
-exposes its RTX 5050 only through CUDA, not Vulkan. See `ROADMAP.md` for
-the same list without the rendered example.
+exposes its RTX 5050 only through CUDA, not Vulkan. `ROADMAP.md` records
+these directions and the evidence required to close each one.
 
 ## Usage
 

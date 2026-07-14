@@ -30,6 +30,8 @@ extern "C" {
 
 void ggml_print_backtrace(void);
 
+uint64_t ggml_graph_next_uid(void);
+
 #ifndef MIN
 #    define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif
@@ -47,9 +49,7 @@ void ggml_print_backtrace(void);
 // ref: https://stackoverflow.com/a/53923785/4039976
 #ifndef __cplusplus
     #ifndef static_assert
-        #if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 202311L)
-            // static_assert is a keyword since C23 - nothing to define
-        #elif defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201100L)
+        #if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201100L)
             #define static_assert(cond, msg) _Static_assert(cond, msg)
         #else
             #define static_assert(cond, msg) struct global_scope_noop_trick
@@ -72,7 +72,7 @@ static inline int ggml_up(int n, int m) {
 }
 
 // TODO: move to ggml.h? (won't be able to inline)
-static inline bool ggml_are_same_layout(const struct ggml_tensor * a, const struct ggml_tensor * b) {
+static bool ggml_are_same_layout(const struct ggml_tensor * a, const struct ggml_tensor * b) {
     if (a->type != b->type) {
         return false;
     }
@@ -353,9 +353,6 @@ struct ggml_cgraph ggml_graph_view(struct ggml_cgraph * cgraph, int i0, int i1);
 
 // ggml-alloc.c: true if the operation can reuse memory from its sources
 GGML_API bool ggml_op_can_inplace(enum ggml_op op);
-
-// monotonically increasing unique id for compute graphs (0 is reserved as "unset")
-GGML_API uint64_t ggml_graph_next_uid(void);
 
 
 // Memory allocation
@@ -677,6 +674,9 @@ static inline bool ggml_can_fuse_ext(const struct ggml_cgraph * cgraph, const in
 
         struct ggml_tensor * node = cgraph->nodes[node_idxs[i]];
         if (node->op != ops[i]) {
+            return false;
+        }
+        if ((node->flags & GGML_TENSOR_FLAG_COMPUTE) == 0) {
             return false;
         }
         if (i < num_ops - 1 && !ggml_node_has_n_uses(cgraph, node_idxs[i], 1)) {

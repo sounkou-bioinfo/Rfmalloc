@@ -4,13 +4,15 @@
 \alias{rggml_test_mul_mat_q4k}
 \title{(internal) Run a quantized (Q4_K) 'GGML' matmul through the C-callables}
 \usage{
-rggml_test_mul_mat_q4k(A, B)
+rggml_test_mul_mat_q4k(A, B, backend = c("cpu", "blas", "vulkan", "cuda"))
 }
 \arguments{
 \item{A}{Numeric weight matrix; \code{nrow(A)} (the contracted dimension)
 must be a multiple of 256 (\code{QK_K}).}
 
 \item{B}{Numeric activation matrix with \code{nrow(B) == nrow(A)}.}
+
+\item{backend}{The GGML backend that owns the tensor buffer.}
 }
 \value{
 A numeric matrix, dim \code{c(ncol(A), ncol(B))}, equal to

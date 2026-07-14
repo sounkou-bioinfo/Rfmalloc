@@ -16,8 +16,10 @@ SEXP RC_rggml_version(void);
 SEXP RC_rggml_test_mul_mat(SEXP A_sexp, SEXP B_sexp, SEXP zero_copy_sexp, SEXP use_blas_sexp);
 SEXP RC_rggml_test_mul_mat_backend(SEXP A_sexp, SEXP B_sexp, SEXP backend_sexp);
 SEXP RC_rggml_vulkan_info(void);
+SEXP RC_rggml_cuda_info(void);
 SEXP RC_rggml_cpu_info(void);
 SEXP RC_rggml_test_mul_mat_q4k(SEXP A_sexp, SEXP B_sexp);
+SEXP RC_rggml_test_mul_mat_q4k_backend(SEXP A_sexp, SEXP B_sexp, SEXP backend_sexp);
 SEXP RC_rggml_test_q4k_dot(SEXP nblocks_sexp);
 SEXP RC_rggml_bench_q4k_dot(SEXP nblocks_sexp, SEXP iters_sexp);
 
@@ -26,8 +28,10 @@ static const R_CallMethodDef CallEntries[] = {
     {"RC_rggml_test_mul_mat",      (DL_FUNC) &RC_rggml_test_mul_mat,      4},
     {"RC_rggml_test_mul_mat_backend", (DL_FUNC) &RC_rggml_test_mul_mat_backend, 3},
     {"RC_rggml_vulkan_info",       (DL_FUNC) &RC_rggml_vulkan_info,       0},
+    {"RC_rggml_cuda_info",         (DL_FUNC) &RC_rggml_cuda_info,         0},
     {"RC_rggml_cpu_info",          (DL_FUNC) &RC_rggml_cpu_info,          0},
     {"RC_rggml_test_mul_mat_q4k",  (DL_FUNC) &RC_rggml_test_mul_mat_q4k,  2},
+    {"RC_rggml_test_mul_mat_q4k_backend", (DL_FUNC) &RC_rggml_test_mul_mat_q4k_backend, 3},
     {"RC_rggml_test_q4k_dot",      (DL_FUNC) &RC_rggml_test_q4k_dot,      1},
     {"RC_rggml_bench_q4k_dot",     (DL_FUNC) &RC_rggml_bench_q4k_dot,     2},
     {NULL, NULL, 0}
@@ -58,6 +62,9 @@ static void register_c_callables(DllInfo *dll)
     R_RegisterCCallable("Rggml", "Rggml_backend_vulkan_device_count", (DL_FUNC) Rggml_backend_vulkan_device_count);
     R_RegisterCCallable("Rggml", "Rggml_backend_vulkan_init",       (DL_FUNC) Rggml_backend_vulkan_init);
     R_RegisterCCallable("Rggml", "Rggml_backend_vulkan_device_description", (DL_FUNC) Rggml_backend_vulkan_device_description);
+    R_RegisterCCallable("Rggml", "Rggml_backend_cuda_device_count", (DL_FUNC) Rggml_backend_cuda_device_count);
+    R_RegisterCCallable("Rggml", "Rggml_backend_cuda_init",       (DL_FUNC) Rggml_backend_cuda_init);
+    R_RegisterCCallable("Rggml", "Rggml_backend_cuda_device_description", (DL_FUNC) Rggml_backend_cuda_device_description);
     R_RegisterCCallable("Rggml", "Rggml_backend_alloc_ctx_tensors", (DL_FUNC) Rggml_backend_alloc_ctx_tensors);
     R_RegisterCCallable("Rggml", "Rggml_backend_buffer_free",     (DL_FUNC) Rggml_backend_buffer_free);
     R_RegisterCCallable("Rggml", "Rggml_backend_tensor_set",      (DL_FUNC) Rggml_backend_tensor_set);

@@ -48,6 +48,11 @@ int Rggml_backend_vulkan_device_count(void);
 ggml_backend_t Rggml_backend_vulkan_init(int device);
 int Rggml_backend_vulkan_device_description(int device, char *buf, size_t buf_size);
 
+/* CUDA backend; reports 0 devices unless built --with-cuda */
+int Rggml_backend_cuda_device_count(void);
+ggml_backend_t Rggml_backend_cuda_init(int device);
+int Rggml_backend_cuda_device_description(int device, char *buf, size_t buf_size);
+
 /* device-buffer residency (API version 7): the backend-agnostic
  * allocate/upload/compute/download path, required by GPU backends */
 ggml_backend_buffer_t Rggml_backend_alloc_ctx_tensors(struct ggml_context *ctx,

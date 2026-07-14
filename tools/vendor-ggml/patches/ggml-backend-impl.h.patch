@@ -1,5 +1,5 @@
---- a/ggml-backend-impl.h	2026-05-26 13:45:14.000000000 +0200
-+++ b/ggml-backend-impl.h	2026-07-07 18:38:14.141979227 +0200
+--- a/ggml-backend-impl.h
++++ b/ggml-backend-impl.h
 @@ -70,10 +70,10 @@
      };
  

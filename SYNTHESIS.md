@@ -33,11 +33,17 @@ package boundary.
 
 ## What this resolves
 
-- Rgguf no longer owns a partial C port of the GGUF format. Rggml vendors
-  GGML's official `gguf.cpp`, and Rgguf is the R-facing adapter.
+- Rggml derives core, CPU, BLAS, GGUF, Vulkan and CUDA from one pinned official
+  GGML v0.11.0 tree. The unused ggmlR engine fork and its split translation
+  units are gone. Rgguf no longer owns a partial C port of the format; it is
+  the R-facing adapter over the one official `gguf.cpp`.
 - Rllm weights borrow their exact encoded spans from the original read-only
   GGUF mapping. Loading a 4.9 GB model created 256 views over 4.79 GiB in 34 ms
-  and created no persistent fmalloc allocation records.
+  and created no persistent fmalloc allocation records. CPU computation uses
+  those spans directly. CUDA makes the one materialization the device actually
+  requires: a model-owned execution context uploads the codec-native weights
+  once and reuses them. Device residency is therefore context state, not a
+  second storage format and not a compressed-versus-uncompressed API split.
 - Rpgen keeps one persistent PGEN or BED reader and transfers bounded panels
   into hardcall, dosage, phased-haplotype, or dense destinations. PED/MAP,
   TPED/TFAM, BGEN, VCF/BCF, GEN, HAPS/legend, EIGENSTRAT, and legacy dosage
@@ -80,6 +86,17 @@ page-cache state. Cached view construction is not evidence about SSD
 throughput. See [antirez/ds4](https://github.com/antirez/ds4#running-models-larger-than-ram)
 for the design being compared.
 
+The CUDA experiment separates residency from reusable execution. Keeping
+codec-native weights in a model-owned device context is a clear win and does
+not alter the storage contract. Keeping GGML's graph allocator in a persistent
+scheduler is not: on the RTX 5050, a 12-token prompt followed by 128 greedy
+tokens measured 69.7 tok/s on the retained direct path and 63.7 with the
+scheduler. CUDA graph capture measured 62.6 because attention extents and graph
+properties change at each token. Both experiments were removed. Upstream
+`llama-bench` on the same model and rig measures 156.1 tok/s without graphs and
+460.1 with them, so the remaining contradiction is graph stability and mutable
+KV residency, not another buffer-transfer or storage API.
+
 ## Threat model for this phase
 
 The working environment is a trusted researcher running local code over local
@@ -103,8 +120,11 @@ again from that boundary.
    then decide whether a fused compressed dot deserves to exist.
 3. Build the layer access scheduler and compare mmap advice with explicit
    double buffering on cold storage.
-4. Carry typed payloads into a CUDA backend without changing storage ownership
-   or the decline contract.
+4. Make a decode graph genuinely reusable before revisiting persistence. Test
+   stable or bucketed attention extents and device-resident mutable KV state
+   against the current host-authoritative cache, preserving explicit CPU/CUDA
+   handoff. Persistent graph allocation without stable execution has already
+   measured slower and does not deserve an API.
 5. Decide whether importer metadata should become its own semantic sink. It is
    currently transient because compute paths consume genotype records only.
 

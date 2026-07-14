@@ -38,11 +38,15 @@ rggml_test_mul_mat <- function(A, B, zero_copy = FALSE, backend = c("cpu", "blas
 #' @param A Numeric weight matrix; \code{nrow(A)} (the contracted dimension)
 #'   must be a multiple of 256 (\code{QK_K}).
 #' @param B Numeric activation matrix with \code{nrow(B) == nrow(A)}.
+#' @param backend The GGML backend that owns the tensor buffer.
 #' @return A numeric matrix, dim \code{c(ncol(A), ncol(B))}, equal to
 #'   \code{crossprod(A, B)} up to q4_K/q8_K quantization error.
 #' @keywords internal
-rggml_test_mul_mat_q4k <- function(A, B) {
+rggml_test_mul_mat_q4k <- function(A, B,
+                                   backend = c("cpu", "blas", "vulkan", "cuda")) {
+    backend <- match.arg(backend)
     storage.mode(A) <- "double"
     storage.mode(B) <- "double"
-    .Call("RC_rggml_test_mul_mat_q4k", A, B)
+    code <- c(cpu = 0L, blas = 1L, vulkan = 2L, cuda = 3L)[[backend]]
+    .Call("RC_rggml_test_mul_mat_q4k_backend", A, B, code)
 }

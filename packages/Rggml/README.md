@@ -8,8 +8,8 @@
 
 Rggml is a low-level **carrier package** for
 [GGML](https://github.com/ggml-org/ggml). It vendors the core, CPU and
-BLAS backends, optional Vulkan backend, and official GGUF implementation
-as one generated static library. It exposes them through
+BLAS backends, optional Vulkan and CUDA backends, and official GGUF
+implementation as one generated static library. It exposes them through
 `R_RegisterCCallable()` so sibling packages can build tensor graphs,
 inspect GGUF files, and compute without separately vendoring or linking
 GGML. Its small R surface provides diagnostics and direct matrix
@@ -19,15 +19,15 @@ storage integration belongs in Rgguf.
 ``` r
 library(Rggml)
 ggml_version()
-#> [1] "0.9.5"
+#> [1] "0.11.0"
 ```
 
 ## What’s vendored
 
 A generated, pinned subset of GGML: tensor/context/graph core, the
 official `gguf.cpp` reader and writer, tensor-level quantize/dequantize,
-CPU kernels, the **BLAS backend**, and the opt-in Vulkan source and
-shaders. See `inst/COPYRIGHTS` and `tools/vendor-ggml/PROVENANCE.md` for
+CPU kernels, the **BLAS backend**, and the opt-in Vulkan and CUDA
+sources. See `inst/COPYRIGHTS` and `tools/vendor-ggml/PROVENANCE.md` for
 the exact recipe.
 
 Dense matrix products do **not** run scalar: GGML’s BLAS backend
@@ -58,14 +58,13 @@ requires `GGML_BACKEND_DL` + separate per-variant shared libraries
 loaded via `dlopen`, which does not fit a single-`.so` CRAN package.)
 
 The GGML tree is **generated, not a mystery copy**: `tools/vendor-ggml/`
-in the monorepo regenerates it from a SHA-pinned
-[`ggmlR`](https://github.com/Zabis13/ggmlR) CRAN tarball plus our own
-patches and overlay files, and a CI job asserts the committed tree still
-equals that recipe. ggmlR carries the CRAN-compliance adaptations
-(stdio/abort redirection) GGML’s C code needs to run inside R. See
-`inst/COPYRIGHTS` and `tools/vendor-ggml/PROVENANCE.md` for attribution,
-the patch list and the update policy (GGML and ggmlR are both MIT;
-Rggml’s own code is GPL (\>= 2)).
+in the monorepo selects 487 files from official GGML v0.11.0 commit
+`1f09c6987071`, verifies their paths and contents, applies the small
+local patch set, and lets CI derive the tree again. Core, BLAS, GGUF,
+CPU, Vulkan and CUDA therefore move as one engine. The only
+ggmlR-derived component left is its MIT-licensed R-safe diagnostic shim.
+See `inst/COPYRIGHTS` and `tools/vendor-ggml/PROVENANCE.md` for the
+complete derivation.
 
 ## Vulkan GPU backend (opt-in)
 
@@ -100,7 +99,33 @@ be exercised without a GPU at all through Mesa’s software driver, since
 `GGML_VK_ALLOW_CPU=1` opts in to the CPU-type Vulkan devices upstream
 refuses.
 
-CUDA and Metal are not built.
+Metal is not built.
+
+## CUDA GPU backend (opt-in)
+
+The CUDA backend is built from the same pinned GGML source as the core.
+It is NVIDIA-only and opt-in because it requires a local CUDA toolkit
+and a native `nvcc` build:
+
+    R CMD INSTALL --configure-args="--with-cuda=/usr/local/cuda" packages/Rggml
+
+`CUDA_HOME` supplies the toolkit when no path is passed.
+`RGGML_CUDA_ARCH` can pin an architecture such as `sm_89` or `sm_120a`;
+otherwise `nvcc` chooses its native default. `rggml_cuda_info()` reports
+visible devices, and a build without CUDA reports zero rather than
+failing. CUDA uses the same backend-owned allocation, tensor upload,
+graph compute and download API as Vulkan. Rllm exercises that path with
+a complete transformer graph, not only a standalone matrix product.
+Extended Blackwell targets such as `sm_120a` emit both matching PTX and
+SASS rather than silently losing the architecture suffix.
+
+CUDA graph capture is compiled only when `RGGML_CUDA_GRAPHS=1` is set
+during configuration. It is off by default because Rllm’s current decode
+graph changes its attention extent on every token: on the RTX 5050 rig
+capture measured 62.6 tokens/s versus 69.7 for ordinary launches. This
+is an experiment switch, not a performance claim. The rig’s full Rggml
+suite passes 85 checks and Rllm’s real-model stack passes whole-graph
+and cache correctness on the device.
 
 ## C-callable API
 
@@ -205,16 +230,16 @@ No GGML re-vendoring, no linking against `Rggml.so` at the linker
 level - only `R_GetCCallable()` symbol resolution at run time (standard
 R C-callable convention, same as e.g. `Rfmalloc`/`Rgguf`).
 
-## Status
+## Validation surface
 
-- `R CMD check` - clean (`Status: OK`, 0 warnings/notes) on Linux; the
-  cross-platform matrix (Linux + macOS) runs in CI, see the badge above.
-- `tinytest::test_package("Rggml")` - all tests pass, including the
-  end-to-end `ggml_mul_mat()` proof above.
-- **Platforms**: Linux, macOS and Windows. The Windows build goes
-  through `configure.win`, which re-execs the one `configure` with
-  `RGGML_WINDOWS=1` so the SIMD probe, the Vulkan shader pipeline and
-  the `libggml.a` build are not duplicated; it writes `src/Makevars.win`
-  (no `-ldl` - Windows has no libdl) and finds the Vulkan SDK under its
-  Windows layout (`$VULKAN_SDK/Bin/glslc.exe`, `-lvulkan-1`). Verified
-  by the `windows-latest` job in CI.
+The tinytest suite pins dense BLAS products, every exposed quantized
+decoder, Q4_K contraction, runtime SIMD selection and the graceful
+absence of optional device backends. CUDA and Vulkan products are
+compared with the CPU backend when those devices are present.
+
+The ordinary build targets Linux, macOS, Windows and aarch64. On
+Windows, `configure.win` re-executes the shared configure logic with
+`RGGML_WINDOWS=1`, writes `src/Makevars.win` without `-ldl`, and locates
+an optional Vulkan SDK through `$VULKAN_SDK`. The CUDA correctness and
+performance path is exercised separately on the RTX 5050 rig because CI
+has no NVIDIA device.

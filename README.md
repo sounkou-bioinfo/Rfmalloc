@@ -6,278 +6,309 @@
 [![R-CMD-check](https://github.com/sounkou-bioinfo/Rfmalloc/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/sounkou-bioinfo/Rfmalloc/actions/workflows/R-CMD-check.yaml)
 <!-- badges: end -->
 
-**One repo, one story: array computation on data that does not fit in
-RAM, over pluggable storage codecs and compute backends.**
+**One repo, one argument: computation should close over typed storage
+without forcing every representation through a dense R object.**
 
-Memory-mapped file storage (a patched
+Out-of-core computation is not a file format. It is the refusal to treat
+RAM as the boundary of an array. Rfmalloc begins with a patched
 [fmalloc](https://github.com/yasukata/fmalloc) allocator behind R’s
-ALTREP) turns RAM from a hard cutoff into a spectrum of speed levels. On
-top of that substrate sit two plugin registries that everything else
-closes over:
+ALTREP, so a memory-mapped file can be an ordinary R vector whenever an
+ordinary pointer is a truthful representation. RAM then stops being a
+hard cutoff and becomes one fast level in a spectrum that continues
+through the page cache and storage.
 
-- a **codec registry** - how bytes are stored: lossless (`f64` `f32`
-  `f16` `bf16` `alp` `sparse`) for scientific data where bit-exactness
-  is non-negotiable, and lossy GGUF quantized blocks (`q4_0` … `q6_k`)
-  for model weights at 2-8 bits each;
-- a **matmul backend registry** - how products are computed: R’s BLAS by
-  default, [GGML](https://github.com/ggml-org/ggml) natively in
-  quantized space, GPU backends next.
+That first move exposes its own limit. A PLINK hardcall occupies two
+bits, a GGUF weight may occupy four and a half, and a phased haplotype
+is not a number waiting to become a double. None of them can honestly
+masquerade as a `double*`. The abstraction that survives is therefore
+larger than mmap: a storage span carries bytes, extent, ownership and
+runtime context; a codec gives those bytes numeric meaning when a
+numeric algorithm asks for bounded panels; a typed accessor preserves
+non-numeric meaning when it does not; and a compute backend chooses how
+to consume the representation. These decisions remain independent.
 
-The contract that makes it compose is the **decline protocol**: any
-backend may refuse any product, and the substrate falls back to bounded
-decode panels + BLAS. Plugins change how fast you get an answer, never
-whether it is correct.
+The independence is enforced by a small but decisive contract. A backend
+may decline any product. Rfmalloc then decodes bounded panels and hands
+them to BLAS. Specialization may change where bytes live and how quickly
+a result arrives, but never whether the result exists. The abstraction
+was not imposed in advance. It is what remained when the same
+materialization problem appeared in scientific arrays, genotype formats
+and quantized language models.
 
-## Two domains, one substrate
+## A pointer is enough until it is not
 
-The same file-backed matrices and the same backend registry serve both
-larger-than-RAM **scientific computing** and quantized **LLM
-inference** - the whole point of the abstraction. Both examples below
-are `%*%`/`crossprod` over fmalloc tensors; the only thing that differs
-is which codec and backend the registry dispatches to.
-
-### Genomics: out-of-core PCA (runs at render time)
-
-A cells × genes expression matrix lives in a memory-mapped file, so it
-scales past RAM (products stream in panels). Highly-variable-gene
-selection and PCA never materialize an ordinary R copy, and the linear
-algebra goes through the backend registry:
+A cells by genes matrix can live in an fmalloc mapping while R continues
+to see a matrix. Variance reduction and PCA stream over it without
+constructing a second dense payload, and their products still pass
+through the backend registry.
 
 ``` r
 library(Rfmalloc)
 
 rt <- open_fmalloc(tempfile(fileext = ".bin"), size_gb = 1)
 set.seed(1)
-# 3000 cells x 600 genes with 4 latent "cell-type" factors + noise; file-backed
-factors  <- matrix(rnorm(3000 * 4), 3000, 4)          # per-cell factor scores
-loadings <- matrix(rnorm(4 * 600), 4, 600)            # per-gene factor loadings
+factors  <- matrix(rnorm(3000 * 4), 3000, 4)
+loadings <- matrix(rnorm(4 * 600), 4, 600)
 X <- create_fmalloc_matrix("numeric", nrow = 3000, ncol = 600, runtime = rt)
 X[] <- 3 * (factors %*% loadings) + matrix(rnorm(3000 * 600), 3000, 600)
 
-vars <- fmalloc_colVars(X)          # per-gene variance, single-pass reduction (no R copy)
-length(which(vars > quantile(vars, 0.9)))   # candidate highly-variable genes
+vars <- fmalloc_colVars(X)
+length(which(vars > quantile(vars, 0.9)))
 #> [1] 60
 
-pca <- fmalloc_pca(X, k = 6)        # Gram matrix + scores, dispatched through the backend registry
-round(pca$sdev, 2)                  # 4 factors stand out above the noise floor
+pca <- fmalloc_pca(X, k = 6)
+round(pca$sdev, 2)
 #> [1] 77.74 74.67 72.43 66.61  1.44  1.44
-dim(pca$x)                          # cell scores in the top PC space
+dim(pca$x)
 #> [1] 3000    6
 ```
 
-### Someone else’s algorithm, our storage (runs at render time)
-
-`bigPCAcpp` and `bigPLSR` link bigmemory;
+The more revealing case is code that knows nothing about this
+repository. `bigPCAcpp` and `bigPLSR` link bigmemory, while
 [`pcaone`](https://github.com/Zilong-Li/PCAoneR) takes an
-`Eigen::Map<MatrixXd>`. All three consume a bare `double*`. An fmalloc
-ALTREP matrix *is* a `double*`, into an mmap. So a randomized SVD
-written by somebody who has never heard of this package runs out-of-core
-over it, unchanged, with no copy:
+`Eigen::Map<MatrixXd>`. They consume a bare pointer. An fmalloc ALTREP
+matrix is such a pointer into an mmap, so the same randomized SVD can
+work over a payload larger than the R heap without being rewritten
+around a new container.
 
 ``` r
-library(pcaone)                       # not ours: Li et al. 2023, randomized SVD
+library(pcaone)
 
 rt2 <- open_fmalloc(tempfile(fileext = ".bin"), size_gb = 3)
-m <- 2e6L; n <- 40L
+m <- 2e6L
+n <- 40L
 G <- create_fmalloc_matrix("numeric", nrow = m, ncol = n, runtime = rt2)
-set.seed(1); for (j in seq_len(n)) G[, j] <- rnorm(m)   # 610 MB, on disk
+set.seed(1)
+for (j in seq_len(n)) G[, j] <- rnorm(m)
 
 invisible(gc(reset = TRUE))
-sv_mapped <- pcaone(G, k = 5)$d                         # straight off the mmap
+sv_mapped <- pcaone(G, k = 5)$d
 peak_mapped <- gc()["Vcells", "max used"] * 8 / 2^20
 
 invisible(gc(reset = TRUE))
-sv_heap <- pcaone(matrix(G[], m, n), k = 5)$d           # an ordinary R matrix
+sv_heap <- pcaone(matrix(G[], m, n), k = 5)$d
 peak_heap <- gc()["Vcells", "max used"] * 8 / 2^20
 
-round(c(payload_MB    = m * n * 8 / 2^20,
-        peak_heap_MB  = peak_heap,          # pays for the payload
-        peak_mmap_MB  = peak_mapped))       # does not
+round(c(
+  payload_MB = m * n * 8 / 2^20,
+  peak_heap_MB = peak_heap,
+  peak_mmap_MB = peak_mapped
+))
 #>   payload_MB peak_heap_MB peak_mmap_MB 
 #>          610          697           86
-identical(sv_mapped, sv_heap)               # and the answer is the same one
+identical(sv_mapped, sv_heap)
 #> [1] TRUE
 ```
 
-The payload never enters the R heap. Nothing in `pcaone` knows why.
-
-That is the deal for anything already written against a pointer. Where
-it stops working is where no pointer can exist: **compressed** data.
-Nobody can hand `pcaone` a pointer into a PLINK `.bed`, because a
-genotype there is two bits, not eight bytes. That is what the codec
-registry is for, and it is the only thing it is for:
+The payload never enters the R heap, and `pcaone` never has to know why.
+This is the clean pointer case. Compressed storage begins exactly where
+that case ends.
 
 ``` r
 rt3 <- open_fmalloc(tempfile(fileext = ".bin"), size_gb = 1)
 set.seed(2)
-# 5000 samples x 1000 variants of hardcalls (0/1/2), SNP-major like a real .bed
-g  <- matrix(sample(c(0L, 1L, 2L), 5e6, replace = TRUE), 5000, 1000)
-tn <- fmalloc_bed(g, runtime = rt3)          # 2 bits per genotype, memory-mapped
+g <- matrix(sample(c(0L, 1L, 2L), 5e6, replace = TRUE), 5000, 1000)
+tn <- fmalloc_bed(g, runtime = rt3)
 
-c(bits_per_genotype = 8 * length(unclass(tn)) / length(g),
-  vs_double         = length(g) * 8 / length(unclass(tn)))
+c(
+  bits_per_genotype = 8 * length(unclass(tn)) / length(g),
+  vs_double = length(g) * 8 / length(unclass(tn))
+)
 #> bits_per_genotype         vs_double 
 #>          2.000038         31.999386
 
-# Products decode bounded column panels and hand them to BLAS. The genotypes are
-# never materialized as doubles; these two kernels are what a randomized SVD needs.
 Omega <- matrix(rnorm(1000 * 5), 1000, 5)
-max(abs(matrix((tn %*% Omega)[], 5000, 5) - matrix(as.numeric(g), 5000, 1000) %*% Omega))
+observed <- matrix((tn %*% Omega)[], 5000, 5)
+reference <- matrix(as.numeric(g), 5000, 1000) %*% Omega
+max(abs(observed - reference))
 #> [1] 0
 ```
 
-That codec is one of a family, and the family divides along a real line.
-`fmalloc_bed` stores PLINK hardcalls at 2 bits, `fmalloc_dosage` stores
-fractional dosages at 1 byte, and both **fuse** per-variant centering
-and scaling into the decode: one lookup-table read per genotype does
-decode, mean-imputation (a missing call maps to the variant mean, hence
-to 0 after centering, so imputation is free) and standardization at
-once. `fmalloc_bed_standardize()` therefore turns a genotype panel into
-a PCA-ready standardized matrix with no genotype ever expanded to a
-double. That is the **numeric** side, and it is what the matmul codec
-ABI serves.
+No pointer into the encoded payload could have given BLAS the matrix it
+expects. The codec instead decodes only the panel needed by the product.
+`fmalloc_bed` stores PLINK hardcalls at two bits and `fmalloc_dosage`
+stores fractional dosages at one byte. Both can fuse centering, mean
+imputation and scaling into the lookup that decodes each value. Missing
+calls map directly to zero after centering, so standardization does not
+require an intermediate genotype matrix.
 
-Phase and multiallelic data are not numbers, so they get a different
-interface. `fmalloc_haplotypes` stores phased haplotypes at 1 bit each
-and is deliberately **not** a matmul codec: it is a sibling over the
-same file-backed storage, with typed accessors instead of
-decode-to-double, and it feeds haplotype HMMs like
-[`kalis`](https://kalis.louisaslett.com/) (Li and Stephens local
-ancestry) losslessly, the way `pcaone` consumes the numeric side. Two
-access interfaces, one storage substrate. And `Rpgen` brings a native
-PLINK2 `.pgen` reader in C (it vendors pgenlib, GPL-3), so both
-interfaces can be fed from the on-disk format that carries genotypes,
-dosages, phase and multiple alleles at once.
+Phase and multiple alleles force the next distinction. They are not
+merely compressed numbers, so `fmalloc_haplotypes` is deliberately not a
+matrix codec. It stores locus-major phased rows at one bit per haplotype
+and exposes typed access for Li and Stephens or
+[`kalis`](https://kalis.louisaslett.com/)-class HMM kernels. The
+physical layout follows the consumer’s traversal instead of pretending
+every future algorithm wants column-major doubles. Numeric panels and
+haplotype rows are two interfaces over the same storage substrate.
 
-### LLM: bytes in, bytes out
+`Rpgen` closes the reader side of this argument. Its native PLINK2
+import closure reads PGEN, BED, PED/MAP, TPED/TFAM, BGEN, VCF/BCF, GEN,
+HAPS/legend, EIGENSTRAT and legacy dosage. Each parser emits bounded
+records into the same destination context, which chooses hardcall,
+dosage, phased-haplotype or dense layout. A format is parsed once; it is
+not serialized through a temporary PGEN merely to be decoded again.
 
-A GGUF model’s weights are memory-mapped and stay quantized; the
-transformer runs through GGML’s SIMD kernels with a KV cache, and the
-I/O boundary is raw bytes (the tokenizer is an edge codec built from
-GGUF metadata - text is the caller’s interpretation, `rawToChar()`):
+## A model is another typed array program
+
+GGUF presents the same contradiction with different economics. Its
+tensor directory describes weights whose encoded bytes already live in a
+model file. Copying them into a second backing store gains nothing.
+`Rgguf` uses GGML’s official GGUF implementation, and `Rllm` borrows
+each tensor’s exact read-only span from the original mapping. The model
+keeps quantized weights quantized; GGML consumes those blocks directly;
+only the KV cache and transient graph state require new storage.
 
 ``` r
 library(Rllm)
 
 rt <- Rfmalloc::open_fmalloc("rllm-work.bin", size_gb = 2)
 model <- rllm_gguf_model("SmolLM2-135M.Q4_K_M.gguf", runtime = rt)
-# Every weight borrows its exact read-only span in the original GGUF mapping.
-# The encoded q4_k/q5_0/q6_k/q8_0 bytes are neither decoded nor copied into a
-# second backing file, and the forward pass points GGML tensors at them directly.
 
-gen <- rllm_generate(model, charToRaw(
-    "The capital of France is Paris. The capital of Germany is"), n_new = 16L,
-    runtime = rt) # the optional KV cache, not the weights, uses this store
+gen <- rllm_generate(
+  model,
+  charToRaw("The capital of France is Paris. The capital of Germany is"),
+  n_new = 16L,
+  runtime = rt
+)
 rawToChar(gen$raw)
-#> [1] " Berlin. The capital of Italy is Rome. The capital of Spain is Madrid."
 ```
 
-That is a real recorded run (SmolLM2-135M `Q4_K_M`, 30 layers,
-grouped-query attention): ~16 tokens/s CPU decode with the KV cache,
-8.5× over cache-less re-forwards, and - checked against a pure-R
-reference forward - numerically exact to the quantization.
+The I/O boundary is bytes, not a hidden theory of text. The tokenizer is
+an edge codec built from GGUF metadata, generation returns raw output,
+and `rawToChar()` is the caller’s interpretation. On the recorded
+SmolLM2-135M `Q4_K_M` run on the RTX 5050 rig, a 12-token prompt
+followed by 128 greedy decode tokens reached a median 40.2 tokens per
+second on CPU and 69.7 on CUDA after the one-time weight upload. These
+are medians of three complete generations, not a kernel microbenchmark.
+The logits are checked against a pure-R reference forward to the
+tolerance imposed by the quantized weights, and cached CUDA logits are
+checked against both whole-batch CUDA and CPU cache handoffs.
 
-## Compute backends: today and next
+ALP is a useful counterexample to protecting a beautiful idea from a bad
+measurement. The current decimal ALP codec is lossless and effective for
+analytical values with decimal structure. On a model-like 2048 by 2048
+Q4_K weight, however, it expands the values to 64.2 bits each and its
+scalar decode plus BLAS takes 20.75 ms for batch one. Native Q4_K
+occupies 4.5 bits and its GGML product takes 0.30 ms. The LLM version of
+the lossless-compressed bet now has to earn its way back through ALP-RD,
+SIMD decode or a fused compressed dot kernel. The failed form is
+evidence, not an API to preserve.
 
-Because both PCA and inference dispatch their products through the
-**one** backend registry, a faster backend accelerates both at once,
-with no change to `fmalloc_pca()` or `rllm_generate()`:
+## Compute follows storage
 
-- **today, CPU** - R’s BLAS for dense products; GGML’s
-  runtime-SIMD-dispatched quantized kernels (AVX2 on x86, NEON on
-  aarch64, CPUID-selected - no non-portable flags) for quantized
-  weights; both out-of-core.
-- **today, GPU: Vulkan.** GGML’s Vulkan backend is vendored and builds
-  into `Rggml` **on request** -
-  `install.packages("Rggml", configure.args =   "--with-vulkan")`,
-  needing `glslc` and the Vulkan headers. It is not auto-detected,
-  because GGML embeds 156 compiled SPIR-V shaders and the largest is a
-  141 MB array literal costing ~5 GB of RAM to compile. It runs on any
-  vendor’s GPU (NVIDIA, AMD, Intel). `rggml_vulkan_info()` reports what
-  it sees; a build without it reports zero devices rather than failing,
-  so callers can probe and fall back. Correctness is pinned against the
-  CPU backend, and can be exercised without a GPU at all through Mesa’s
-  software driver (`GGML_VK_ALLOW_CPU=1`).
-- **next: CUDA.** NVIDIA-only, and the fastest: the same SmolLM2
-  `Q4_K_M` decodes at **~455 tok/s (~28× this CPU stack)** on an RTX
-  5050 via upstream GGML CUDA. The device-buffer residency API the
-  Vulkan backend needed
-  (`Rggml_backend_alloc_ctx_tensors`/`tensor_set`/`tensor_get`) is
-  backend agnostic, so CUDA reuses it; what remains is vendoring
-  `ggml-cuda` at a version matching the core and adding `nvcc` rules to
-  the build.
+The storage representation does not dictate one machine. Dense products
+use R’s BLAS. Quantized CPU products use GGML kernels, with runtime
+CPUID dispatch on x86 and the mandatory NEON baseline on aarch64. The
+ISA-specific flags are confined to staged objects and never leak into
+R’s recorded package flags. Both paths operate over bounded or mapped
+storage rather than demanding that the entire problem enter RAM.
 
-## The packages
+Vulkan is the first device backend. It is built explicitly with
+`configure.args = "--with-vulkan"` because compiling GGML’s embedded
+SPIR-V set is itself expensive. `rggml_vulkan_info()` reports visible
+devices, while a build without Vulkan reports none and leaves callers
+free to fall back. The same correctness graph can run on a real GPU or,
+with `GGML_VK_ALLOW_CPU=1`, through Mesa’s software driver. Device
+allocation, tensor upload, graph execution and download pass through
+backend-neutral GGML interfaces rather than Vulkan-shaped application
+code.
 
-Six packages, one stack. Each links to its reference documentation; the
-sources live under
-[`packages/`](https://github.com/sounkou-bioinfo/Rfmalloc/tree/main/packages)
-in this repository.
+CUDA now comes from the exact same pinned GGML source as the core. It is
+an opt-in `nvcc` build, and Rllm’s model-owned context uploads
+codec-native weights once and reuses them while the host GGUF mapping
+remains authoritative. The RTX 5050 rig passes the full Rggml, Rgguf and
+Rllm suites, including whole-graph CUDA, plain and fmalloc KV caches,
+and CPU-to-CUDA and CUDA-to-CPU cache handoffs.
 
-| package                                                                                               | role                                                                                                                                                                                                                          |
-|-------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [**Rfmalloc**](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/)                                  | the substrate: file-backed ALTREP vectors/matrices/tensors, codec + backend registries, panel matmul, out-of-core eviction, `fmalloc_pca()`, and the genotype codecs (`bed`/`dosage`/`haplotypes`) with fused standardization |
-| [**Rgguf**](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/)                                        | GGUF model files through GGML’s official parser: metadata, tensor directory, explicit decoded copies, encoded copies, or borrowed read-only tensor views                                                                      |
-| [**Rggml**](https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/)                                        | compute and format authority: vendored GGML kernels and official GGUF implementation, with BLAS and runtime-SIMD-dispatched quantized backends                                                                                |
-| [**Rllm**](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/)                                          | composition + inference: registers Rggml as Rfmalloc’s codec-aware matmul backend, and builds the llama forward pass, KV cache, and byte-level generation                                                                     |
-| [**Rpgen**](https://github.com/sounkou-bioinfo/Rfmalloc/tree/main/packages/Rpgen)                     | genomics I/O: bounded ingestion from PGEN, BED, PED/MAP, TPED/TFAM, BGEN, VCF/BCF, GEN, HAPS/legend, EIGENSTRAT, and legacy dosage into hardcall, dosage, haplotype, or dense stores                                          |
-| [**RfmallocStatgen**](https://github.com/sounkou-bioinfo/Rfmalloc/tree/main/packages/RfmallocStatgen) | statistical genetics over those stores: streamed regression/PCA, banded LD, LDpred2, and matrix-form colocalisation                                                                                                           |
+The remaining gap is measured rather than euphemized. Upstream
+`llama-bench` on the same model and rig reaches 156.1 tokens per second
+with CUDA graphs disabled and 460.1 with them enabled. This stack
+reaches 69.7. Replacing each pass’s activation buffer with GGML’s
+persistent backend scheduler reduced it to 63.7, while enabling graph
+capture reached 62.6 because the graph and attention extent change on
+every token. That machinery was removed. The next experiment must make
+execution reusable, most likely through stable attention shapes and
+device-resident mutable cache state; another storage API cannot solve
+it.
 
-## Install
+## One monorepo because the abstractions cross packages
 
-From the [r-universe](https://sounkou-bioinfo.r-universe.dev):
+The package boundaries separate bets, not teams.
+[Rfmalloc](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/) owns
+mapped storage, typed spans, codecs, backend dispatch, bounded panel
+products and eviction.
+[Rggml](https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/) is the
+compute and format authority: it carries the pinned GGML core, official
+GGUF implementation, CPU kernels, BLAS and optional device backends.
+[Rgguf](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/) turns GGUF
+metadata and tensor spans into an R-facing storage layer without
+maintaining another parser.
+[Rllm](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/) composes those
+pieces into quantized products, a llama graph, KV caching and byte-level
+generation.
+
+The statistical genetics side pushes the same contracts in directions an
+LLM does not.
+[Rpgen](https://github.com/sounkou-bioinfo/Rfmalloc/tree/main/packages/Rpgen)
+owns the native format-reader closure and bounded record transfer.
+[RfmallocStatgen](https://github.com/sounkou-bioinfo/Rfmalloc/tree/main/packages/RfmallocStatgen)
+owns streamed regression and PCA, banded LD, LDpred2 and matrix-form
+colocalisation. When one experiment changes a shared contract, every
+consumer changes in the same commit. There is no external consumer that
+justifies compatibility theatre while the abstraction is still being
+discovered.
+
+This is also why the repository keeps `experiments/` beside `packages/`.
+Experiments are falsifiable probes of storage and compute bets; `tests/`
+contains the cross-package consequences; `tools/` records how
+third-party sources and fixtures are reproduced. Synthesis is allowed to
+delete a failed materialization or merge two accidental interfaces. The
+monorepo makes that movement visible and testable.
+
+## Correctness is the invariant
+
+Every quantized decoder is checked bit-for-bit against GGML’s own
+`to_float` reference through fixtures in Rgguf and live cross-validation
+in Rllm. That discipline caught a real Q4_K dequantization bug in the
+earlier C port. The inference graph is checked against a pure-R forward;
+incremental KV-cache logits must equal whole-batch logits at every
+position; lossless codecs must round-trip exactly; and every specialized
+backend must be free to decline into the decode-and-BLAS reference path.
+Performance claims come from measured paths, not from the presence of a
+backend name in a build.
+
+## Install and provenance
+
+The packages are available from
+[r-universe](https://sounkou-bioinfo.r-universe.dev). Installing `Rllm`
+pulls the composed CPU stack.
 
 ``` r
-install.packages("Rllm",
-  repos = c("https://sounkou-bioinfo.r-universe.dev", getOption("repos")))
+install.packages(
+  "Rllm",
+  repos = c("https://sounkou-bioinfo.r-universe.dev", getOption("repos"))
+)
 ```
 
-or a GitHub subdir ref:
-`pak::pak("sounkou-bioinfo/Rfmalloc/packages/Rllm")`.
+A package can also be installed directly from its monorepo subdirectory,
+for example `pak::pak("sounkou-bioinfo/Rfmalloc/packages/Rllm")`. Linux,
+macOS, Windows, Apple Silicon and Linux aarch64 remain part of the
+ordinary test surface. Platform shims exist where the operating system
+really differs, such as `CreateFileMapping` in Rgguf on Windows, but the
+storage and compute contracts remain shared.
 
-All six packages target Linux, macOS and Windows (Rtools), and all six
-are verified on ARM in CI: Apple Silicon and Linux aarch64. On Windows,
-Rgguf maps the tensor bytes through a small `CreateFileMapping` shim in
-place of `mmap`, while Rggml remains the official parser authority.
-Rpgen’s vendored pgenlib builds with the same `Makevars.win` pattern
-that carries pgenlibr on CRAN.
-
-## Correctness discipline
-
-Every quantized codec decoder is pinned **bit-identical** to GGML’s
-reference (`Rggml_dequantize`, GGML’s own type-traits `to_float`) by
-regression fixtures in Rgguf and live cross-validation in Rllm - the
-discipline that caught a real upstream Q4_K dequantization bug in
-gguf-tools (~33% wrong decodes of the most common real-model format;
-fixed in our vendored copy). The inference graph is pinned to a pure-R
-reference forward (~1e-6 on real weights); incremental KV-cache logits
-equal whole-batch logits at every position; lossless codecs round-trip
-exactly. The integration CI job installs the whole stack and runs every
-package’s test suite against it (`tests/integration.R`).
-
-## Layout & provenance
-
-    packages/    the six R packages (independent installable units)
-    experiments/ falsifiable probes of storage and compute bets
-    tests/       cross-package integration entry points (run in CI)
-    tools/       fixture generators and shared scripts
-
-The vendored GGML is currently **v0.9.5** (via the CRAN-facing
-[`ggmlR`](https://github.com/Zabis13/ggmlR), which supplies the
-stdio/abort compliance shim; upstream standalone GGML is at v0.9.11). It
-is refreshed deliberately, not continuously: the next refresh is folded
-into the CUDA work and tested on real hardware, since the CUDA sources
-must version-match the core. See `packages/Rggml/inst/COPYRIGHTS` for
-the full version & update policy.
-
-Related but deliberately separate:
-[RsimdDispatch](https://github.com/sounkou-bioinfo/RsimdDispatch) (the
-runtime-SIMD staging pattern Rggml adopts).
+The vendored GGML core is generated from pinned sources by
+`tools/vendor-ggml/vendorggml.R`; it is never edited in place. GGML,
+fmalloc, pgenlib, PCAone and ALP retain their upstream licenses and
+provenance in each package’s `inst/COPYRIGHTS`. The runtime SIMD staging
+pattern is developed separately in
+[RsimdDispatch](https://github.com/sounkou-bioinfo/RsimdDispatch) and
+used here where it survives contact with the larger stack.
 
 ## License
 
 The stack is GPL (\>= 2). Rpgen is GPL-3 because it combines PLINK2’s
-GPL-3 import closure with LGPL (\>= 3) pgenlib, and RfmallocStatgen is
-GPL-3 because its pinned PCAone workhorse is GPL-3. Vendored third-party
-components (fmalloc, GGML, pgenlib, PCAone, and ALP) keep their upstream
-licenses; see each package’s `inst/COPYRIGHTS`.
+GPL-3 import closure with LGPL (\>= 3) pgenlib. RfmallocStatgen is GPL-3
+because its pinned PCAone workhorse is GPL-3. Vendored components keep
+their own MIT, BSD, LGPL or GPL terms as recorded in the package
+copyright files.

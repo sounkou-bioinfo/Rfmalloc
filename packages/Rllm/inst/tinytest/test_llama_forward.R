@@ -148,6 +148,18 @@ for (cfg_name in names(configs)) {
     err <- max(abs(logits - ref)) / max(abs(ref))
     expect_true(err < 1e-4, info = sprintf("%s rel err %.2e", cfg_name, err))
 
+    if (Rggml::rggml_has_cuda()) {
+        cuda_logits <- rllm_forward(model, tokens, backend = "cuda")
+        cuda_nmse <- sum((cuda_logits - logits)^2) /
+            max(sum(logits^2), .Machine$double.xmin)
+        expect_true(cuda_nmse < 5e-5,
+                    info = sprintf("%s CUDA/CPU NMSE %.2e", cfg_name,
+                                   cuda_nmse))
+    } else {
+        expect_error(rllm_forward(model, tokens, backend = "cuda"),
+                     "CUDA backend unavailable", info = cfg_name)
+    }
+
     # And the causal structure is real: last-position logits change when an
     # earlier token changes, first-position logits do not.
     tokens2 <- tokens; tokens2[2L] <- 5L

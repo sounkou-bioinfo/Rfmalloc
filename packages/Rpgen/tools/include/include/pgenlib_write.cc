@@ -276,11 +276,11 @@ PglErr SpgwInitPhase1Ex(const char* __restrict fname, const uintptr_t* __restric
 #ifdef RPGEN_DIRECT_SINK
   if (unlikely(::rpgen_direct_sink_active())) {
     PgenWriterCommon* pwcp = GetPwcp(spgwp);
-    memset(pwcp, 0, sizeof(*pwcp));
     pwcp->variant_ct_limit = variant_ct_limit;
     pwcp->sample_ct = sample_ct;
     pwcp->phase_dosage_gflags = phase_dosage_gflags;
     pwcp->nonref_flags_storage = nonref_flags_storage;
+    pwcp->vidx = 0;
     *GetPgenOutfilep(spgwp) = nullptr;
     *GetPgiOrFinalPgenOutfilep(spgwp) = nullptr;
     *GetFnameBufp(spgwp) = nullptr;

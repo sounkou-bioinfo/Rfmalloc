@@ -64,6 +64,15 @@ rpgen_direct_error(const char *message)
   }
 }
 
+static int
+rpgen_size_mul(size_t count, size_t width, size_t *result)
+{
+  if (count > SIZE_MAX / width)
+    return -1;
+  *result = count * width;
+  return 0;
+}
+
 static void
 rpgen_direct_release(int abort_buffer)
 {
@@ -249,21 +258,19 @@ rpgen_direct_sink_open(uint32_t variant_ct, uint32_t sample_ct)
   case RPGEN_DIRECT_HARDCALL:
     storage = "bed";
     n_item = static_cast<R_xlen_t>(sample_ct);
-    if (sample_ct > SIZE_MAX / sizeof(int32_t)) {
+    if (rpgen_size_mul(sample_ct, sizeof(int32_t), &row_bytes)) {
       rpgen_direct_error("hardcall record is too large");
       return -1;
     }
-    row_bytes = static_cast<size_t>(sample_ct) * sizeof(int32_t);
     break;
   case RPGEN_DIRECT_DOSAGE:
   case RPGEN_DIRECT_F64:
     storage = direct_state.kind == RPGEN_DIRECT_DOSAGE ? "dosage" : "f64";
     n_item = static_cast<R_xlen_t>(sample_ct);
-    if (sample_ct > SIZE_MAX / sizeof(double)) {
+    if (rpgen_size_mul(sample_ct, sizeof(double), &row_bytes)) {
       rpgen_direct_error("dosage record is too large");
       return -1;
     }
-    row_bytes = static_cast<size_t>(sample_ct) * sizeof(double);
     break;
   case RPGEN_DIRECT_HAPLOTYPE:
     storage = "haplotype";

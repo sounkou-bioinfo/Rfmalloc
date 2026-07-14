@@ -228,6 +228,14 @@ typedef ggml_backend_t (*Rggml_backend_vulkan_init_fun)(int device);
 typedef int (*Rggml_backend_vulkan_device_description_fun)(int device, char *buf,
                                                             size_t buf_size);
 
+/* -- CUDA backend ---------------------------------------------------------- */
+/* Always resolvable; reports 0 devices and refuses to init unless Rggml was
+ * built with --with-cuda. Free with Rggml_backend_free(). */
+typedef int (*Rggml_backend_cuda_device_count_fun)(void);
+typedef ggml_backend_t (*Rggml_backend_cuda_init_fun)(int device);
+typedef int (*Rggml_backend_cuda_device_description_fun)(int device, char *buf,
+                                                          size_t buf_size);
+
 /* -- device-buffer residency (API version 7) ----------------------------------- */
 /* The backend-agnostic allocate/upload/compute/download path. CPU and BLAS
  * compute on host memory, but a GPU backend's tensors must live in device
@@ -472,6 +480,21 @@ static inline Rggml_backend_vulkan_init_fun Rggml_backend_vulkan_init_ptr(void)
 static inline Rggml_backend_vulkan_device_description_fun Rggml_backend_vulkan_device_description_ptr(void)
 {
     return (Rggml_backend_vulkan_device_description_fun) R_GetCCallable("Rggml", "Rggml_backend_vulkan_device_description");
+}
+
+static inline Rggml_backend_cuda_device_count_fun Rggml_backend_cuda_device_count_ptr(void)
+{
+    return (Rggml_backend_cuda_device_count_fun) R_GetCCallable("Rggml", "Rggml_backend_cuda_device_count");
+}
+
+static inline Rggml_backend_cuda_init_fun Rggml_backend_cuda_init_ptr(void)
+{
+    return (Rggml_backend_cuda_init_fun) R_GetCCallable("Rggml", "Rggml_backend_cuda_init");
+}
+
+static inline Rggml_backend_cuda_device_description_fun Rggml_backend_cuda_device_description_ptr(void)
+{
+    return (Rggml_backend_cuda_device_description_fun) R_GetCCallable("Rggml", "Rggml_backend_cuda_device_description");
 }
 
 static inline Rggml_backend_alloc_ctx_tensors_fun Rggml_backend_alloc_ctx_tensors_ptr(void)

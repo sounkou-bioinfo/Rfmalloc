@@ -4,16 +4,16 @@
  * weights point directly into the model's read-only mapping. The graph handles
  * a whole causal batch or appends to an optional KV cache.
  *
- * Two ggml contexts, llama.cpp-style:
- *   - a no_alloc weights context whose tensors point zero-copy at the R-owned
- *     payloads (valid for the duration of the .Call);
- *   - a compute context sized from the hyperparameters, holding every
- *     intermediate (a plain pool, no allocator reuse - fine for the batch
- *     sizes this entry point targets; gallocr integration is a later step).
+ * CPU passes use a no_alloc weight context whose tensors point at R-owned
+ * payloads. CUDA creates that context once per model, uploads the encoded
+ * weights once, and reuses it; each pass builds a separate transient compute
+ * context for inputs, cache mirrors, intermediates and logits.
  */
 #include <math.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <R.h>
@@ -53,6 +53,84 @@ static double rllm_hparam(SEXP hparams, const char *name)
     return Rf_asReal(v);
 }
 
+struct rllm_upload {
+    struct ggml_tensor *tensor;
+    const void *data;
+    size_t bytes;
+};
+
+struct rllm_download {
+    const struct ggml_tensor *tensor;
+    void *data;
+    size_t bytes;
+    size_t tensor_offset;
+    float *scatter;
+    int64_t stride;
+    int64_t scatter_offset;
+    int64_t rows;
+    int64_t cols;
+};
+
+struct rllm_cuda_context {
+    ggml_backend_t backend;
+    struct ggml_context *wctx;
+    ggml_backend_buffer_t wbuf;
+    struct ggml_tensor **weights;
+    R_xlen_t n_weights;
+    Rggml_backend_buffer_free_fun buffer_free;
+    Rggml_context_free_fun context_free;
+    Rggml_backend_free_fun backend_free;
+};
+
+static SEXP rllm_cuda_context_tag(void)
+{
+    return Rf_install("Rllm_cuda_model_context");
+}
+
+static void rllm_cuda_context_finalizer(SEXP ext)
+{
+    struct rllm_cuda_context *ctx =
+        (struct rllm_cuda_context *)R_ExternalPtrAddr(ext);
+
+    if (!ctx) return;
+    if (ctx->wbuf && ctx->buffer_free) ctx->buffer_free(ctx->wbuf);
+    if (ctx->wctx && ctx->context_free) ctx->context_free(ctx->wctx);
+    if (ctx->backend && ctx->backend_free) ctx->backend_free(ctx->backend);
+    free(ctx->weights);
+    free(ctx);
+    R_ClearExternalPtr(ext);
+}
+
+static struct rllm_cuda_context *rllm_cuda_context_get(SEXP ext,
+                                                       SEXP tensors)
+{
+    if (TYPEOF(ext) != EXTPTRSXP ||
+        R_ExternalPtrTag(ext) != rllm_cuda_context_tag()) {
+        Rf_error("invalid CUDA model context");
+    }
+    if (R_ExternalPtrProtected(ext) != tensors) {
+        Rf_error("CUDA model context belongs to a different tensor set");
+    }
+    struct rllm_cuda_context *ctx =
+        (struct rllm_cuda_context *)R_ExternalPtrAddr(ext);
+    if (!ctx || !ctx->backend || !ctx->wctx || !ctx->wbuf) {
+        Rf_error("CUDA model context has been released");
+    }
+    return ctx;
+}
+
+static void rllm_add_upload(struct rllm_upload *uploads, int *n_uploads,
+                            int max_uploads, struct ggml_tensor *tensor,
+                            const void *data, size_t bytes)
+{
+    if (!uploads) return;
+    if (*n_uploads >= max_uploads) Rf_error("internal upload table overflow");
+    uploads[*n_uploads].tensor = tensor;
+    uploads[*n_uploads].data = data;
+    uploads[*n_uploads].bytes = bytes;
+    ++*n_uploads;
+}
+
 /*
  * Wrap one named weight from the R side as a ggml tensor in `wctx`.
  * `tensors[[name]]` is list(payload = raw vector (fmalloc-backed or plain),
@@ -61,7 +139,9 @@ static double rllm_hparam(SEXP hparams, const char *name)
 static struct ggml_tensor *rllm_weight(struct ggml_context *wctx, SEXP tensors,
                                        const char *name,
                                        Rggml_new_tensor_fun new_tensor,
-                                       Rfmalloc_storage_data_fun storage_data)
+                                       Rfmalloc_storage_data_fun storage_data,
+                                       struct rllm_upload *uploads,
+                                       int *n_uploads, int max_uploads)
 {
     SEXP w = rllm_list_elt(tensors, name);
     if (w == R_NilValue) Rf_error("missing weight tensor '%s'", name);
@@ -104,24 +184,119 @@ static struct ggml_tensor *rllm_weight(struct ggml_context *wctx, SEXP tensors,
     }
 
     struct ggml_tensor *t = new_tensor(wctx, type, n_dims, ne,
-                                       (void *)payload_data);
+                                       uploads ? NULL : (void *)payload_data);
     if (!t) Rf_error("failed to wrap weight '%s'", name);
+    rllm_add_upload(uploads, n_uploads, max_uploads, t, payload_data,
+                    one_row * (size_t)ne[1]);
     return t;
 }
 
 static struct ggml_tensor *rllm_layer_weight(struct ggml_context *wctx, SEXP tensors,
                                              int il, const char *suffix,
                                              Rggml_new_tensor_fun new_tensor,
-                                             Rfmalloc_storage_data_fun storage_data)
+                                             Rfmalloc_storage_data_fun storage_data,
+                                             struct rllm_upload *uploads,
+                                             int *n_uploads, int max_uploads)
 {
     char name[128];
     snprintf(name, sizeof(name), "blk.%d.%s", il, suffix);
-    return rllm_weight(wctx, tensors, name, new_tensor, storage_data);
+    return rllm_weight(wctx, tensors, name, new_tensor, storage_data,
+                       uploads, n_uploads, max_uploads);
+}
+
+static struct ggml_tensor *rllm_cuda_weight(struct rllm_cuda_context *ctx,
+                                            SEXP tensors, const char *name)
+{
+    SEXP names = Rf_getAttrib(tensors, R_NamesSymbol);
+
+    if (TYPEOF(names) != STRSXP || XLENGTH(names) != ctx->n_weights) {
+        Rf_error("model tensors must retain their names");
+    }
+    for (R_xlen_t i = 0; i < ctx->n_weights; i++) {
+        if (!strcmp(CHAR(STRING_ELT(names, i)), name)) return ctx->weights[i];
+    }
+    Rf_error("missing CUDA weight tensor '%s'", name);
+    return NULL;
+}
+
+static struct ggml_tensor *rllm_cuda_layer_weight(
+    struct rllm_cuda_context *ctx, SEXP tensors, int il, const char *suffix)
+{
+    char name[128];
+    snprintf(name, sizeof(name), "blk.%d.%s", il, suffix);
+    return rllm_cuda_weight(ctx, tensors, name);
+}
+
+/* Upload the immutable, codec-native model weights once. The external
+ * pointer protects the R tensor list, which in turn keeps every borrowed GGUF
+ * mapping alive for the lifetime of the device copy. */
+SEXP RC_rllm_cuda_model_context(SEXP tensors)
+{
+    if (TYPEOF(tensors) != VECSXP || XLENGTH(tensors) < 1 ||
+        XLENGTH(tensors) > INT_MAX) {
+        Rf_error("tensors must be a non-empty named list");
+    }
+    SEXP names = Rf_getAttrib(tensors, R_NamesSymbol);
+    if (TYPEOF(names) != STRSXP || XLENGTH(names) != XLENGTH(tensors)) {
+        Rf_error("tensors must be a named list");
+    }
+    struct rllm_cuda_context *ctx =
+        (struct rllm_cuda_context *)calloc(1, sizeof(*ctx));
+    if (!ctx) Rf_error("CUDA model context allocation failed");
+
+    SEXP ext = PROTECT(R_MakeExternalPtr(ctx, rllm_cuda_context_tag(), tensors));
+    R_RegisterCFinalizerEx(ext, rllm_cuda_context_finalizer, FALSE);
+
+    ctx->buffer_free = Rggml_backend_buffer_free_ptr();
+    ctx->context_free = Rggml_context_free_ptr();
+    ctx->backend_free = Rggml_backend_free_ptr();
+    ctx->n_weights = XLENGTH(tensors);
+    ctx->weights = (struct ggml_tensor **)calloc(
+        (size_t)ctx->n_weights, sizeof(*ctx->weights));
+    if (!ctx->weights) Rf_error("CUDA weight table allocation failed");
+
+    Rggml_backend_cuda_init_fun cuda_init = Rggml_backend_cuda_init_ptr();
+    Rggml_context_create_fun ctx_create = Rggml_context_create_ptr();
+    Rggml_tensor_overhead_fun t_over = Rggml_tensor_overhead_ptr();
+    Rggml_new_tensor_fun new_tensor = Rggml_new_tensor_ptr();
+    Rggml_backend_alloc_ctx_tensors_fun alloc_tensors =
+        Rggml_backend_alloc_ctx_tensors_ptr();
+    Rggml_backend_tensor_set_fun tensor_set = Rggml_backend_tensor_set_ptr();
+    Rfmalloc_storage_data_fun storage_data = Rfmalloc_storage_data_ptr();
+
+    ctx->backend = cuda_init(0);
+    if (!ctx->backend) {
+        Rf_error("CUDA backend unavailable: install Rggml with --with-cuda and use a visible NVIDIA device");
+    }
+    ctx->wctx = ctx_create((size_t)(ctx->n_weights + 8) * t_over() + 4096,
+                           /*no_alloc=*/1);
+    if (!ctx->wctx) Rf_error("CUDA weights context creation failed");
+
+    struct rllm_upload *uploads = (struct rllm_upload *)R_alloc(
+        (size_t)ctx->n_weights, sizeof(*uploads));
+    int n_uploads = 0;
+    for (R_xlen_t i = 0; i < ctx->n_weights; i++) {
+        if (STRING_ELT(names, i) == NA_STRING) {
+            Rf_error("tensor names cannot be missing");
+        }
+        ctx->weights[i] = rllm_weight(
+            ctx->wctx, tensors, CHAR(STRING_ELT(names, i)), new_tensor,
+            storage_data, uploads, &n_uploads, (int)ctx->n_weights);
+    }
+
+    ctx->wbuf = alloc_tensors(ctx->wctx, ctx->backend);
+    if (!ctx->wbuf) Rf_error("CUDA weight-buffer allocation failed");
+    for (int i = 0; i < n_uploads; i++) {
+        tensor_set(uploads[i].tensor, uploads[i].data, 0, uploads[i].bytes);
+    }
+
+    UNPROTECT(1);
+    return ext;
 }
 
 /*
  * RC_rllm_llama_forward(hparams, tensors, tokens, rope_mode, kcache, vcache,
- *                       n_past)
+ *                       n_past, backend, backend_context)
  *
  * hparams: named list with n_layer, n_embd, n_head, n_head_kv, n_ff,
  *          rms_eps, rope_base, rope_dims, n_vocab (all numeric).
@@ -138,17 +313,22 @@ static struct ggml_tensor *rllm_layer_weight(struct ggml_context *wctx, SEXP ten
  *          V^T x KQ product reads it without a runtime transpose. The graph
  *          writes rows n_past..n_past+S and attends over rows 0..n_past+S.
  * n_past:  number of positions already in the cache (0 without a cache).
+ * backend: 0 for CPU, 3 for CUDA. CUDA owns both contexts' buffers and all
+ *          movement goes through Rggml's backend-neutral transfer API.
+ * backend_context: model-owned CUDA context, NULL for CPU.
  *
  * Returns the logits as a double matrix, dim c(n_vocab, n_tokens).
  */
 SEXP RC_rllm_llama_forward(SEXP hparams, SEXP tensors, SEXP tokens_sexp,
                            SEXP rope_mode_sexp, SEXP kcache, SEXP vcache,
-                           SEXP n_past_sexp)
+                           SEXP n_past_sexp, SEXP backend_sexp,
+                           SEXP backend_context)
 {
     if (TYPEOF(hparams) != VECSXP || TYPEOF(tensors) != VECSXP) {
         Rf_error("hparams and tensors must be named lists");
     }
-    if (TYPEOF(tokens_sexp) != INTSXP || XLENGTH(tokens_sexp) < 1) {
+    if (TYPEOF(tokens_sexp) != INTSXP || XLENGTH(tokens_sexp) < 1 ||
+        XLENGTH(tokens_sexp) > INT_MAX) {
         Rf_error("tokens must be a non-empty integer vector of 0-based ids");
     }
 
@@ -162,6 +342,12 @@ SEXP RC_rllm_llama_forward(SEXP hparams, SEXP tensors, SEXP tokens_sexp,
     const double rope_base = rllm_hparam(hparams, "rope_base");
     const int rope_dims    = (int) rllm_hparam(hparams, "rope_dims");
     const int rope_mode    = Rf_asInteger(rope_mode_sexp);
+    const int backend_code = Rf_asInteger(backend_sexp);
+    const int use_device   = backend_code == 3;
+
+    if (backend_code != 0 && backend_code != 3) {
+        Rf_error("backend must be 0 (cpu) or 3 (cuda)");
+    }
 
     if (n_layer < 1 || n_embd < 1 || n_head < 1 || n_head_kv < 1 ||
         n_ff < 1 || n_vocab < 1) {
@@ -178,13 +364,20 @@ SEXP RC_rllm_llama_forward(SEXP hparams, SEXP tensors, SEXP tokens_sexp,
     const int use_cache = kcache != R_NilValue;
     const int n_past    = Rf_asInteger(n_past_sexp);
     int64_t n_ctx = 0;
+    if (n_past == NA_INTEGER || n_past < 0) {
+        Rf_error("n_past must be a non-negative integer");
+    }
     if (use_cache) {
         if (TYPEOF(kcache) != VECSXP || TYPEOF(vcache) != VECSXP ||
             XLENGTH(kcache) != n_layer || XLENGTH(vcache) != n_layer) {
             Rf_error("kcache/vcache must be lists of one raw vector per layer");
         }
         R_xlen_t slab = XLENGTH(VECTOR_ELT(kcache, 0));
-        n_ctx = slab / ((R_xlen_t) n_embd_gqa * (R_xlen_t) sizeof(float));
+        R_xlen_t row_bytes = (R_xlen_t)n_embd_gqa * (R_xlen_t)sizeof(float);
+        if (slab % row_bytes != 0) {
+            Rf_error("KV cache byte length is not a whole number of rows");
+        }
+        n_ctx = slab / row_bytes;
         if (n_ctx < 1 || (int64_t) n_past + S > n_ctx) {
             Rf_error("KV cache too small: n_past %d + %d tokens > n_ctx %lld",
                      n_past, S, (long long) n_ctx);
@@ -215,6 +408,11 @@ SEXP RC_rllm_llama_forward(SEXP hparams, SEXP tensors, SEXP tokens_sexp,
     Rggml_backend_cpu_init_fun   cpu_init   = Rggml_backend_cpu_init_ptr();
     Rggml_backend_free_fun       bfree      = Rggml_backend_free_ptr();
     Rggml_backend_graph_compute_fun compute = Rggml_backend_graph_compute_ptr();
+    Rggml_backend_alloc_ctx_tensors_fun alloc_tensors =
+        Rggml_backend_alloc_ctx_tensors_ptr();
+    Rggml_backend_buffer_free_fun buf_free = Rggml_backend_buffer_free_ptr();
+    Rggml_backend_tensor_set_fun tensor_set = Rggml_backend_tensor_set_ptr();
+    Rggml_backend_tensor_get_fun tensor_get = Rggml_backend_tensor_get_ptr();
     Rggml_mul_mat_fun            mul_mat    = Rggml_mul_mat_ptr();
     Rggml_get_rows_fun           get_rows   = Rggml_get_rows_ptr();
     Rggml_rms_norm_fun           rms_norm   = Rggml_rms_norm_ptr();
@@ -236,15 +434,30 @@ SEXP RC_rllm_llama_forward(SEXP hparams, SEXP tensors, SEXP tokens_sexp,
     Rggml_cpy_fun                cpy        = Rggml_cpy_ptr();
     Rfmalloc_storage_data_fun    storage_data = Rfmalloc_storage_data_ptr();
 
-    ggml_backend_t backend = cpu_init();
+    struct rllm_cuda_context *cuda_ctx = use_device
+        ? rllm_cuda_context_get(backend_context, tensors) : NULL;
+    ggml_backend_t backend = use_device ? cuda_ctx->backend : cpu_init();
     if (!backend) Rf_error("failed to initialize the GGML CPU backend");
 
-    /* -- weights context: zero-copy wrappers over R-owned payloads (plus the
-     * per-layer cache slabs, which are also external R-owned memory) -------- */
+    /* CPU tensors borrow the mapped GGUF bytes directly. CUDA tensors already
+     * occupy the model-owned context created on the first device call. */
     const int n_weight_slots = 2 + 2 + n_layer * (9 + 2);
-    struct ggml_context *wctx =
-        ctx_create((size_t)(n_weight_slots + 8) * t_over() + 4096, /*no_alloc=*/1);
-    if (!wctx) { bfree(backend); Rf_error("weights context creation failed"); }
+    const int max_uploads = n_weight_slots + 8;
+    int n_uploads = 0;
+    int n_downloads = 0;
+    struct rllm_upload *uploads = use_device
+        ? (struct rllm_upload *)R_alloc((size_t)max_uploads, sizeof(*uploads))
+        : NULL;
+    struct rllm_download *downloads = use_device && use_cache
+        ? (struct rllm_download *)R_alloc((size_t)(2 * n_layer), sizeof(*downloads))
+        : NULL;
+    struct ggml_context *wctx = use_device ? cuda_ctx->wctx :
+        ctx_create((size_t)(n_weight_slots + 8) * t_over() + 4096,
+                   /*no_alloc=*/1);
+    if (!wctx) {
+        if (!use_device) bfree(backend);
+        Rf_error("weights context creation failed");
+    }
 
     /* -- compute context: structured size estimate, 2x slack ---------------- */
     const size_t graph_sz = (size_t) n_layer * 40 + 16;
@@ -255,14 +468,20 @@ SEXP RC_rllm_llama_forward(SEXP hparams, SEXP tensors, SEXP tokens_sexp,
     size_t cmem = (size_t)(2.0 * est)
         + ((size_t) n_layer * 40 + 32) * t_over()
         + g_over(graph_sz) + (1u << 20);
-    struct ggml_context *cctx = ctx_create(cmem, /*no_alloc=*/0);
+    struct ggml_context *cctx = ctx_create(cmem, /*no_alloc=*/use_device ? 1 : 0);
     if (!cctx) {
-        ctx_free(wctx); bfree(backend);
+        if (!use_device) {
+            ctx_free(wctx);
+            bfree(backend);
+        }
         Rf_error("compute context creation failed (%.1f MB)", cmem / 1048576.0);
     }
+    ggml_backend_buffer_t cbuf = NULL;
 
-    /* From here on, any failure must free both contexts before Rf_error. */
-#define RLLM_FAIL(...) do { ctx_free(cctx); ctx_free(wctx); bfree(backend); \
+    /* The CUDA model context outlives this call; only transient allocations
+     * are released on an error. CPU still owns its backend and weight context. */
+#define RLLM_FAIL(...) do { if (cbuf) buf_free(cbuf); ctx_free(cctx); \
+                            if (!use_device) { ctx_free(wctx); bfree(backend); } \
                             Rf_error(__VA_ARGS__); } while (0)
 #define RLLM_CHECK(t)  do { if (!(t)) RLLM_FAIL("graph construction failed (%s)", #t); } while (0)
 
@@ -272,8 +491,12 @@ SEXP RC_rllm_llama_forward(SEXP hparams, SEXP tensors, SEXP tokens_sexp,
     struct ggml_tensor *pos = new_tensor(cctx, GGML_TYPE_I32, 1, neS, NULL);
     RLLM_CHECK(tok && pos);
     {
-        int32_t *tp = (int32_t *) tdata(tok);
-        int32_t *pp = (int32_t *) tdata(pos);
+        int32_t *tp = use_device
+            ? (int32_t *)R_alloc((size_t)S, sizeof(*tp))
+            : (int32_t *)tdata(tok);
+        int32_t *pp = use_device
+            ? (int32_t *)R_alloc((size_t)S, sizeof(*pp))
+            : (int32_t *)tdata(pos);
         const int *ids = INTEGER(tokens_sexp);
         for (int i = 0; i < S; i++) {
             if (ids[i] < 0 || ids[i] >= n_vocab) {
@@ -282,16 +505,27 @@ SEXP RC_rllm_llama_forward(SEXP hparams, SEXP tensors, SEXP tokens_sexp,
             tp[i] = ids[i];
             pp[i] = n_past + i;
         }
+        rllm_add_upload(uploads, &n_uploads, max_uploads, tok, tp,
+                        (size_t)S * sizeof(*tp));
+        rllm_add_upload(uploads, &n_uploads, max_uploads, pos, pp,
+                        (size_t)S * sizeof(*pp));
     }
 
     /* -- weights ------------------------------------------------------------ */
-    struct ggml_tensor *tok_embd = rllm_weight(
-        wctx, tensors, "token_embd.weight", new_tensor, storage_data);
-    struct ggml_tensor *out_norm = rllm_weight(
-        wctx, tensors, "output_norm.weight", new_tensor, storage_data);
+    struct ggml_tensor *tok_embd = use_device
+        ? rllm_cuda_weight(cuda_ctx, tensors, "token_embd.weight")
+        : rllm_weight(wctx, tensors, "token_embd.weight", new_tensor,
+                      storage_data, NULL, &n_uploads, max_uploads);
+    struct ggml_tensor *out_norm = use_device
+        ? rllm_cuda_weight(cuda_ctx, tensors, "output_norm.weight")
+        : rllm_weight(wctx, tensors, "output_norm.weight", new_tensor,
+                      storage_data, NULL, &n_uploads, max_uploads);
     struct ggml_tensor *output_w =
         rllm_list_elt(tensors, "output.weight") != R_NilValue
-            ? rllm_weight(wctx, tensors, "output.weight", new_tensor, storage_data)
+            ? (use_device
+                ? rllm_cuda_weight(cuda_ctx, tensors, "output.weight")
+                : rllm_weight(wctx, tensors, "output.weight", new_tensor,
+                              storage_data, NULL, &n_uploads, max_uploads))
             : tok_embd;   /* tied embeddings */
 
     /* -- the graph ----------------------------------------------------------- */
@@ -305,16 +539,21 @@ SEXP RC_rllm_llama_forward(SEXP hparams, SEXP tensors, SEXP tokens_sexp,
     struct ggml_tensor *inpL = get_rows(cctx, tok_embd, tok);   /* [n_embd, S] */
     RLLM_CHECK(inpL);
 
+#define RLLM_LAYER_WEIGHT(suffix) (use_device ? \
+    rllm_cuda_layer_weight(cuda_ctx, tensors, il, suffix) : \
+    rllm_layer_weight(wctx, tensors, il, suffix, new_tensor, storage_data, \
+                      NULL, &n_uploads, max_uploads))
+
     for (int il = 0; il < n_layer; il++) {
-        struct ggml_tensor *attn_norm = rllm_layer_weight(wctx, tensors, il, "attn_norm.weight", new_tensor, storage_data);
-        struct ggml_tensor *wq = rllm_layer_weight(wctx, tensors, il, "attn_q.weight", new_tensor, storage_data);
-        struct ggml_tensor *wk = rllm_layer_weight(wctx, tensors, il, "attn_k.weight", new_tensor, storage_data);
-        struct ggml_tensor *wv = rllm_layer_weight(wctx, tensors, il, "attn_v.weight", new_tensor, storage_data);
-        struct ggml_tensor *wo = rllm_layer_weight(wctx, tensors, il, "attn_output.weight", new_tensor, storage_data);
-        struct ggml_tensor *ffn_norm = rllm_layer_weight(wctx, tensors, il, "ffn_norm.weight", new_tensor, storage_data);
-        struct ggml_tensor *w_gate = rllm_layer_weight(wctx, tensors, il, "ffn_gate.weight", new_tensor, storage_data);
-        struct ggml_tensor *w_up   = rllm_layer_weight(wctx, tensors, il, "ffn_up.weight", new_tensor, storage_data);
-        struct ggml_tensor *w_down = rllm_layer_weight(wctx, tensors, il, "ffn_down.weight", new_tensor, storage_data);
+        struct ggml_tensor *attn_norm = RLLM_LAYER_WEIGHT("attn_norm.weight");
+        struct ggml_tensor *wq        = RLLM_LAYER_WEIGHT("attn_q.weight");
+        struct ggml_tensor *wk        = RLLM_LAYER_WEIGHT("attn_k.weight");
+        struct ggml_tensor *wv        = RLLM_LAYER_WEIGHT("attn_v.weight");
+        struct ggml_tensor *wo        = RLLM_LAYER_WEIGHT("attn_output.weight");
+        struct ggml_tensor *ffn_norm  = RLLM_LAYER_WEIGHT("ffn_norm.weight");
+        struct ggml_tensor *w_gate    = RLLM_LAYER_WEIGHT("ffn_gate.weight");
+        struct ggml_tensor *w_up      = RLLM_LAYER_WEIGHT("ffn_up.weight");
+        struct ggml_tensor *w_down    = RLLM_LAYER_WEIGHT("ffn_down.weight");
 
         /* attention */
         struct ggml_tensor *cur = mul(cctx, rms_norm(cctx, inpL, rms_eps), attn_norm);
@@ -336,32 +575,86 @@ SEXP RC_rllm_llama_forward(SEXP hparams, SEXP tensors, SEXP tokens_sexp,
 
         struct ggml_tensor *Kall, *Vall;   /* what attention reads */
         if (use_cache) {
-            /* Wrap this layer's cache slabs (external, R-owned). */
+            /* CPU borrows the host slabs. CUDA puts transient mirrors in the
+             * compute context, separate from the persistent weights. K has the
+             * same position-major layout on host and device. The CPU-friendly
+             * host V slab is transposed, but the CUDA append kernel only honors
+             * a contiguous destination, so its mirror is position-major and is
+             * made contiguous in the attention layout after the append. */
             int64_t ne_slab[1] = { n_ctx * n_embd_gqa };
-            struct ggml_tensor *kc = new_tensor(wctx, GGML_TYPE_F32, 1, ne_slab,
-                                                RAW(VECTOR_ELT(kcache, il)));
-            struct ggml_tensor *vc = new_tensor(wctx, GGML_TYPE_F32, 1, ne_slab,
-                                                RAW(VECTOR_ELT(vcache, il)));
+            void *kraw = RAW(VECTOR_ELT(kcache, il));
+            void *vraw = RAW(VECTOR_ELT(vcache, il));
+            struct ggml_context *cache_ctx = use_device ? cctx : wctx;
+            struct ggml_tensor *kc = new_tensor(cache_ctx, GGML_TYPE_F32, 1, ne_slab,
+                                                use_device ? NULL : kraw);
+            struct ggml_tensor *vc = new_tensor(cache_ctx, GGML_TYPE_F32, 1, ne_slab,
+                                                use_device ? NULL : vraw);
             RLLM_CHECK(kc && vc);
+            if (use_device) {
+                const size_t prefix_elems =
+                    (size_t)n_past * (size_t)n_embd_gqa;
+                if (prefix_elems > 0) {
+                    float *vprefix = (float *)R_alloc(prefix_elems, fsz);
+                    const float *vhost = (const float *)vraw;
+                    for (int64_t p = 0; p < n_past; p++) {
+                        for (int64_t d = 0; d < n_embd_gqa; d++) {
+                            vprefix[p * n_embd_gqa + d] =
+                                vhost[p + d * n_ctx];
+                        }
+                    }
+                    rllm_add_upload(uploads, &n_uploads, max_uploads, kc,
+                                    kraw, prefix_elems * fsz);
+                    rllm_add_upload(uploads, &n_uploads, max_uploads, vc,
+                                    vprefix, prefix_elems * fsz);
+                }
+            }
 
-            /* Append: K flat at position n_past; V transposed ([pos x dim],
-             * row stride n_ctx) so the value product reads it directly. */
+            /* Append K at position n_past. CPU writes V into its transposed
+             * host slab. CUDA writes a contiguous position-major V block. */
             struct ggml_tensor *k_dst =
                 view_1d(cctx, kc, (int64_t) S * n_embd_gqa,
                         (size_t) n_past * n_embd_gqa * fsz);
-            struct ggml_tensor *v_dst =
-                view_2d(cctx, vc, S, n_embd_gqa, (size_t) n_ctx * fsz,
-                        (size_t) n_past * fsz);
+            struct ggml_tensor *v_dst = use_device
+                ? view_1d(cctx, vc, (int64_t)S * n_embd_gqa,
+                          (size_t)n_past * n_embd_gqa * fsz)
+                : view_2d(cctx, vc, S, n_embd_gqa, (size_t)n_ctx * fsz,
+                          (size_t)n_past * fsz);
             RLLM_CHECK(k_dst && v_dst);
             expand(gf, cpy(cctx, K, k_dst));
-            expand(gf, cpy(cctx, transpose(cctx, reshape_2d(cctx, V, n_embd_gqa, S)),
+            expand(gf, cpy(cctx,
+                           use_device ? V :
+                               transpose(cctx, reshape_2d(cctx, V, n_embd_gqa, S)),
                            v_dst));
+
+            if (use_device) {
+                const size_t block_elems = (size_t)S * (size_t)n_embd_gqa;
+                const size_t block_offset =
+                    (size_t)n_past * (size_t)n_embd_gqa * fsz;
+                float *vblock = (float *)R_alloc(block_elems, fsz);
+                downloads[n_downloads++] = (struct rllm_download){
+                    kc, (float *)kraw + (size_t)n_past * n_embd_gqa,
+                    block_elems * fsz, block_offset, NULL, 0, 0, 0, 0
+                };
+                downloads[n_downloads++] = (struct rllm_download){
+                    vc, vblock, block_elems * fsz, block_offset, (float *)vraw,
+                    n_ctx, n_past, S, n_embd_gqa
+                };
+            }
 
             /* Attend over everything cached so far (rows 0..n_kv). */
             Kall = view_3d(cctx, kc, head_dim, n_kv, n_head_kv,
                            (size_t) n_embd_gqa * fsz, (size_t) head_dim * fsz, 0);
-            Vall = view_3d(cctx, vc, n_kv, head_dim, n_head_kv,
-                           (size_t) n_ctx * fsz, (size_t) n_ctx * head_dim * fsz, 0);
+            if (use_device) {
+                struct ggml_tensor *vseq = view_3d(
+                    cctx, vc, head_dim, n_head_kv, n_kv,
+                    (size_t)head_dim * fsz,
+                    (size_t)n_embd_gqa * fsz, 0);
+                Vall = cont(cctx, permute(cctx, vseq, 1, 2, 0, 3));
+            } else {
+                Vall = view_3d(cctx, vc, n_kv, head_dim, n_head_kv,
+                               (size_t)n_ctx * fsz,
+                               (size_t)n_ctx * head_dim * fsz, 0);
+            }
             RLLM_CHECK(Kall && Vall);
         } else {
             Kall = permute(cctx, K, 0, 2, 1, 3);                /* [hd, S, kv] */
@@ -407,25 +700,64 @@ SEXP RC_rllm_llama_forward(SEXP hparams, SEXP tensors, SEXP tokens_sexp,
 
     expand(gf, logits);
 
+    if (use_device) {
+        /* The model weights are already resident. Allocate only this pass's
+         * activations, inputs, cache mirror and result, then upload mutable
+         * inputs through the backend-neutral transfer interface. */
+        cbuf = alloc_tensors(cctx, backend);
+        if (!cbuf) RLLM_FAIL("CUDA compute-buffer allocation failed");
+        for (int i = 0; i < n_uploads; ++i) {
+            tensor_set(uploads[i].tensor, uploads[i].data, 0, uploads[i].bytes);
+        }
+    }
+
     if (compute(backend, gf) != 0 /* GGML_STATUS_SUCCESS */) {
         RLLM_FAIL("graph compute failed");
     }
 
     SEXP out = PROTECT(Rf_allocMatrix(REALSXP, n_vocab, S));
     {
-        const float *lp = (const float *) tdata(logits);
-        double *op = REAL(out);
         R_xlen_t n = (R_xlen_t) n_vocab * S;
+        const float *lp;
+        float *device_logits = NULL;
+        if (use_device) {
+            device_logits = (float *)R_alloc((size_t)n, sizeof(*device_logits));
+            tensor_get(logits, device_logits, 0, (size_t)n * sizeof(*device_logits));
+            lp = device_logits;
+            for (int i = 0; i < n_downloads; ++i) {
+                tensor_get(downloads[i].tensor, downloads[i].data,
+                           downloads[i].tensor_offset,
+                           downloads[i].bytes);
+                if (downloads[i].scatter) {
+                    const float *src = (const float *)downloads[i].data;
+                    float *dst = downloads[i].scatter;
+                    for (int64_t p = 0; p < downloads[i].rows; p++) {
+                        for (int64_t d = 0; d < downloads[i].cols; d++) {
+                            dst[downloads[i].scatter_offset + p +
+                                d * downloads[i].stride] =
+                                src[p * downloads[i].cols + d];
+                        }
+                    }
+                }
+            }
+        } else {
+            lp = (const float *)tdata(logits);
+        }
+        double *op = REAL(out);
         for (R_xlen_t i = 0; i < n; i++) op[i] = (double) lp[i];
     }
 
+    if (cbuf) buf_free(cbuf);
     ctx_free(cctx);
-    ctx_free(wctx);
-    bfree(backend);
+    if (!use_device) {
+        ctx_free(wctx);
+        bfree(backend);
+    }
 
     UNPROTECT(1);
     return out;
 
 #undef RLLM_CHECK
 #undef RLLM_FAIL
+#undef RLLM_LAYER_WEIGHT
 }

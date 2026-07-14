@@ -75,6 +75,48 @@ for (backing in c("R", "fmalloc")) {
     expect_error(rllm_forward(model, rep(0L, 10L), cache), "cache too small")
 }
 
+if (Rggml::rggml_has_cuda()) {
+    nmse <- function(reference, observed) {
+        sum((reference - observed)^2) /
+            max(sum(reference^2), .Machine$double.xmin)
+    }
+    full_cuda <- rllm_forward(model, tokens, backend = "cuda")
+    expect_true(nmse(full, full_cuda) < 5e-5,
+                info = "CUDA whole batch matches CPU")
+    resident <- model$.contexts$cuda
+
+    for (backing in c("R", "fmalloc")) {
+        cache <- rllm_kv_cache(
+            model, n_ctx = 16L,
+            runtime = if (backing == "fmalloc") rt
+        )
+        expect_equal(Rfmalloc::is_fmalloc_vector(cache$k[[1L]]),
+                     backing == "fmalloc", info = paste("CUDA", backing))
+        pre <- rllm_forward(model, tokens[1:3], cache, backend = "cuda")
+        expect_true(nmse(full_cuda[, 1:3], pre) < 5e-5,
+                    info = paste("CUDA cache prefill", backing))
+        for (k in 4:7) {
+            step <- rllm_forward(model, tokens[k], cache, backend = "cuda")
+            expect_true(nmse(full_cuda[, k], step[, 1L]) < 5e-5,
+                        info = sprintf("CUDA %s cache position %d", backing, k))
+        }
+        expect_true(identical(model$.contexts$cuda, resident),
+                    info = "CUDA weights remain in one model context")
+    }
+
+    mixed <- rllm_kv_cache(model, n_ctx = 16L)
+    rllm_forward(model, tokens[1:3], mixed, backend = "cpu")
+    mixed_step <- rllm_forward(model, tokens[4L], mixed, backend = "cuda")
+    expect_true(nmse(full_cuda[, 4L], mixed_step[, 1L]) < 5e-5,
+                info = "CPU cache prefix transfers to CUDA")
+
+    mixed <- rllm_kv_cache(model, n_ctx = 16L)
+    rllm_forward(model, tokens[1:3], mixed, backend = "cuda")
+    mixed_step <- rllm_forward(model, tokens[4L], mixed, backend = "cpu")
+    expect_true(nmse(full[, 4L], mixed_step[, 1L]) < 5e-5,
+                info = "CUDA cache prefix transfers to CPU")
+}
+
 ## rllm_generate == manual greedy loop of full re-forwards
 prompt <- c(3L, 41L, 0L)
 gen <- rllm_generate(model, prompt, n_new = 5L)

@@ -1,109 +1,85 @@
-# Vendored GGML - provenance & update policy
+# Vendored GGML: provenance and regeneration
 
-`packages/Rggml/inst/ggml` (and the public headers in
-`packages/Rggml/inst/include`) are **generated**, not hand-maintained. They are
-produced entirely by [`vendorggml.R`](vendorggml.R) from four pinned inputs:
+`packages/Rggml/inst/ggml` and the GGML headers under
+`packages/Rggml/inst/include` are generated. They are never edited in place.
+The engine has one upstream source:
 
 ```
-inst/ggml  =  (SHA-pinned ggmlR CRAN tarball)      # the core + Vulkan
-           +  (SHA-pinned ggml-org arch/arm/quants.c)   # the NEON kernels
-           +  patches/
-           +  overlay/
+selected ggml-org/ggml v0.11.0 files
++ patches/ and header-patches/
++ overlay/
 ```
 
-Re-run and verify at any time:
+The selected source comes from official tag `v0.11.0`, commit
+`1f09c6987071512f9a11189880c0130b1349b8dc`. The recipe hashes the extracted
+paths and contents instead of trusting GitHub's archive compression. Its 487
+selected files have tree sha256
+`e2b4e65f0780bfe14884d924649a68b4b2d3326cbb9644046fa6e3f13dbb8ea9`.
 
-```sh
-Rscript tools/vendor-ggml/vendorggml.R check     # assert the committed tree == this recipe
-Rscript tools/vendor-ggml/vendorggml.R vendor    # regenerate in place
-```
+Run `Rscript tools/vendor-ggml/vendorggml.R vendor` to regenerate the committed
+tree. Run `Rscript tools/vendor-ggml/vendorggml.R check` to derive it in a
+temporary directory and compare both file sets and every file hash. The check
+also rejects stale source files left by an earlier recipe.
 
-This is what it means to **own our path to GGML**: the tree does not depend on
-a git repository that rewrites its own history. The source of record is an
-immutable CRAN artifact plus a small, documented patch set, both kept here.
+## Selected upstream surface
 
-## Base
+The manifest carries GGML's core tensor and graph engine, allocator, backend
+registry, official GGUF reader and writer, quantization code, portable CPU
+backend, BLAS backend, aarch64 quantized kernels, Vulkan backend and shader
+sources, and CUDA backend. Public headers for those components come from the
+same source tree.
 
-- **ggmlR `0.7.8`** source tarball from CRAN
-  (`ggmlR_0.7.8.tar.gz`, sha256 `f7f414729e389dce7320cfcfd5c63298382da00c436e3e5bc49bf33f067d0dc7`),
-  pinned in `vendorggml.R`. CRAN source tarballs are immutable and permanently
-  archived, so this pin can never shift under us.
-- ggmlR is a CRAN-maintained package by Yuri Baramykov that vendors **GGML
-  v0.9.5**, already split into CRAN-digestible translation units and carrying
-  the stdio/abort compliance shim GGML's C needs to run safely inside R. Its
-  *git* history is not usable for pinning (the maintainer resets/squashes the
-  repo on each release); its *CRAN tarballs* are. We vendor from the tarball.
-- `manifest.txt` is the exact source-of-truth list copied from ggmlR. It covers
-  the GGML core, CPU and optional Vulkan backends, quantization, shaders, and
-  the official `gguf.cpp` implementation. Files changed locally are represented
-  by the patch set below.
+Rggml deliberately does not carry training, RPC, Metal, SYCL, CANN, OpenCL,
+AMX implementation files, or upstream's compile-time x86 variants. Dense F32
+products use GGML's BLAS backend through R's BLAS. x86 quantized dispatch is
+owned by Rggml's runtime dispatcher, while aarch64 uses upstream's mandatory
+NEON baseline.
 
-## Second base: the ARM kernels
+`gguf.cpp` and `gguf.h` are not a second import. They are part of this same
+pin. Rgguf calls the narrow GGUF C-callables exported by Rggml, so parsing,
+writing, tensor types and quantized decoding all refer to one GGML engine.
 
-ggmlR prunes `ggml-cpu/arch/`, so its quantized `vec_dot`s are the portable
-scalar reference on every machine. On aarch64 that leaves real performance on
-the floor for no portability gain, because NEON is a *mandatory* part of the
-architecture: the kernels need no ISA flag, and a build cannot emit an
-instruction the host lacks.
+## Local patches
 
-- **`ggml-cpu/arch/arm/quants.c`** from **ggml-org/ggml `v0.9.11`**, pinned by
-  the **file's** sha256 (`0efbb89f…`) rather than the archive's - GitHub has
-  changed its tarball compression before, so archive checksums are not stable
-  pins, while a blob's content is. It is *not* in `manifest.txt`, which lists
-  what we take from the ggmlR tarball.
-- Only `quants.c` is taken. `arch/arm/repack.cpp` calls `_generic` helpers that
-  do not exist in 0.9.5, so the portable repack stays.
-- `arch/x86/` is deliberately **not** vendored: its kernels are selected by
-  compile-time `#if defined(__AVX2__)`, so building them means shipping a
-  binary that faults on pre-AVX2 hardware. That is what our runtime SIMD
-  dispatcher (`packages/Rggml/tools/simd/`) exists to avoid, and what forces
-  GGML upstream into `GGML_CPU_ALL_VARIANTS` + `dlopen`.
+The source patches preserve a small set of integration fixes. Backend buffer
+interfaces are passed by pointer because the large by-value C ABI failed under
+Windows MinGW. Meta-backend objects which retain driver state live until
+process exit, avoiding cross-library static destruction order. Context and
+graph allocation paths return `NULL` when their memory pool is exhausted.
+The CPU fallback header leaves the canonical q4_K dot symbol to Rggml's runtime
+dispatcher and supplies the aliases needed beside the official aarch64
+kernels.
 
-## patches/ - local edits on top of stock 0.7.8
+The Vulkan patch permits a CPU-type Vulkan device only when
+`GGML_VK_ALLOW_CPU=1`, which lets CI exercise the real backend through Mesa
+lavapipe. The CUDA and Vulkan patches also follow the internal by-pointer
+buffer interface. The public `ggml.h` patch lets the R compatibility header
+disable format attributes before its `printf` redirection is visible.
 
-| patch | rationale |
-|---|---|
-| `ggml-backend.cpp`, `ggml-backend-impl.h`, `ggml-alloc.c` | pass `ggml_backend_buffer_i` **by pointer**, not by value, across the `extern "C"` TU boundary - passing the ~88-byte POD by value silently crashed on Windows/MinGW. |
-| `ggml-backend-meta.cpp` | make the per-device meta caches **never-destroyed heap singletons**, so C++ does not run their destructors at process exit in an order undefined relative to backend/driver teardown (faulted otherwise). |
-| `ggml-context.c`, `ggml-graph.c` | **NULL-guard** the results of `ggml_new_object` / `ggml_new_graph_custom`: on a too-small memory pool these return NULL, and the stock code dereferenced them → heap corruption / silent abort. |
-| `ggml-cpu/arch-fallback.h` | two edits. Drop the `ggml_vec_dot_q4_K_q8_K_generic → ...` alias so our **runtime SIMD dispatcher** (`packages/Rggml/tools/simd/`) can own the canonical symbol and route to the staged AVX2 variant. And add **20 aarch64 aliases**: `arch/arm/quants.c` implements 23 canonical `vec_dot`s but not the repack GEMMs, nor ggmlR's custom `q1_0` type, so those must still resolve to the generic code. Verified by building the full aarch64 object set: 0 unresolved GGML symbols. |
-| `ggml-vulkan/ggml-vulkan-graph.cpp` | one call site passes the buffer interface **by value**; our by-pointer patch above changes that signature, so it needs the `&`. (The other `ggml-vulkan-*.cpp` are `#include`d into `ggml-vulkan.cpp`, which is the only Vulkan TU compiled on its own.) |
-| `ggml-vulkan/ggml-vulkan-misc.cpp` | two opt-in env gates, both off by default (so behaviour is byte-for-byte upstream's when unset). **`GGML_VK_ALLOW_CPU=1`** opts in to Vulkan devices reporting `VK_PHYSICAL_DEVICE_TYPE_CPU`; upstream refuses them, so a software driver (Mesa lavapipe) enumerates nothing and the backend cannot be correctness-tested on a machine without a GPU - including CI. **`GGML_VK_ALLOW_128_PUSH=1`** opts in to devices with `maxPushConstantsSize` in `[128, 256)`; upstream refuses the whole device below 256 B, but in this 5D fork only the 5D non-contiguous copy needs 256 B (it is guarded at dispatch), while matmul's push struct is 68 B and all `<=4D` ops fit in 128 B - so this lets a real GPU exposed only through a D3D12 translation layer (Mesa dzn under WSL, which caps push constants at 128 B by the D3D12 root-signature limit) run GEMM and `<=4D` ops. Verified on an RTX 5050 via dzn: 2-2.6x OpenBLAS through 4096^3. |
+No generated file is a patch source. Change a patch or overlay, then rerun the
+vendor recipe.
 
-## overlay/ - files that are ours, not GGML's
+## R integration overlay
 
-`Makefile` (the CPU-backend build with our DEFS, the BLAS backend, and the SIMD
-staging rules), `ggml-blas.cpp` + `ggml-blas.h` (GGML's BLAS backend, taken
-directly from ggml-org), `cblas.h` + `rggml_cblas.c` (the portable
-`cblas_sgemm`→Fortran `sgemm_` shim), and `rggml_compat.h` + `rggml_io.c` (the
-R-safe stdio/abort I/O shim). These are copied in verbatim; they are versioned
-here, not fetched.
+The overlay contains the static-library Makefile, the CBLAS to R Fortran BLAS
+bridge, and the R-safe diagnostic shim. CUDA and Vulkan are empty by default
+and compile only when configure receives `--with-cuda` or `--with-vulkan`.
+Architecture switches stay inside the static-library build and never enter R's
+recorded package flags.
 
-## Update policy
+The diagnostic shim is adapted from ggmlR and remains under its MIT license.
+It is the only retained ggmlR-derived component. The GGML engine itself,
+including BLAS, GGUF, CUDA and Vulkan, now comes directly from ggml-org. The
+BLAS bridge and build integration are Rggml code under GPL (>= 2).
 
-The vendored core stays at GGML **0.9.5** until there is a concrete reason to
-move. `vendorggml.R` is the template for whenever that happens: swap the pinned
-base, re-run, re-validate.
+## Backend contract
 
-**Vulkan is the GPU backend, not a stepping stone to CUDA.** It is already
-vendored, version-matched to the core, and portable across AMD, Intel, NVIDIA
-and (via MoltenVK) Apple. CUDA buys NVIDIA-only hardware in exchange for `nvcc`,
-an arch-flag matrix, a multi-GB toolchain no CRAN builder has, and a second
-GPU code path to keep correct. It is worth adding only for measured throughput
-on NVIDIA that Vulkan cannot reach, and it would then be an *additional* opt-in
-backend behind the same device-buffer residency API the Vulkan work already
-built, not a replacement. That API (`Rggml_backend_alloc_ctx_tensors`,
-`_tensor_set`, `_tensor_get`) is what makes the two interchangeable.
+CPU and BLAS are always present. Vulkan and CUDA are optional implementations
+of the same backend-buffer contract. A no-allocation tensor context is assigned
+to a backend buffer, inputs are uploaded with `ggml_backend_tensor_set`, the
+graph runs, and outputs are downloaded with `ggml_backend_tensor_get`. A build
+without a GPU backend reports zero devices so callers can probe and fall back.
 
-## GPU path
-
-The `ggml-vulkan/` tree (backend + 156 `.comp` shaders + the shader generator)
-**is vendored** - it comes from the same pinned tarball as the CPU core, so it
-version-matches it, and it is listed in `manifest.txt` like everything else. It
-is compiled only when `packages/Rggml/configure` is given `--with-vulkan`
-(never auto-detected: the largest generated shader TU is a 141 MB array literal
-that needs ~5 GB of RAM to compile, independent of `-O` level).
-
-If CUDA is ever added it goes in the same way: its sources into `manifest.txt`,
-its build into `configure`, any local edits into `patches/`. See the update
-policy above for why it is not the default GPU route.
+CUDA accepts `CUDA_HOME` or `--with-cuda=/path` and an optional
+`RGGML_CUDA_ARCH`. Its real-device path is validated on the NVIDIA rig. Vulkan
+correctness remains testable with Mesa lavapipe.

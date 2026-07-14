@@ -1,5 +1,19 @@
 # Rggml 0.1.0 (unreleased)
 
+- The generated engine now comes directly from one content-pinned official
+  GGML v0.11.0 source tree. Core, CPU, BLAS, GGUF, Vulkan and CUDA share commit
+  `1f09c6987071`; the unused ggmlR 5D fork and its split translation units are
+  gone. Only ggmlR's R-safe I/O shim remains, with its MIT attribution.
+
+- Added an opt-in `--with-cuda` build from the content-pinned official GGML
+  v0.11.0 CUDA sources. `rggml_cuda_info()` probes without making CUDA a hard
+  dependency, and dense F32 plus Q4_K products use the same backend-owned
+  buffer allocation, upload, compute and download path as Vulkan. The build
+  accepts `CUDA_HOME` and `RGGML_CUDA_ARCH`; ordinary CPU builds never invoke
+  `nvcc`. Extended Blackwell targets such as `sm_120a` emit matching PTX and
+  SASS. Optional CUDA graph capture is gated by `RGGML_CUDA_GRAPHS=1` and is
+  disabled by default after a slower full-generation measurement on the rig.
+
 - Added GGML's official `gguf.cpp` to the generated vendor recipe and exposed
   its indexed reader and writer as opaque C-callable services. Rgguf now owns
   only its R surface and read-only tensor mapping; the partial second parser
@@ -9,15 +23,6 @@
   `"cpu"`, `"blas"`, or `"vulkan"` backend via GGML's device-buffer residency
   path - the supported entry point for a dense single-precision matrix multiply
   on the GPU, promoted from the internal test routine.
-
-- New opt-in `GGML_VK_ALLOW_128_PUSH=1` (off by default, so default behaviour is
-  upstream GGML's): accepts a Vulkan device that exposes only 128-byte push
-  constants for matrix multiply and `<=4D` ops. Upstream refuses any device below
-  256 bytes, but in this build only the 5-D non-contiguous copy actually needs
-  256 (and still errors at its own dispatch); matmul's push struct is 68 bytes.
-  This makes a real GPU reached through the Mesa dzn D3D12 translation layer
-  under WSL usable for GEMM - verified on an RTX 5050 via dzn at 2-2.6x OpenBLAS
-  through 4096^3 (single precision).
 
 - Added `rggml_cpu_info()`, reporting what `configure` actually compiled:
   `arch_kernels` (`"arm"` for GGML's native NEON kernels, `"generic"` for the
@@ -63,8 +68,8 @@
   that POD by value, and running those destructors at exit, crashed on
   Windows/MinGW.
 - Added the **Vulkan GPU backend** (API version 7), vendored from the same
-  pinned ggmlR tarball as the CPU core (so it version-matches it) through
-  `tools/vendor-ggml`. It is **opt-in at build time**, never auto-detected:
+  pinned official GGML source as the CPU core through `tools/vendor-ggml`. It
+  is **opt-in at build time**, never auto-detected:
 
   ```
   install.packages("Rggml", configure.args = "--with-vulkan")

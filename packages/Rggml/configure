@@ -25,10 +25,15 @@ echo "Configuring Rggml..."
 # Without it, nothing about the build changes and the CPU/BLAS backends are
 # unaffected.
 USE_VULKAN="${RGGML_VULKAN:-0}"
+USE_CUDA="${RGGML_CUDA:-0}"
+CUDA_HOME_REQUEST="${CUDA_HOME:-}"
 for _arg in "$@"; do
     case "$_arg" in
         --with-vulkan)    USE_VULKAN=1 ;;
         --without-vulkan) USE_VULKAN=0 ;;
+        --with-cuda)      USE_CUDA=1 ;;
+        --with-cuda=*)    USE_CUDA=1; CUDA_HOME_REQUEST=${_arg#*=} ;;
+        --without-cuda)   USE_CUDA=0 ;;
     esac
 done
 
@@ -183,10 +188,10 @@ else
 fi
 
 # --- Vulkan backend (only when requested; see the note at the top) ------------
-# Mirrors ggmlR's proven, CRAN-accepted recipe: probe glslc's optional shader
-# features, build the shader generator, compile every .comp into an embedded
-# SPIR-V translation unit. The generated tree is a build artifact (cleaned by
-# ./cleanup), never vendored.
+# Mirrors upstream GGML's shader recipe: probe glslc's optional shader
+# features, build the shader generator, and compile every .comp into an
+# embedded SPIR-V translation unit. The generated tree is a build artifact
+# cleaned by ./cleanup, never vendored.
 VULKAN_OBJECTS=""
 VULKAN_CPPFLAGS=""
 VULKAN_LIBS=""
@@ -272,9 +277,8 @@ if [ "$USE_VULKAN" = "1" ]; then
       done
     )
 
-    # Only ggml-vulkan.cpp is a translation unit of its own; the other
-    # ggml-vulkan-*.cpp are #included into it (ggmlR's split), so they must not
-    # be compiled separately.
+    # Upstream's ggml-vulkan.cpp is the backend translation unit. Each generated
+    # shader array is kept in its own translation unit to bound compiler memory.
     VULKAN_OBJECTS="ggml-vulkan/ggml-vulkan.o"
     for _cpp in ggml-vulkan/generated/*.cpp; do
         VULKAN_OBJECTS="$VULKAN_OBJECTS ${_cpp%.cpp}.o"
@@ -285,11 +289,173 @@ else
     echo "Vulkan: disabled (build with --with-vulkan to enable the GPU backend)"
 fi
 
+# --- CUDA backend (only when requested) ---------------------------------------
+# CUDA comes from the same pinned upstream GGML 0.11.0 source tree as the core.
+# The default build never looks for nvcc. An explicit CUDA build is native to
+# its installation machine unless RGGML_CUDA_ARCH names another architecture,
+# for example sm_89 or sm_120a. This keeps GPU switches out of R's recorded
+# package flags.
+CUDA_CPPFLAGS=""
+CUDA_NVCCFLAGS=""
+CUDA_LIBS=""
+NVCC=""
+if [ "$USE_CUDA" = "1" ]; then
+    echo "CUDA: requested (--with-cuda / RGGML_CUDA=1)"
+    if [ "$IS_WIN" = "1" ]; then
+        echo "Error: the opt-in CUDA recipe currently targets Unix-like R builds." >&2
+        exit 1
+    fi
+
+    if [ -n "$CUDA_HOME_REQUEST" ] && [ -x "$CUDA_HOME_REQUEST/bin/nvcc" ]; then
+        CUDA_HOME=$CUDA_HOME_REQUEST
+        NVCC="$CUDA_HOME/bin/nvcc"
+    else
+        NVCC=`command -v nvcc 2>/dev/null || true`
+        if [ -n "$NVCC" ]; then
+            CUDA_HOME=`cd "\`dirname "$NVCC"\`/.." && pwd`
+        fi
+    fi
+    if [ -z "$NVCC" ] || [ ! -x "$NVCC" ]; then
+        echo "Error: CUDA was requested but nvcc was not found." >&2
+        echo "  Set CUDA_HOME or use --with-cuda=/path/to/cuda." >&2
+        exit 1
+    fi
+    if [ ! -f "$CUDA_HOME/include/cuda_runtime.h" ]; then
+        echo "Error: $CUDA_HOME/include/cuda_runtime.h not found." >&2
+        exit 1
+    fi
+
+    CUDA_ARCH_REQUEST=${RGGML_CUDA_ARCH:-native}
+    CUDA_GRAPHS=${RGGML_CUDA_GRAPHS:-0}
+    case "$CUDA_GRAPHS" in
+        0|1) ;;
+        *)
+            echo "Error: RGGML_CUDA_GRAPHS must be 0 or 1." >&2
+            exit 1
+            ;;
+    esac
+    case "$CUDA_ARCH_REQUEST" in
+        *[!A-Za-z0-9_-]*)
+            echo "Error: invalid RGGML_CUDA_ARCH '$CUDA_ARCH_REQUEST'." >&2
+            exit 1
+            ;;
+    esac
+
+    _cu=`mktemp 2>/dev/null || echo "/tmp/rggml_cuda_probe_$$"`
+    _cu_src="${_cu}.cu"
+    CUDA_ARCH=$CUDA_ARCH_REQUEST
+    if [ "$CUDA_ARCH" = "native" ]; then
+        cat > "$_cu_src" <<'EOF'
+#include <stdio.h>
+#include <cuda_runtime.h>
+int main(void) {
+    int device;
+    struct cudaDeviceProp prop;
+    if (cudaGetDevice(&device) != cudaSuccess ||
+        cudaGetDeviceProperties(&prop, device) != cudaSuccess) return 1;
+    printf("%d%d\n", prop.major, prop.minor);
+    return 0;
+}
+EOF
+        if ! "$NVCC" -std=c++17 "$_cu_src" -o "${_cu}.exe" >/dev/null 2>&1; then
+            rm -f "$_cu" "$_cu_src" "${_cu}.exe"
+            echo "Error: nvcc could not build the native-architecture probe." >&2
+            exit 1
+        fi
+        _cuda_cap=`"${_cu}.exe" 2>/dev/null || true`
+        case "$_cuda_cap" in
+            ''|*[!0-9]*)
+                rm -f "$_cu" "$_cu_src" "${_cu}.exe"
+                echo "Error: no CUDA device is available for the native build." >&2
+                echo "  Set RGGML_CUDA_ARCH explicitly when cross-compiling." >&2
+                exit 1
+                ;;
+        esac
+        CUDA_ARCH="sm_${_cuda_cap}"
+    fi
+
+    # CUDA 12.x architecture-specific FP4 instructions require the `a` target.
+    # Upstream GGML's CMake recipe makes the same 12X -> 12Xa conversion until
+    # a later GPU family gives plain 12X different forward-compatibility value.
+    case "$CUDA_ARCH" in
+        sm_12[0-9]|compute_12[0-9]) CUDA_ARCH="${CUDA_ARCH}a" ;;
+    esac
+    case "$CUDA_ARCH" in
+        sm_*a|sm_*f)
+            _cuda_code=${CUDA_ARCH#sm_}
+            CUDA_ARCH_FLAGS="-gencode=arch=compute_${_cuda_code},code=compute_${_cuda_code} -gencode=arch=compute_${_cuda_code},code=sm_${_cuda_code}"
+            ;;
+        compute_*a|compute_*f)
+            _cuda_code=${CUDA_ARCH#compute_}
+            CUDA_ARCH_FLAGS="-gencode=arch=compute_${_cuda_code},code=compute_${_cuda_code}"
+            ;;
+        *) CUDA_ARCH_FLAGS="-arch=$CUDA_ARCH" ;;
+    esac
+    CUDA_NVCCFLAGS="-O3 -DNDEBUG -std=c++17 --use_fast_math --extended-lambda $CUDA_ARCH_FLAGS"
+    echo "CUDA: nvcc = $NVCC"
+    echo "CUDA: architecture = $CUDA_ARCH (requested $CUDA_ARCH_REQUEST)"
+
+    printf '__global__ void k(void) {}\nint main(void) { k<<<1,1>>>(); return 0; }\n' > "$_cu_src"
+    if ! "$NVCC" $CUDA_NVCCFLAGS -c "$_cu_src" -o "${_cu}.o" >/dev/null 2>&1; then
+        rm -f "$_cu" "$_cu_src" "${_cu}.exe" "${_cu}.o"
+        echo "Error: nvcc cannot compile for CUDA architecture '$CUDA_ARCH'." >&2
+        exit 1
+    fi
+    if "$NVCC" $CUDA_NVCCFLAGS -compress-mode=size -c "$_cu_src" \
+            -o "${_cu}.compressed.o" >/dev/null 2>&1; then
+        CUDA_NVCCFLAGS="$CUDA_NVCCFLAGS -compress-mode=size"
+    fi
+    rm -f "$_cu" "$_cu_src" "${_cu}.exe" "${_cu}.o" "${_cu}.compressed.o"
+
+    CUDA_LIBDIR=""
+    for _lib in "$CUDA_HOME/lib64" \
+                "$CUDA_HOME/targets/`uname -m`-linux/lib" \
+                "$CUDA_HOME/targets/x86_64-linux/lib" \
+                "$CUDA_HOME/targets/sbsa-linux/lib"; do
+        if [ -f "$_lib/libcudart.so" ] && [ -f "$_lib/libcublas.so" ]; then
+            CUDA_LIBDIR=$_lib
+            break
+        fi
+    done
+    if [ -z "$CUDA_LIBDIR" ]; then
+        echo "Error: CUDA runtime and cuBLAS libraries not found under $CUDA_HOME." >&2
+        exit 1
+    fi
+    CUDA_STUBDIR=""
+    for _stub in "$CUDA_HOME/targets/`uname -m`-linux/lib/stubs" \
+                 "$CUDA_HOME/targets/x86_64-linux/lib/stubs" \
+                 "$CUDA_HOME/targets/sbsa-linux/lib/stubs"; do
+        if [ -f "$_stub/libcuda.so" ]; then
+            CUDA_STUBDIR=$_stub
+            break
+        fi
+    done
+
+    CUDA_CPPFLAGS="-DGGML_USE_CUDA -I$CUDA_HOME/include"
+    if [ "$CUDA_GRAPHS" = "1" ]; then
+        CUDA_CPPFLAGS="$CUDA_CPPFLAGS -DGGML_CUDA_USE_GRAPHS"
+        echo "CUDA: graph capture enabled (RGGML_CUDA_GRAPHS=0 disables it)"
+    else
+        echo "CUDA: graph capture disabled (RGGML_CUDA_GRAPHS=1 enables it)"
+    fi
+    CUDA_LIBS="-L$CUDA_LIBDIR -Wl,-rpath,$CUDA_LIBDIR -lcudart -lcublas -lcublasLt"
+    if [ -n "$CUDA_STUBDIR" ]; then
+        CUDA_LIBS="$CUDA_LIBS -L$CUDA_STUBDIR -lcuda"
+    else
+        CUDA_LIBS="$CUDA_LIBS -lcuda"
+    fi
+    echo "CUDA: enabled (libraries in $CUDA_LIBDIR)"
+else
+    echo "CUDA: disabled (build with --with-cuda to enable the NVIDIA backend)"
+fi
+
 make clean >/dev/null 2>&1 || true
 if make SIMD_EXTRA_OBJECTS="$SIMD_EXTRA_OBJECTS" SIMD_DISPATCH_DEFS="$SIMD_DISPATCH_DEFS" \
         GENERIC_DEFS="$GENERIC_DEFS" ARCH_OBJECTS="$ARCH_OBJECTS" \
         DISPATCH_OBJECTS="$DISPATCH_OBJECTS" CBLAS_DEFS="$CBLAS_DEFS" \
-        VULKAN_OBJECTS="$VULKAN_OBJECTS" VULKAN_CPPFLAGS="$VULKAN_CPPFLAGS"; then
+        VULKAN_OBJECTS="$VULKAN_OBJECTS" VULKAN_CPPFLAGS="$VULKAN_CPPFLAGS" \
+        CUDA_ENABLED="$USE_CUDA" NVCC="$NVCC" CUDA_CPPFLAGS="$CUDA_CPPFLAGS" \
+        CUDA_NVCCFLAGS="$CUDA_NVCCFLAGS" CUDA_HOST_PIC="$R_CPICFLAGS"; then
     echo "libggml.a built successfully"
 else
     echo "Error: failed to build libggml.a"
@@ -329,12 +495,13 @@ cat > "$MAKEVARS_FILE" << 'EOF'
 # libggml.a itself contains C++ object code (std::filesystem, exceptions,
 # etc. from ggml-backend*.cpp).
 
-PKG_CPPFLAGS = -I../inst/include -I../inst/ggml @RGGML_VULKAN_DEF@ @RGGML_BUILD_DEFS@
+PKG_CPPFLAGS = -I../inst/include -I../inst/ggml @RGGML_VULKAN_DEF@ @RGGML_CUDA_DEF@ @RGGML_BUILD_DEFS@
 # $(BLAS_LIBS) $(FLIBS) resolve the Fortran sgemm_ that our cblas shim
 # (inst/ggml/rggml_cblas.c) forwards GGML's BLAS backend to. -lggml precedes
 # them so its unresolved sgemm_ pulls from R's BLAS. @VULKAN_LIBS@ is empty
-# unless configure was given --with-vulkan.
-PKG_LIBS = -L../inst/ggml -lggml @VULKAN_LIBS@ $(BLAS_LIBS) $(FLIBS) @PLATFORM_LIBS@
+# unless configure was given --with-vulkan. @CUDA_LIBS@ is similarly empty
+# unless configure was given --with-cuda.
+PKG_LIBS = -L../inst/ggml -lggml @VULKAN_LIBS@ @CUDA_LIBS@ $(BLAS_LIBS) $(FLIBS) @PLATFORM_LIBS@
 
 CXX_STD = CXX17
 EOF
@@ -343,11 +510,15 @@ EOF
 # that make's own $(BLAS_LIBS)/$(FLIBS) survive verbatim.
 RGGML_VULKAN_DEF=""
 [ "$USE_VULKAN" = "1" ] && RGGML_VULKAN_DEF="-DRGGML_HAVE_VULKAN"
+RGGML_CUDA_DEF=""
+[ "$USE_CUDA" = "1" ] && RGGML_CUDA_DEF="-DRGGML_HAVE_CUDA"
 # The three build decisions above, carried into the binary so rggml_cpu_info()
 # reports what was actually compiled rather than what we meant to compile.
 RGGML_BUILD_DEFS="$ARCH_KERNELS_DEF $SIMD_DISPATCH_DEF $CBLAS_DEFS"
 sed -i.bak -e "s|@VULKAN_LIBS@|$VULKAN_LIBS|" \
+           -e "s|@CUDA_LIBS@|$CUDA_LIBS|" \
            -e "s|@RGGML_VULKAN_DEF@|$RGGML_VULKAN_DEF|" \
+           -e "s|@RGGML_CUDA_DEF@|$RGGML_CUDA_DEF|" \
            -e "s|@RGGML_BUILD_DEFS@|$RGGML_BUILD_DEFS|" \
            -e "s|@PLATFORM_LIBS@|$PLATFORM_LIBS|" "$MAKEVARS_FILE" && rm -f "${MAKEVARS_FILE}.bak"
 

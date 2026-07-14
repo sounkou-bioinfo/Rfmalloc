@@ -136,10 +136,9 @@ devtools::install_github("sounkou-bioinfo/Rfmalloc")
 
 ## Basic Usage
 
-The examples use temporary backing files. Each snippet runs inside `local()`
-so its `on.exit()` cleanup stays scoped to the snippet while the README is
-rendered; this is not required in normal interactive use. In your own code,
-keep the runtime handle you need and call `cleanup_fmalloc()` when finished.
+The examples use temporary backing files. Each snippet uses `local()` to keep
+its `on.exit()` cleanup scoped. In your own code, keep the runtime handle for
+as long as its arrays are live and call `cleanup_fmalloc()` when finished.
 
 The shortest form uses `init_fmalloc()`, which opens a backing file and stores
 it as the package default runtime. Calls to `create_fmalloc_vector()` can then

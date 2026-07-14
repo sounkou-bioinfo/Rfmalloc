@@ -130,11 +130,10 @@ devtools::install_github("sounkou-bioinfo/Rfmalloc")
 
 ## Basic Usage
 
-The examples use temporary backing files. Each snippet runs inside
-`local()` so its `on.exit()` cleanup stays scoped to the snippet while
-the README is rendered; this is not required in normal interactive use.
-In your own code, keep the runtime handle you need and call
-`cleanup_fmalloc()` when finished.
+The examples use temporary backing files. Each snippet uses `local()` to
+keep its `on.exit()` cleanup scoped. In your own code, keep the runtime
+handle for as long as its arrays are live and call `cleanup_fmalloc()`
+when finished.
 
 The shortest form uses `init_fmalloc()`, which opens a backing file and
 stores it as the package default runtime. Calls to
@@ -802,14 +801,14 @@ local({
   inspect_vec[] <- 1:4
   .Internal(inspect(inspect_vec))
 })
-#> @5f9cd7135778 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x7578d90023e8 mode=persistent runtime=open offset=9192 uuid=40cd4dfc3dc27c04a2658d6de13be5ef file=/tmp/RtmpmwFJ51/file39e868326cc9ac.bin
+#> @5974f994f6d0 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x7557f0e023e8 mode=persistent runtime=open offset=9192 uuid=20b3a58d161a6a3cbe353d543f750d34 file=/tmp/RtmpT3DoL8/file1765e46e4ba43c.bin
 #> ATTRIB:
-#>   @5f9cd71385e8 02 LISTSXP g0c0 [REF(1)]
-#>     TAG: @5f9cd2b50550 01 SYMSXP g1c0 [MARK,REF(38567),LCK,gp=0x6000] "class" (has value)
-#>     @5f9cd7c36948 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)
-#>       @5f9cd81150f8 09 CHARSXP g0c2 [MARK,REF(58),gp=0x60] [ASCII] [cached] "fmalloc_vector"
-#>       @5f9cd7a972c8 09 CHARSXP g0c1 [MARK,REF(210),gp=0x60] [ASCII] [cached] "fmalloc"
-#>       @5f9cd2b83508 09 CHARSXP g1c1 [MARK,REF(623),gp=0x61] [ASCII] [cached] "integer"
+#>   @5974f9952540 02 LISTSXP g0c0 [REF(1)]
+#>     TAG: @5974f53753f0 01 SYMSXP g1c0 [MARK,REF(38555),LCK,gp=0x6000] "class" (has value)
+#>     @5974fa458a48 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)
+#>       @5974fa93edc8 09 CHARSXP g0c2 [MARK,REF(58),gp=0x60] [ASCII] [cached] "fmalloc_vector"
+#>       @5974fa2afdb8 09 CHARSXP g0c1 [MARK,REF(210),gp=0x60] [ASCII] [cached] "fmalloc"
+#>       @5974f53a83a8 09 CHARSXP g1c1 [MARK,REF(623),gp=0x61] [ASCII] [cached] "integer"
 ```
 
 `inspect()` output is an internal R diagnostic, so exact formatting can
@@ -1347,14 +1346,14 @@ perf_result
 #> # A tibble: 8 × 5
 #>   expression               median `itr/sec` mem_alloc `gc/sec`
 #>   <bch:expr>             <bch:tm>     <dbl> <bch:byt>    <dbl>
-#> 1 base_sequential_sum     40.84µs    23444.        0B        0
-#> 2 fmalloc_sequential_sum   52.2µs    19566.        0B        0
-#> 3 base_scalar_read        34.56µs    27289.   24.55KB        0
-#> 4 fmalloc_scalar_read    772.05µs     1292.        0B        0
-#> 5 base_subset_copy         3.55µs   246030.    7.86KB        0
-#> 6 fmalloc_subset_copy     19.16µs    45433.        0B        0
-#> 7 base_indexed_write      27.63µs    34469.  390.67KB        0
-#> 8 fmalloc_indexed_write  189.24µs     5222.        0B        0
+#> 1 base_sequential_sum     33.62µs    28003.        0B        0
+#> 2 fmalloc_sequential_sum  47.43µs    21811.        0B        0
+#> 3 base_scalar_read        32.08µs    28584.   24.55KB        0
+#> 4 fmalloc_scalar_read    753.91µs     1326.        0B        0
+#> 5 base_subset_copy         4.25µs   221226.    7.86KB        0
+#> 6 fmalloc_subset_copy     18.22µs    47315.        0B        0
+#> 7 base_indexed_write      26.59µs    36114.  390.67KB        0
+#> 8 fmalloc_indexed_write  176.56µs     5548.        0B        0
 ```
 
 ## Native C API for Other Packages

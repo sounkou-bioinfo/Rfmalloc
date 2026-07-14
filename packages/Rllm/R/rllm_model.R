@@ -20,9 +20,9 @@
 #' @param rope_mode RoPE flavour: `0` (normal/interleaved, llama) or `2`
 #'   (NEOX-style, e.g. qwen2). Defaults to `0`.
 #'
-#' @return An object of class `rllm_model`: a list with `hparams` (named
-#'   numeric list), `tensors` (named list of weight payloads), and
-#'   `rope_mode`.
+#' @return An object of class `rllm_model` containing its hyperparameters,
+#'   borrowed weight payloads, tokenizer metadata, and model-owned backend
+#'   contexts created lazily by [rllm_forward()].
 #' @seealso [rllm_forward()]
 #' @export
 rllm_gguf_model <- function(path, runtime = NULL, rope_mode = 0L) {
@@ -101,7 +101,8 @@ rllm_gguf_model <- function(path, runtime = NULL, rope_mode = 0L) {
         tok_model = md[["tokenizer.ggml.model"]],
         vocab = md[["tokenizer.ggml.tokens"]],
         merges = md[["tokenizer.ggml.merges"]],
-        eos_id = md[["tokenizer.ggml.eos_token_id"]]
+        eos_id = md[["tokenizer.ggml.eos_token_id"]],
+        .contexts = new.env(parent = emptyenv())
     ), class = "rllm_model")
 }
 
@@ -179,9 +180,12 @@ print.rllm_kv_cache <- function(x, ...) {
 #'
 #' Assembles the GGML compute graph for a llama-architecture forward pass
 #' (RMSNorm, RoPE, causal self-attention, SwiGLU feed-forward) over the
-#' model's memory-mapped weights and computes it on the GGML CPU backend.
-#' Quantized weights are contracted natively through the SIMD-dispatched
-#' quantized kernels - they are never decoded to double.
+#' model's memory-mapped weights and computes it on a chosen GGML backend.
+#' Quantized weights are contracted natively in their encoded form - they are
+#' never decoded to double. The CPU backend borrows the mapped bytes directly.
+#' On its first use, the CUDA backend creates a model-owned context and uploads
+#' the codec-native weights once. Later passes reuse those resident weights;
+#' mutable inputs, cache slabs and logits move through Rggml's transfer API.
 #'
 #' Without a `cache`, the graph attends over the whole token batch with a
 #' causal mask (prompt scoring). With a [rllm_kv_cache()], the pass appends
@@ -192,11 +196,15 @@ print.rllm_kv_cache <- function(x, ...) {
 #' @param model An `rllm_model` from [rllm_gguf_model()].
 #' @param tokens Integer vector of 0-based token ids (as in the GGUF vocab).
 #' @param cache Optional [rllm_kv_cache()] for incremental decoding.
+#' @param backend Compute backend. `"cpu"` is the zero-copy mmap path;
+#'   `"cuda"` requires Rggml installed with `--with-cuda` and a visible NVIDIA
+#'   device.
 #'
 #' @return A numeric matrix of logits, dim `c(n_vocab, length(tokens))`:
 #'   column `i` scores the token following position `i`.
 #' @export
-rllm_forward <- function(model, tokens, cache = NULL) {
+rllm_forward <- function(model, tokens, cache = NULL,
+                         backend = c("cpu", "cuda")) {
     if (!inherits(model, "rllm_model")) {
         stop("model must be an rllm_model from rllm_gguf_model()")
     }
@@ -204,16 +212,33 @@ rllm_forward <- function(model, tokens, cache = NULL) {
     if (length(tokens) < 1L || anyNA(tokens)) {
         stop("tokens must be a non-empty vector of 0-based token ids")
     }
+    backend <- match.arg(backend)
+    backend_code <- c(cpu = 0L, cuda = 3L)[[backend]]
+    backend_context <- NULL
+    if (backend == "cuda") {
+        if (!is.environment(model$.contexts)) {
+            stop("model has no backend-context environment")
+        }
+        backend_context <- model$.contexts$cuda
+        if (is.null(backend_context)) {
+            backend_context <- .Call(
+                "RC_rllm_cuda_model_context", model$tensors,
+                PACKAGE = "Rllm"
+            )
+            model$.contexts$cuda <- backend_context
+        }
+    }
     if (is.null(cache)) {
         return(.Call("RC_rllm_llama_forward", model$hparams, model$tensors,
-                     tokens, model$rope_mode, NULL, NULL, 0L, PACKAGE = "Rllm"))
+                     tokens, model$rope_mode, NULL, NULL, 0L, backend_code,
+                     backend_context, PACKAGE = "Rllm"))
     }
     if (!inherits(cache, "rllm_kv_cache")) {
         stop("cache must be an rllm_kv_cache from rllm_kv_cache()")
     }
     out <- .Call("RC_rllm_llama_forward", model$hparams, model$tensors,
                  tokens, model$rope_mode, cache$k, cache$v, cache$n_past,
-                 PACKAGE = "Rllm")
+                 backend_code, backend_context, PACKAGE = "Rllm")
     cache$n_past <- cache$n_past + length(tokens)
     out
 }

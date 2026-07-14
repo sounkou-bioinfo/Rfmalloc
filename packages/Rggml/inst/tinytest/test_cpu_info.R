@@ -10,10 +10,10 @@ library(Rggml)
 info <- rggml_cpu_info()
 
 expect_true(is.list(info))
-expect_equal(names(info), c("arch_kernels", "simd_dispatch", "sgemm", "vulkan"))
+expect_equal(names(info), c("arch_kernels", "simd_dispatch", "sgemm", "vulkan", "cuda"))
 expect_true(is.character(info$arch_kernels) && length(info$arch_kernels) == 1L)
 expect_true(info$arch_kernels %in% c("arm", "generic"))
-for (f in c("simd_dispatch", "sgemm", "vulkan")) {
+for (f in c("simd_dispatch", "sgemm", "vulkan", "cuda")) {
     expect_true(is.logical(info[[f]]) && length(info[[f]]) == 1L && !is.na(info[[f]]))
 }
 
@@ -47,4 +47,8 @@ if (machine %in% c("aarch64", "arm64")) {
 ## nothing. info$vulkan is the build fact, rggml_has_vulkan() the runtime one.
 if (rggml_has_vulkan()) {
     expect_true(info$vulkan)
+}
+
+if (rggml_has_cuda()) {
+    expect_true(info$cuda)
 }

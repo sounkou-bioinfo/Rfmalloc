@@ -700,5 +700,4 @@ ggml_backend_reg_t ggml_backend_cpu_reg(void) {
     return &ggml_backend_cpu_reg;
 }
 
-// GGML_BACKEND_DL_IMPL(ggml_backend_cpu_reg)
-// Disabled: we statically link backends in R package, not using dynamic loading
+GGML_BACKEND_DL_IMPL(ggml_backend_cpu_reg)

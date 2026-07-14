@@ -4,7 +4,7 @@
 \alias{rllm_forward}
 \title{Run a transformer forward pass and return the logits}
 \usage{
-rllm_forward(model, tokens, cache = NULL)
+rllm_forward(model, tokens, cache = NULL, backend = c("cpu", "cuda"))
 }
 \arguments{
 \item{model}{An \code{rllm_model} from \code{\link[=rllm_gguf_model]{rllm_gguf_model()}}.}
@@ -12,6 +12,10 @@ rllm_forward(model, tokens, cache = NULL)
 \item{tokens}{Integer vector of 0-based token ids (as in the GGUF vocab).}
 
 \item{cache}{Optional \code{\link[=rllm_kv_cache]{rllm_kv_cache()}} for incremental decoding.}
+
+\item{backend}{Compute backend. \code{"cpu"} is the zero-copy mmap path;
+\code{"cuda"} requires Rggml installed with \code{--with-cuda} and a visible NVIDIA
+device.}
 }
 \value{
 A numeric matrix of logits, dim \code{c(n_vocab, length(tokens))}:
@@ -20,9 +24,12 @@ column \code{i} scores the token following position \code{i}.
 \description{
 Assembles the GGML compute graph for a llama-architecture forward pass
 (RMSNorm, RoPE, causal self-attention, SwiGLU feed-forward) over the
-model's memory-mapped weights and computes it on the GGML CPU backend.
-Quantized weights are contracted natively through the SIMD-dispatched
-quantized kernels - they are never decoded to double.
+model's memory-mapped weights and computes it on a chosen GGML backend.
+Quantized weights are contracted natively in their encoded form - they are
+never decoded to double. The CPU backend borrows the mapped bytes directly.
+On its first use, the CUDA backend creates a model-owned context and uploads
+the codec-native weights once. Later passes reuse those resident weights;
+mutable inputs, cache slabs and logits move through Rggml's transfer API.
 }
 \details{
 Without a \code{cache}, the graph attends over the whole token batch with a

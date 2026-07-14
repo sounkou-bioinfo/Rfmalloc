@@ -25,8 +25,10 @@
 #'       the only BLAS routine R guarantees.}
 #'     \item{`vulkan`}{`TRUE` when built with `--with-vulkan`. Whether a *device*
 #'       is visible is a separate question: see [rggml_vulkan_info()].}
+#'     \item{`cuda`}{`TRUE` when built with `--with-cuda`. Whether a *device*
+#'       is visible is a separate question: see [rggml_cuda_info()].}
 #'   }
-#' @seealso [rggml_vulkan_info()]
+#' @seealso [rggml_vulkan_info()], [rggml_cuda_info()]
 #' @examples
 #' rggml_cpu_info()
 #' @export

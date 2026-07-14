@@ -13,7 +13,8 @@ rllm_generate(
   top_p = 1,
   seed = NULL,
   cache = NULL,
-  runtime = NULL
+  runtime = NULL,
+  backend = c("cpu", "cuda")
 )
 }
 \arguments{
@@ -42,6 +43,9 @@ fresh cache sized \code{length(prompt) + n_new} is created.}
 
 \item{runtime}{Optional \code{\link[Rfmalloc:open_fmalloc]{Rfmalloc::open_fmalloc()}} runtime for the cache
 slabs (file-backed cache).}
+
+\item{backend}{Compute backend passed to \code{\link[=rllm_forward]{rllm_forward()}}. \code{"cuda"}
+requires a CUDA-enabled Rggml build.}
 }
 \value{
 A list with \code{ids} (prompt + generated, 0-based), \code{new_ids} (the

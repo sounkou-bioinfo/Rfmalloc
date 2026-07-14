@@ -1,8 +1,6 @@
 #if !defined(GGML_ROPE_PARAMS)
 #define GGML_ROPE_PARAMS
 
-#include "rte.glsl"
-
 struct rope_params {
     uint rope_mode;
     uint nrows;
@@ -18,6 +16,7 @@ struct rope_params {
     uint is_imrope;
     uint is_back;
     uint set_rows_stride;
+
     uint ne00;
     uint ne01;
     uint ne02;

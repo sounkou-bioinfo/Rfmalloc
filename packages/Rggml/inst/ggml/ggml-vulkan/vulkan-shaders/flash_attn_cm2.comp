@@ -138,10 +138,6 @@ ACC_TYPE perElemOpNonGqaSplitKStoreCol0(const in uint32_t r, const in uint32_t c
 }
 
 void main() {
-#ifdef NEEDS_INIT_IQ_SHMEM
-    init_iq_shmem(gl_WorkGroupSize);
-#endif
-
     init_indices();
 
     tensorLayoutNV<2, gl_CooperativeMatrixClampModeConstantNV> tensorLayoutQ = createTensorLayoutNV(2, gl_CooperativeMatrixClampModeConstantNV);

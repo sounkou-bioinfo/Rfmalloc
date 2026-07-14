@@ -1,5 +1,5 @@
---- a/ggml-backend.cpp	2026-05-21 22:47:06.000000000 +0200
-+++ b/ggml-backend.cpp	2026-07-07 18:38:14.141979227 +0200
+--- a/ggml-backend.cpp
++++ b/ggml-backend.cpp
 @@ -39,7 +39,8 @@
      GGML_ASSERT(buft);
      if (size == 0) {

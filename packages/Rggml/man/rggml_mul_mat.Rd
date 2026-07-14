@@ -4,7 +4,7 @@
 \alias{rggml_mul_mat}
 \title{Matrix product on a chosen 'GGML' backend}
 \usage{
-rggml_mul_mat(A, B, backend = c("cpu", "blas", "vulkan"))
+rggml_mul_mat(A, B, backend = c("cpu", "blas", "vulkan", "cuda"))
 }
 \arguments{
 \item{A, B}{Numeric matrices with the same number of rows (the contracted
@@ -14,7 +14,9 @@ dimension). Computed in single precision on every backend.}
 \code{"blas"} (offloads the dense F32 product to whatever BLAS the R build
 links against), or \code{"vulkan"} (a Vulkan device; requires Rggml built
 with \code{--with-vulkan} and a visible device, see
-\code{\link[=rggml_vulkan_info]{rggml_vulkan_info()}}). Errors if the requested backend is unavailable.}
+\code{\link[=rggml_vulkan_info]{rggml_vulkan_info()}}), or \code{"cuda"} (an NVIDIA CUDA device;
+requires Rggml built with \code{--with-cuda}, see
+\code{\link[=rggml_cuda_info]{rggml_cuda_info()}}). Errors if the requested backend is unavailable.}
 }
 \value{
 A numeric matrix, dim \code{c(ncol(A), ncol(B))}, equal to
@@ -34,5 +36,5 @@ B <- matrix(rnorm(8), 4, 2)
 rggml_mul_mat(A, B)               # == crossprod(A, B) to fp32
 }
 \seealso{
-\code{\link[=rggml_vulkan_info]{rggml_vulkan_info()}}, \code{\link[=rggml_cpu_info]{rggml_cpu_info()}}
+\code{\link[=rggml_vulkan_info]{rggml_vulkan_info()}}, \code{\link[=rggml_cuda_info]{rggml_cuda_info()}}, \code{\link[=rggml_cpu_info]{rggml_cpu_info()}}
 }

@@ -1,0 +1,20 @@
+--- a/ggml-cuda/ggml-cuda.cu
++++ b/ggml-cuda/ggml-cuda.cu
+@@ -785,7 +785,7 @@
+ 
+     ggml_backend_cuda_buffer_context * ctx = new ggml_backend_cuda_buffer_context(buft_ctx->device, dev_ptr);
+ 
+-    return ggml_backend_buffer_init(buft, ggml_backend_cuda_buffer_interface, ctx, size);
++    return ggml_backend_buffer_init(buft, &ggml_backend_cuda_buffer_interface, ctx, size);
+ }
+ 
+ static size_t ggml_backend_cuda_buffer_type_get_alignment(ggml_backend_buffer_type_t buft) {
+@@ -1086,7 +1086,7 @@
+     // as returned by get_alloc_size. this limit is enforced during tensor allocation by ggml-alloc, so it must be correct.
+     ggml_backend_cuda_split_buffer_context * ctx = new ggml_backend_cuda_split_buffer_context();
+ 
+-    return ggml_backend_buffer_init(buft, ggml_backend_cuda_split_buffer_interface, ctx, size);
++    return ggml_backend_buffer_init(buft, &ggml_backend_cuda_split_buffer_interface, ctx, size);
+ }
+ 
+ static size_t ggml_backend_cuda_split_buffer_type_get_alignment(ggml_backend_buffer_type_t buft) {

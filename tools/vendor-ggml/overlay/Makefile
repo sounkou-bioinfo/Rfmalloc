@@ -10,8 +10,8 @@
 # selected kernels under ISA flags and runtime dispatch owns their canonical
 # symbols. On aarch64, configure clears GENERIC_DEFS and builds GGML's NEON
 # kernels directly. Dense products use the BLAS backend and offload F32
-# mul_mat to R's own BLAS through the cblas-to-Fortran shim below. Vulkan is
-# built separately only when configure receives --with-vulkan.
+# mul_mat to R's own BLAS through the cblas-to-Fortran shim below. Device
+# backends are built only when configure receives --with-vulkan or --with-cuda.
 
 AR     ?= ar
 RANLIB ?= ranlib
@@ -43,7 +43,7 @@ GENERIC_DEFS ?= -DGGML_CPU_GENERIC
 ARCH_OBJECTS ?=
 
 DEFS = -DGGML_USE_CPU $(GENERIC_DEFS) -DGGML_USE_BLAS -DGGML_R_PACKAGE -D_GNU_SOURCE -DNDEBUG \
-       -DGGML_VERSION='"0.9.5"' -DGGML_COMMIT='"vendored-unknown"' \
+       -DGGML_VERSION='"0.11.0"' -DGGML_COMMIT='"1f09c6987071"' \
        -include rggml_compat.h
 
 # Vulkan backend: empty unless ../../configure was run with --with-vulkan, in
@@ -53,19 +53,45 @@ DEFS = -DGGML_USE_CPU $(GENERIC_DEFS) -DGGML_USE_BLAS -DGGML_R_PACKAGE -D_GNU_SO
 VULKAN_OBJECTS ?=
 VULKAN_CPPFLAGS ?=
 
-ALL_CFLAGS   = $(CPPFLAGS) $(INCLUDES) $(DEFS) $(VULKAN_CPPFLAGS) $(CFLAGS)
-ALL_CXXFLAGS = $(CPPFLAGS) $(INCLUDES) $(DEFS) $(VULKAN_CPPFLAGS) $(CXXFLAGS) -std=gnu++17
+# CUDA source selection mirrors upstream GGML 0.11.0's CMake recipe. The
+# default build leaves CUDA_ENABLED at zero, so nvcc is neither detected nor
+# invoked unless configure received --with-cuda.
+CUDA_ENABLED ?= 0
+NVCC ?= nvcc
+CUDA_CPPFLAGS ?=
+CUDA_NVCCFLAGS ?=
+CUDA_HOST_PIC ?= -fPIC
+CUDA_SOURCES =
+ifeq ($(CUDA_ENABLED),1)
+CUDA_SOURCES += $(wildcard ggml-cuda/*.cu)
+CUDA_SOURCES += $(wildcard ggml-cuda/template-instances/fattn-tile*.cu)
+CUDA_SOURCES += $(wildcard ggml-cuda/template-instances/fattn-mma*.cu)
+CUDA_SOURCES += $(wildcard ggml-cuda/template-instances/mmq*.cu)
+CUDA_SOURCES += $(wildcard ggml-cuda/template-instances/mmf*.cu)
+CUDA_SOURCES += ggml-cuda/template-instances/fattn-vec-instance-f16-f16.cu
+CUDA_SOURCES += ggml-cuda/template-instances/fattn-vec-instance-q4_0-q4_0.cu
+CUDA_SOURCES += ggml-cuda/template-instances/fattn-vec-instance-q8_0-q8_0.cu
+CUDA_SOURCES += ggml-cuda/template-instances/fattn-vec-instance-bf16-bf16.cu
+endif
+CUDA_OBJECTS = $(CUDA_SOURCES:.cu=.o)
+
+ALL_CFLAGS   = $(CPPFLAGS) $(INCLUDES) $(DEFS) $(VULKAN_CPPFLAGS) $(CUDA_CPPFLAGS) $(CFLAGS)
+ALL_CXXFLAGS = $(CPPFLAGS) $(INCLUDES) $(DEFS) $(VULKAN_CPPFLAGS) $(CUDA_CPPFLAGS) $(CXXFLAGS) -std=gnu++17
 
 C_SOURCES = \
-  ggml-private.c ggml-alloc.c \
-  ggml-quants-legacy.c ggml-quants-iq.c ggml-quants-new.c ggml-quants-validate.c \
-  ggml-cpu/ggml-cpu-backend.c ggml-cpu/quants.c
+  ggml.c ggml-alloc.c ggml-quants.c \
+  ggml-cpu/quants.c
 
 CXX_SOURCES = \
   ggml-backend.cpp ggml-backend-reg.cpp ggml-backend-meta.cpp ggml-threading.cpp gguf.cpp \
-  ggml-cpu/ggml-cpu.cpp ggml-cpu/traits.cpp ggml-cpu/vec.cpp ggml-cpu/repack.cpp \
-  ggml-cpu/binary-ops.cpp ggml-cpu/unary-ops.cpp ggml-cpu/ops-private.cpp \
+  ggml-cpu/traits.cpp ggml-cpu/vec.cpp ggml-cpu/repack.cpp \
+  ggml-cpu/binary-ops.cpp ggml-cpu/unary-ops.cpp ggml-cpu/ops.cpp \
   ggml-blas.cpp
+
+# The upstream CPU backend has ggml-cpu.c and ggml-cpu.cpp in one directory.
+# A suffix-only make rule would map both to ggml-cpu.o, so name their objects
+# explicitly instead of silently dropping half the backend from the archive.
+CPU_CORE_OBJECTS = ggml-cpu/ggml-cpu-c.o ggml-cpu/ggml-cpu-cpp.o
 
 # SIMD runtime dispatch (RsimdDispatch strategy): cpu_features (CPUID detect)
 # and the dispatcher are always built; per-ISA kernel variants
@@ -81,9 +107,10 @@ SIMD_DISPATCH_DEFS ?=
 # canonical ggml_vec_dot_q4_K_q8_K, which our dispatcher would duplicate.
 DISPATCH_OBJECTS ?= cpu_features.o rggml_simd_dispatch.o
 
-OBJECTS = $(C_SOURCES:.c=.o) $(CXX_SOURCES:.cpp=.o) rggml_io.o rggml_cblas.o \
+OBJECTS = $(C_SOURCES:.c=.o) $(CXX_SOURCES:.cpp=.o) $(CPU_CORE_OBJECTS) \
+          rggml_io.o rggml_cblas.o \
           $(DISPATCH_OBJECTS) $(SIMD_EXTRA_OBJECTS) $(ARCH_OBJECTS) \
-          $(VULKAN_OBJECTS)
+          $(VULKAN_OBJECTS) $(CUDA_OBJECTS)
 
 .PHONY: all clean
 
@@ -109,6 +136,12 @@ rggml_io.o: rggml_io.c
 CBLAS_DEFS ?=
 rggml_cblas.o: rggml_cblas.c
 	$(CC) $(CPPFLAGS) $(INCLUDES) $(R_INCLUDE_FLAGS) $(CBLAS_DEFS) $(CFLAGS) -c $< -o $@
+
+ggml-cpu/ggml-cpu-c.o: ggml-cpu/ggml-cpu.c
+	$(CC) $(ALL_CFLAGS) -c $< -o $@
+
+ggml-cpu/ggml-cpu-cpp.o: ggml-cpu/ggml-cpu.cpp
+	$(CXX) $(ALL_CXXFLAGS) -c $< -o $@
 
 # --- SIMD runtime dispatch (sources under ../../tools/simd) ------------------
 # cpu_features.c: pure CPUID/runtime detection, no GGML or R dependencies.
@@ -139,6 +172,15 @@ rggml_q4k_neon.o: $(SIMD_DIR)/vec_dot_q4_K.c
 
 %.o: %.cpp
 	$(CXX) $(ALL_CXXFLAGS) -c $< -o $@
+
+# Do not force-include rggml_compat.h in nvcc. CUDA has legitimate device-side
+# printf calls; redirecting those to an R host function makes the device pass
+# invalid. Host diagnostics use GGML's logging callback, and R CMD check audits
+# the linked shared object for forbidden process and console calls.
+%.o: %.cu
+	$(NVCC) $(CUDA_NVCCFLAGS) $(CUDA_CPPFLAGS) -I. -I../include -Iggml-cuda \
+	    -DGGML_CUDA_PEER_MAX_BATCH_SIZE=128 -Xcompiler "$(CUDA_HOST_PIC)" \
+	    -c $< -o $@
 
 clean:
 	rm -f $(STATICLIB) $(OBJECTS)

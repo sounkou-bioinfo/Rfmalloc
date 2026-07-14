@@ -20,6 +20,8 @@ backend calls it directly; \code{FALSE} when the shim promotes to \code{dgemm_},
 the only BLAS routine R guarantees.}
 \item{\code{vulkan}}{\code{TRUE} when built with \code{--with-vulkan}. Whether a \emph{device}
 is visible is a separate question: see \code{\link[=rggml_vulkan_info]{rggml_vulkan_info()}}.}
+\item{\code{cuda}}{\code{TRUE} when built with \code{--with-cuda}. Whether a \emph{device}
+is visible is a separate question: see \code{\link[=rggml_cuda_info]{rggml_cuda_info()}}.}
 }
 }
 \description{
@@ -40,5 +42,5 @@ this list in the test suite turns those silent fallbacks into failures.
 rggml_cpu_info()
 }
 \seealso{
-\code{\link[=rggml_vulkan_info]{rggml_vulkan_info()}}
+\code{\link[=rggml_vulkan_info]{rggml_vulkan_info()}}, \code{\link[=rggml_cuda_info]{rggml_cuda_info()}}
 }

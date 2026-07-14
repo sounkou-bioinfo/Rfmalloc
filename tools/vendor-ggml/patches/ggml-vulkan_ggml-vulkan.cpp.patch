@@ -1,0 +1,53 @@
+--- a/ggml-vulkan/ggml-vulkan.cpp
++++ b/ggml-vulkan/ggml-vulkan.cpp
+@@ -5864,6 +5864,11 @@
+     return ggml_vk_default_dispatcher_instance;
+ }
+ 
++static bool ggml_vk_allow_cpu_device() {
++    const char * value = getenv("GGML_VK_ALLOW_CPU");
++    return value != nullptr && value[0] != '\0' && value[0] != '0';
++}
++
+ static void ggml_vk_instance_init() {
+     if (vk_instance_initialized) {
+         return;
+@@ -5988,7 +5993,9 @@
+             new_driver.pNext = &new_id;
+             devices[i].getProperties2(&new_props);
+ 
+-            if ((new_props.properties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu || new_props.properties.deviceType == vk::PhysicalDeviceType::eIntegratedGpu) && ggml_vk_device_is_supported(devices[i])) {
++            if ((new_props.properties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu ||
++                 new_props.properties.deviceType == vk::PhysicalDeviceType::eIntegratedGpu ||
++                 (ggml_vk_allow_cpu_device() && new_props.properties.deviceType == vk::PhysicalDeviceType::eCpu)) && ggml_vk_device_is_supported(devices[i])) {
+                 // Check if there are two physical devices corresponding to the same GPU
+                 // This handles the case where the same GPU appears with different drivers (e.g., RADV + AMDVLK on Linux),
+                 // see https://github.com/ggml-org/llama.cpp/pull/7582 for original deduplication.
+@@ -6082,7 +6089,8 @@
+         // If only CPU devices are available, return without devices.
+         if (vk_instance.device_indices.empty()) {
+             for (size_t i = 0; i < devices.size(); i++) {
+-                if (devices[i].getProperties().deviceType != vk::PhysicalDeviceType::eCpu) {
++                if (devices[i].getProperties().deviceType != vk::PhysicalDeviceType::eCpu ||
++                    ggml_vk_allow_cpu_device()) {
+                     vk_instance.device_indices.push_back(i);
+                     break;
+                 }
+@@ -13806,7 +13814,7 @@
+ 
+     ggml_backend_vk_buffer_context * bufctx = new ggml_backend_vk_buffer_context(ctx->device, std::move(dev_buffer), ctx->name);
+ 
+-    return ggml_backend_buffer_init(buft, ggml_backend_vk_buffer_interface, bufctx, size);
++    return ggml_backend_buffer_init(buft, &ggml_backend_vk_buffer_interface, bufctx, size);
+ }
+ 
+ static size_t ggml_backend_vk_buffer_type_get_alignment(ggml_backend_buffer_type_t buft) {
+@@ -16165,7 +16173,7 @@
+ 
+     ggml_backend_vk_buffer_context * bufctx = new ggml_backend_vk_buffer_context(device, std::move(buf), device->name);
+ 
+-    ggml_backend_buffer_t ret = ggml_backend_buffer_init(ggml_backend_vk_device_get_buffer_type(dev), ggml_backend_vk_buffer_interface, bufctx, size);
++    ggml_backend_buffer_t ret = ggml_backend_buffer_init(ggml_backend_vk_device_get_buffer_type(dev), &ggml_backend_vk_buffer_interface, bufctx, size);
+ 
+     return ret;
+ }

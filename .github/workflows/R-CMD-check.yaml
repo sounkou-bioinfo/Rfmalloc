@@ -36,11 +36,11 @@ jobs:
           - {pkg: Rfmalloc, os: ubuntu-latest,  r: 'release'}
           - {pkg: Rfmalloc, os: ubuntu-latest,  r: 'oldrel-1'}
           # Rggml now builds on Windows too (Rtools/MinGW: configure.win writes
-          # src/Makevars.win without -ldl). Rgguf/Rllm stay unix for now - Rgguf's
-          # vendored gguflib mmaps the GGUF file with no _WIN32 path.
+          # src/Makevars.win without -ldl). Rgguf uses the same upstream GGML
+          # GGUF implementation on every platform.
           - {pkg: Rggml,    os: windows-latest, r: 'release'}
           - {pkg: Rggml,    os: ubuntu-24.04-arm, r: 'release'}
-          # Unix-only packages (OS_type: unix).
+          # The remaining Unix and aarch64 rows.
           - {pkg: Rgguf,    os: ubuntu-latest,  r: 'release'}
           - {pkg: Rgguf,    os: ubuntu-latest,  r: 'devel'}
           - {pkg: Rgguf,    os: macos-latest,   r: 'release'}
@@ -52,17 +52,12 @@ jobs:
           - {pkg: Rllm,     os: ubuntu-latest,  r: 'devel'}
           - {pkg: Rllm,     os: macos-latest,   r: 'release'}
           - {pkg: Rllm,     os: ubuntu-24.04-arm, r: 'release'}
-          # Rpgen vendors pgenlib (LGPL-3) + zstd/libdeflate/simde. Windows is
-          # held until the vendored Windows build (Makevars.win/.ucrt) is
-          # verified here; pgenlibr proves it builds on Windows, so it is a
-          # follow-up, not a barrier.
+          # Rpgen vendors pgenlib (LGPL-3) + zstd/libdeflate/simde.
           - {pkg: Rpgen,    os: ubuntu-latest,  r: 'release'}
           - {pkg: Rpgen,    os: ubuntu-latest,  r: 'devel'}
           - {pkg: Rpgen,    os: macos-latest,   r: 'release'}
           - {pkg: Rpgen,    os: ubuntu-24.04-arm, r: 'release'}
-          # Windows/Rtools: Rgguf's gguflib mmap is shimmed to CreateFileMapping;
-          # Rpgen's vendored pgenlib already ships Makevars.win (pgenlibr proves
-          # it on CRAN); Rllm has no Unix-only C of its own.
+          # Windows/Rtools rows for the composed packages.
           - {pkg: Rgguf,    os: windows-latest, r: 'release'}
           - {pkg: Rllm,     os: windows-latest, r: 'release'}
           - {pkg: Rpgen,    os: windows-latest, r: 'release'}
@@ -92,7 +87,11 @@ jobs:
       - name: Install CRAN tooling
         run: |
           install.packages("pak", repos = sprintf("https://r-lib.github.io/p/pak/stable/%s/%s/%s", .Platform$pkgType, R.Version()$os, R.Version()$arch))
-          pak::pkg_install(c("any::rcmdcheck", "any::tinytest"), ask = FALSE)
+          tooling <- c("any::rcmdcheck", "any::tinytest")
+          if ("${{ matrix.pkg }}" == "RfmallocStatgen") {
+            tooling <- c(tooling, "any::RcppEigen")
+          }
+          pak::pkg_install(tooling, ask = FALSE)
         shell: Rscript {0}
 
       # Siblings come from THIS checkout via plain R CMD INSTALL - never from
@@ -101,7 +100,7 @@ jobs:
       - name: Install sibling packages from the local checkout
         run: |
           case "${{ matrix.pkg }}" in
-            Rgguf) siblings="Rfmalloc" ;;
+            Rgguf) siblings="Rfmalloc Rggml" ;;
             Rpgen) siblings="Rfmalloc" ;;
             Rllm)  siblings="Rfmalloc Rggml Rgguf" ;;
             RfmallocStatgen) siblings="Rfmalloc" ;;
@@ -128,7 +127,7 @@ jobs:
         with:
           r-version: 'release'
       # Guard against silent hand-edits of packages/Rggml/inst/ggml: re-derive
-      # it from the pinned ggmlR tarball + patches/ + overlay/ and assert equal.
+      # it from pinned upstream GGML sources plus local patches and assert equal.
       - name: vendorggml.R check
         run: Rscript tools/vendor-ggml/vendorggml.R check
 
@@ -187,7 +186,7 @@ jobs:
       - name: Install CRAN tooling
         run: |
           install.packages("pak", repos = sprintf("https://r-lib.github.io/p/pak/stable/%s/%s/%s", .Platform$pkgType, R.Version()$os, R.Version()$arch))
-          pak::pkg_install("any::tinytest", ask = FALSE)
+          pak::pkg_install(c("any::tinytest", "any::RcppEigen"), ask = FALSE)
         shell: Rscript {0}
 
       # Same rule as the check jobs: the stack under test is THIS checkout,

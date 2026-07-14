@@ -1,5 +1,5 @@
---- a/ggml-cpu/arch-fallback.h	2026-05-18 15:40:46.000000000 +0200
-+++ b/ggml-cpu/arch-fallback.h	2026-07-08 20:34:19.490476779 +0200
+--- a/ggml-cpu/arch-fallback.h
++++ b/ggml-cpu/arch-fallback.h
 @@ -18,7 +18,11 @@
  #define ggml_vec_dot_tq2_0_q8_K_generic ggml_vec_dot_tq2_0_q8_K
  #define ggml_vec_dot_q2_K_q8_K_generic ggml_vec_dot_q2_K_q8_K
@@ -18,8 +18,8 @@
  #define ggml_gemm_q8_0_4x8_q8_0_generic ggml_gemm_q8_0_4x8_q8_0
  #elif defined(__aarch64__) || defined(__arm__) || defined(_M_ARM) || defined(_M_ARM64)
 +// Rggml: on aarch64 we compile GGML's hand-tuned NEON vec_dot kernels
-+// (ggml-cpu/arch/arm/quants.c) but keep the portable repack path and ggmlR's
-+// custom q1_0 type, so those canonical symbols resolve to the generic code.
++// (ggml-cpu/arch/arm/quants.c) while keeping the portable repack path. The
++// remaining canonical symbols resolve to the generic implementation.
 +#define ggml_vec_dot_q1_0_q8_0_generic ggml_vec_dot_q1_0_q8_0
 +#define ggml_gemm_iq4_nl_4x4_q8_0_generic ggml_gemm_iq4_nl_4x4_q8_0
 +#define ggml_gemm_q2_K_8x8_q8_K_generic ggml_gemm_q2_K_8x8_q8_K

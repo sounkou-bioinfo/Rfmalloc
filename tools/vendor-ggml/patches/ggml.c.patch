@@ -1,0 +1,32 @@
+--- a/ggml.c
++++ b/ggml.c
+@@ -1849,6 +1849,9 @@
+ 
+ void * ggml_new_buffer(struct ggml_context * ctx, size_t nbytes) {
+     struct ggml_object * obj = ggml_new_object(ctx, GGML_OBJECT_TYPE_WORK_BUFFER, nbytes);
++    if (obj == NULL) {
++        return NULL;
++    }
+ 
+     return (uint8_t *)ctx->mem_buffer + obj->offs;
+ }
+@@ -7093,6 +7096,9 @@
+ struct ggml_cgraph * ggml_new_graph_custom(struct ggml_context * ctx, size_t size, bool grads) {
+     const size_t obj_size = ggml_graph_nbytes(size, grads);
+     struct ggml_object * obj = ggml_new_object(ctx, GGML_OBJECT_TYPE_GRAPH, obj_size);
++    if (obj == NULL) {
++        return NULL;
++    }
+     struct ggml_cgraph * cgraph = (struct ggml_cgraph *) ((char *) ctx->mem_buffer + obj->offs);
+ 
+     // the size of the hash table is doubled since it needs to hold both nodes and leafs
+@@ -7206,6 +7212,9 @@
+ 
+ struct ggml_cgraph * ggml_graph_dup(struct ggml_context * ctx, struct ggml_cgraph * cgraph, bool force_grads) {
+     struct ggml_cgraph * result = ggml_new_graph_custom(ctx, cgraph->size, cgraph->grads || force_grads);
++    if (result == NULL) {
++        return NULL;
++    }
+     ggml_graph_cpy(cgraph, result);
+     return result;
+ }

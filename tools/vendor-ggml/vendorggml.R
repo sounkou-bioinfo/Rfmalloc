@@ -1,191 +1,260 @@
 #!/usr/bin/env Rscript
-# vendor GGML: reproducibly regenerate Rggml's vendored GGML tree from a
-# pinned, immutable source. Same shape as Rtinycc's tools/vendortinycc.R
-# (self-locating, mode-driven, pins an exact upstream artifact), adapted for
-# GGML's extra steps. This is how the project OWNS its path to GGML: the
-# vendored tree is not a mystery copy from a repository that rewrites its own
-# history, it is
+# Regenerate Rggml's vendored engine from one pinned ggml-org source tree.
+# The committed tree is:
 #
-#     (SHA-pinned ggmlR CRAN tarball) + (patches/) + (overlay/)
+#     selected files from ggml-org/ggml v0.11.0
+#   + patches/
+#   + overlay/
 #
-# all recorded beside this script and verifiable by re-running it.
-#
-#   base    : ggmlR <VER> source tarball from CRAN, SHA256-pinned. It supplies
-#             GGML 0.9.5 already split for CRAN plus the stdio/abort shim.
-#   patches : patches/*.patch - our local edits on top of stock ggmlR
-#             (Windows/MinGW by-pointer buffer iface, never-destroyed teardown
-#             singletons, NULL-guards against small-pool heap corruption, and
-#             the arch-fallback.h hook that lets our runtime SIMD dispatcher
-#             own the canonical q4_K vec_dot). Documented in PROVENANCE.md.
-#   overlay : overlay/* - files that are OURS, not GGML's (the Makefile, the
-#             BLAS backend + cblas->Fortran shim, the R-safe I/O shim).
+# The archive transport is not trusted as the pin. GitHub may recompress tag
+# archives, so the recipe hashes the selected extracted files and their paths.
 #
 # Usage (from anywhere):
-#   Rscript tools/vendor-ggml/vendorggml.R download   # fetch + SHA-verify the base tarball into cache/
-#   Rscript tools/vendor-ggml/vendorggml.R vendor     # regenerate inst/ggml + inst/include in place
-#   Rscript tools/vendor-ggml/vendorggml.R check      # regenerate to a temp dir, diff vs the committed tree
+#   Rscript tools/vendor-ggml/vendorggml.R download
+#   Rscript tools/vendor-ggml/vendorggml.R vendor
+#   Rscript tools/vendor-ggml/vendorggml.R check
 
 args <- commandArgs(trailingOnly = TRUE)
-mode <- if (length(args) > 0) args[[1]] else "check"
+mode <- if (length(args) > 0L) args[[1L]] else "check"
 
-## --- pinned base #2: GGML's own hand-tuned NEON kernels ----------------------
-# ggmlR prunes ggml-cpu/arch/, so the aarch64 kernels must come straight from
-# ggml-org. We pin the *file's* sha256 rather than the tarball's: GitHub has
-# changed archive compression before, which silently breaks tarball checksums,
-# but the file content is what we actually vendor.
-ggml_org_tag  <- "v0.9.11"
-ggml_org_url  <- sprintf("https://github.com/ggml-org/ggml/archive/refs/tags/%s.tar.gz", ggml_org_tag)
-arm_rel_path  <- "src/ggml-cpu/arch/arm/quants.c"
-arm_dst_path  <- "ggml-cpu/arch/arm/quants.c"
-arm_sha       <- "0efbb89fca266a62b2c226bf7700317d80e95a47b2af97435ca92cac36763446"
-
-## --- pinned base ------------------------------------------------------------
-ggmlr_ver <- "0.7.8"
-ggmlr_sha <- "f7f414729e389dce7320cfcfd5c63298382da00c436e3e5bc49bf33f067d0dc7"
-tarball   <- sprintf("ggmlR_%s.tar.gz", ggmlr_ver)
-cran_urls <- c(
-  sprintf("https://cran.r-project.org/src/contrib/%s", tarball),
-  sprintf("https://cran.r-project.org/src/contrib/Archive/ggmlR/%s", tarball)
+ggml_tag <- "v0.11.0"
+ggml_commit <- "1f09c6987071512f9a11189880c0130b1349b8dc"
+ggml_url <- sprintf(
+  "https://github.com/ggml-org/ggml/archive/refs/tags/%s.tar.gz",
+  ggml_tag
 )
+source_tree_sha <- "e2b4e65f0780bfe14884d924649a68b4b2d3326cbb9644046fa6e3f13dbb8ea9"
 
-## --- locate ourselves (as Rtinycc's tools/vendortinycc.R does) --------------
-getScriptPath <- function() {
-  cmd.args <- commandArgs()
-  m <- regexpr("(?<=^--file=).+", cmd.args, perl = TRUE)
-  script.dir <- dirname(regmatches(cmd.args, m))
-  if (length(script.dir) != 1) {
-    stop("can't determine script dir: call this with Rscript")
+get_script_path <- function() {
+  cmd_args <- commandArgs()
+  match <- regexpr("(?<=^--file=).+", cmd_args, perl = TRUE)
+  script_dir <- dirname(regmatches(cmd_args, match))
+  if (length(script_dir) != 1L) {
+    stop("can't determine script directory: call this with Rscript")
   }
-  normalizePath(script.dir)
+  normalizePath(script_dir)
 }
-here     <- getScriptPath()                                   # tools/vendor-ggml
-repo     <- normalizePath(file.path(here, "..", ".."))        # monorepo root
+
+here <- get_script_path()
+repo <- normalizePath(file.path(here, "..", ".."))
 ggml_dst <- file.path(repo, "packages", "Rggml", "inst", "ggml")
-inc_dst  <- file.path(repo, "packages", "Rggml", "inst", "include")
-cache    <- file.path(here, "cache")
-inc_headers <- c("ggml.h", "ggml-alloc.h", "ggml-backend.h", "ggml-cpu.h", "ggml-vulkan.h")
-overlay_ggml <- c("Makefile", "ggml-blas.cpp", "cblas.h",
-                  "rggml_cblas.c", "rggml_compat.h", "rggml_io.c")
+inc_dst <- file.path(repo, "packages", "Rggml", "inst", "include")
+cache <- file.path(here, "cache")
+archive <- file.path(cache, sprintf("ggml-%s.tar.gz", ggml_tag))
+
+manifest <- readLines(file.path(here, "manifest.txt"))
+manifest <- manifest[nzchar(manifest)]
+public_headers <- c(
+  "ggml.h", "ggml-alloc.h", "ggml-backend.h", "ggml-blas.h",
+  "ggml-cpp.h", "ggml-cpu.h", "ggml-cuda.h", "ggml-vulkan.h", "gguf.h"
+)
+overlay_ggml <- c(
+  "Makefile", "cblas.h", "rggml_cblas.c", "rggml_compat.h", "rggml_io.c"
+)
 
 sha256 <- function(path) unname(tools::sha256sum(path))
 
-fetch_base <- function() {
+tree_sha256 <- function(root, rel) {
+  rel <- sort(unique(rel), method = "radix")
+  files <- file.path(root, rel)
+  if (!all(file.exists(files))) {
+    stop("pinned GGML source is missing: ", rel[which(!file.exists(files))[1L]])
+  }
+  record <- tempfile("ggml-tree-")
+  on.exit(unlink(record), add = TRUE)
+  writeLines(sprintf("%s  %s", sha256(files), rel), record, useBytes = TRUE)
+  sha256(record)
+}
+
+selected_source_files <- function(root) {
+  c(
+    file.path("src", manifest),
+    "src/ggml-blas/ggml-blas.cpp",
+    file.path(
+      "src/ggml-cuda",
+      list.files(
+        file.path(root, "src", "ggml-cuda"), recursive = TRUE,
+        all.files = TRUE, no.. = TRUE, include.dirs = FALSE
+      )
+    ),
+    file.path(
+      "src/ggml-vulkan",
+      list.files(
+        file.path(root, "src", "ggml-vulkan"), recursive = TRUE,
+        all.files = TRUE, no.. = TRUE, include.dirs = FALSE
+      )
+    ),
+    file.path("include", public_headers)
+  )
+}
+
+fetch_upstream <- function() {
   dir.create(cache, showWarnings = FALSE, recursive = TRUE)
-  dst <- file.path(cache, tarball)
-  if (!file.exists(dst)) {
-    ok <- FALSE
-    for (u in cran_urls) {
-      if (tryCatch({ download.file(u, dst, quiet = TRUE, mode = "wb"); TRUE },
-                   error = function(e) FALSE)) { ok <- TRUE; break }
-    }
-    if (!ok) stop("could not download ", tarball, " from CRAN")
+  if (!file.exists(archive)) {
+    download.file(ggml_url, archive, quiet = TRUE, mode = "wb")
   }
-  got <- sha256(dst)
-  if (!identical(got, ggmlr_sha)) {
-    stop(sprintf("%s sha256 mismatch\n  expected %s\n  got      %s",
-                 tarball, ggmlr_sha, got))
-  }
-  message("base OK: ", tarball, " (sha256 ", substr(got, 1, 12), "...)")
-  dst
+  archive
 }
 
 if (mode == "download") {
-  fetch_base()
+  fetch_upstream()
   quit(save = "no")
 }
-
 if (!(mode %in% c("vendor", "check"))) {
-  stop("Unknown mode: ", mode, ". Use 'download', 'vendor', or 'check'.")
+  stop("unknown mode: ", mode, ". Use download, vendor, or check")
 }
 
-## --- regenerate -------------------------------------------------------------
-tb   <- fetch_base()
 work <- tempfile("vendorggml-")
 dir.create(work)
 on.exit(unlink(work, recursive = TRUE), add = TRUE)
-utils::untar(tb, exdir = work)
-src <- file.path(work, "ggmlR", "src")
+utils::untar(fetch_upstream(), exdir = work)
+src_root <- list.files(work, full.names = TRUE)[1L]
+
+selected <- selected_source_files(src_root)
+got <- tree_sha256(src_root, selected)
+if (!identical(got, source_tree_sha)) {
+  stop(
+    sprintf(
+      paste0(
+        "selected GGML source tree sha256 mismatch\n",
+        "  expected %s\n  got      %s"
+      ),
+      source_tree_sha, got
+    )
+  )
+}
+message(
+  "source OK: ggml-org/ggml ", ggml_tag, " (",
+  substr(ggml_commit, 1L, 12L), ", ", length(selected),
+  " files, tree sha256 ", substr(got, 1L, 12L), "...)"
+)
 
 if (mode == "check") {
   ggml_out <- file.path(work, "out", "ggml")
-  inc_out  <- file.path(work, "out", "include")
+  inc_out <- file.path(work, "out", "include")
 } else {
   ggml_out <- ggml_dst
-  inc_out  <- inc_dst
+  inc_out <- inc_dst
+  unlink(ggml_out, recursive = TRUE)
+  unlink(file.path(inc_out, public_headers))
 }
-dir.create(file.path(ggml_out, "ggml-cpu"), showWarnings = FALSE, recursive = TRUE)
+dir.create(ggml_out, showWarnings = FALSE, recursive = TRUE)
 dir.create(inc_out, showWarnings = FALSE, recursive = TRUE)
 
-message("copy vendored GGML subset (manifest.txt)")
-manifest <- readLines(file.path(here, "manifest.txt"))
-manifest <- manifest[nzchar(manifest)]
-for (f in manifest) {
-  dir.create(file.path(ggml_out, dirname(f)), showWarnings = FALSE, recursive = TRUE)
-  stopifnot(file.copy(file.path(src, f), file.path(ggml_out, f), overwrite = TRUE))
-}
-
-message("copy GGML's aarch64 NEON kernels from ggml-org ", ggml_org_tag)
-{
-  tb2 <- file.path(cache, sprintf("ggml-%s.tar.gz", ggml_org_tag))
-  if (!file.exists(tb2)) {
-    dir.create(cache, showWarnings = FALSE, recursive = TRUE)
-    download.file(ggml_org_url, tb2, quiet = TRUE, mode = "wb")
+copy_one <- function(from, to) {
+  dir.create(dirname(to), showWarnings = FALSE, recursive = TRUE)
+  if (!file.copy(from, to, overwrite = TRUE, copy.mode = TRUE)) {
+    stop("could not copy ", from, " to ", to)
   }
-  w2 <- file.path(work, "ggml-org"); dir.create(w2, showWarnings = FALSE)
-  utils::untar(tb2, exdir = w2)
-  src2 <- list.files(w2, full.names = TRUE)[1]
-  arm_src <- file.path(src2, arm_rel_path)
-  if (!file.exists(arm_src)) stop("ggml-org ", ggml_org_tag, ": missing ", arm_rel_path)
-  got <- sha256(arm_src)
-  if (!identical(got, arm_sha)) {
-    stop(sprintf("%s sha256 mismatch\n  expected %s\n  got      %s", arm_rel_path, arm_sha, got))
+}
+
+message("copy official core and CPU source manifest")
+for (path in manifest) {
+  copy_one(file.path(src_root, "src", path), file.path(ggml_out, path))
+}
+copy_one(
+  file.path(src_root, "src", "ggml-blas", "ggml-blas.cpp"),
+  file.path(ggml_out, "ggml-blas.cpp")
+)
+
+copy_tree <- function(source, target) {
+  files <- list.files(
+    source, recursive = TRUE, all.files = TRUE, no.. = TRUE,
+    include.dirs = FALSE
+  )
+  unlink(target, recursive = TRUE)
+  for (path in files) {
+    copy_one(file.path(source, path), file.path(target, path))
   }
-  dir.create(file.path(ggml_out, dirname(arm_dst_path)), showWarnings = FALSE, recursive = TRUE)
-  stopifnot(file.copy(arm_src, file.path(ggml_out, arm_dst_path), overwrite = TRUE))
-  message("  ", arm_dst_path, " (sha256 ", substr(got, 1, 12), "...)")
+  length(files)
 }
 
-message("copy installed public headers")
-for (h in inc_headers) {
-  stopifnot(file.copy(file.path(src, h), file.path(inc_out, h), overwrite = TRUE))
+n_cuda <- copy_tree(
+  file.path(src_root, "src", "ggml-cuda"),
+  file.path(ggml_out, "ggml-cuda")
+)
+n_vulkan <- copy_tree(
+  file.path(src_root, "src", "ggml-vulkan"),
+  file.path(ggml_out, "ggml-vulkan")
+)
+message("copy official CUDA (", n_cuda, " files) and Vulkan (", n_vulkan, " files)")
+
+message("copy official public headers")
+for (header in public_headers) {
+  copy_one(
+    file.path(src_root, "include", header),
+    file.path(inc_out, header)
+  )
 }
 
-message("apply our patches (stock ", ggmlr_ver, " -> ours)")
-for (p in sort(list.files(file.path(here, "patches"), "\\.patch$", full.names = TRUE))) {
-  rc <- system2("patch", c("-p1", "-s", "-d", shQuote(ggml_out)),
-                stdin = p, stdout = "", stderr = "")
-  if (rc != 0) stop("patch failed: ", basename(p))
-  message("  ", basename(p))
+message("apply Rggml patches")
+patches <- sort(list.files(file.path(here, "patches"), "\\.patch$", full.names = TRUE))
+for (patch_file in patches) {
+  rc <- system2(
+    "patch",
+    c("-p1", "-s", "--no-backup-if-mismatch", "-d", shQuote(ggml_out)),
+    stdin = patch_file, stdout = "", stderr = ""
+  )
+  if (rc != 0L) stop("patch failed: ", basename(patch_file))
+  message("  ", basename(patch_file))
 }
 
-message("overlay our own (non-GGML) files")
-for (f in overlay_ggml) {
-  stopifnot(file.copy(file.path(here, "overlay", f), file.path(ggml_out, f), overwrite = TRUE))
+header_patches <- sort(list.files(
+  file.path(here, "header-patches"), "\\.patch$", full.names = TRUE
+))
+for (patch_file in header_patches) {
+  rc <- system2(
+    "patch",
+    c("-p1", "-s", "--no-backup-if-mismatch", "-d", shQuote(inc_out)),
+    stdin = patch_file, stdout = "", stderr = ""
+  )
+  if (rc != 0L) stop("header patch failed: ", basename(patch_file))
+  message("  include/", basename(patch_file))
 }
-stopifnot(file.copy(file.path(here, "overlay", "ggml-blas.h"),
-                    file.path(inc_out, "ggml-blas.h"), overwrite = TRUE))
+
+message("overlay Rggml build and R-safe integration files")
+for (path in overlay_ggml) {
+  copy_one(file.path(here, "overlay", path), file.path(ggml_out, path))
+}
 
 if (mode == "check") {
-  ref_ggml <- ggml_dst; ref_inc <- inc_dst
-  mism <- character(0)
-  ours <- setdiff(list.files(ggml_out, recursive = TRUE),
-                  c("libggml.a", list.files(ggml_out, "\\.o$", recursive = TRUE)))
-  for (f in ours) {
-    a <- file.path(ggml_out, f); b <- file.path(ref_ggml, f)
-    if (!file.exists(b) || !identical(sha256(a), sha256(b))) mism <- c(mism, f)
+  source_files <- function(root) {
+    rel <- list.files(root, recursive = TRUE, all.files = TRUE, no.. = TRUE)
+    rel <- rel[!grepl("(^|/)(generated)(/|$)", rel)]
+    rel <- rel[!grepl("\\.(o|obj|a|d)$", rel)]
+    rel <- rel[!grepl("(^|/)vulkan-shaders-gen(\\.exe)?$", rel)]
+    sort(rel, method = "radix")
   }
-  for (h in c(inc_headers, "ggml-blas.h")) {
-    if (!identical(sha256(file.path(inc_out, h)), sha256(file.path(ref_inc, h)))) {
-      mism <- c(mism, file.path("include", h))
-    }
+
+  expected <- source_files(ggml_out)
+  actual <- source_files(ggml_dst)
+  missing <- setdiff(expected, actual)
+  extra <- setdiff(actual, expected)
+  common <- intersect(expected, actual)
+  changed <- common[
+    sha256(file.path(ggml_out, common)) != sha256(file.path(ggml_dst, common))
+  ]
+
+  header_changed <- public_headers[
+    sha256(file.path(inc_out, public_headers)) !=
+      sha256(file.path(inc_dst, public_headers))
+  ]
+  mismatch <- c(
+    if (length(missing)) paste0("missing: ", missing),
+    if (length(extra)) paste0("extra: ", extra),
+    changed,
+    if (length(header_changed)) file.path("include", header_changed)
+  )
+  if (length(mismatch) != 0L) {
+    stop(
+      "MISMATCH: committed vendored tree differs from the recipe:\n  ",
+      paste(mismatch, collapse = "\n  ")
+    )
   }
-  if (length(mism) == 0) {
-    message("OK: committed vendored tree == vendorggml.R output")
-  } else {
-    stop("MISMATCH - committed tree no longer equals the recipe:\n  ",
-         paste(mism, collapse = "\n  "))
-  }
+  message("OK: committed vendored tree equals the official-source recipe")
 } else {
-  message("regenerated inst/ggml + inst/include from ggmlR ", ggmlr_ver,
-          " + patches + overlay")
+  message(
+    "regenerated inst/ggml and inst/include from ggml-org/ggml ",
+    ggml_tag, " + patches + overlay"
+  )
 }
