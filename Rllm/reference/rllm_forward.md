@@ -2,14 +2,18 @@
 
 Assembles the GGML compute graph for a llama-architecture forward pass
 (RMSNorm, RoPE, causal self-attention, SwiGLU feed-forward) over the
-model's memory-mapped weights and computes it on the GGML CPU backend.
-Quantized weights are contracted natively through the SIMD-dispatched
-quantized kernels - they are never decoded to double.
+model's memory-mapped weights and computes it on a chosen GGML backend.
+Quantized weights are contracted natively in their encoded form - they
+are never decoded to double. The CPU backend borrows the mapped bytes
+directly. On its first use, the CUDA backend creates a model-owned
+context and uploads the codec-native weights once. Later passes reuse
+those resident weights; mutable inputs, cache slabs and logits move
+through Rggml's transfer API.
 
 ## Usage
 
 ``` r
-rllm_forward(model, tokens, cache = NULL)
+rllm_forward(model, tokens, cache = NULL, backend = c("cpu", "cuda"))
 ```
 
 ## Arguments
@@ -28,6 +32,11 @@ rllm_forward(model, tokens, cache = NULL)
   Optional
   [`rllm_kv_cache()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_kv_cache.md)
   for incremental decoding.
+
+- backend:
+
+  Compute backend. `"cpu"` is the zero-copy mmap path; `"cuda"` requires
+  Rggml installed with `--with-cuda` and a visible NVIDIA device.
 
 ## Value
 

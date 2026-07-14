@@ -78,7 +78,7 @@
 <div class="section level2">
 <h2 id="usage">Usage<a class="anchor" aria-label="anchor" href="#usage"></a>
 </h2>
-<p>The example runs inside <code><a href="https://rdrr.io/r/base/eval.html" class="external-link">local()</a></code> so its <code><a href="https://rdrr.io/r/base/on.exit.html" class="external-link">on.exit()</a></code> cleanup stays scoped to the snippet while the README is rendered; in your own code, keep the runtime handle you need and call <code><a href="https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/cleanup_fmalloc.html" class="external-link">Rfmalloc::cleanup_fmalloc()</a></code> when finished.</p>
+<p>The example uses <code><a href="https://rdrr.io/r/base/eval.html" class="external-link">local()</a></code> so its <code><a href="https://rdrr.io/r/base/on.exit.html" class="external-link">on.exit()</a></code> cleanup stays scoped to the snippet. In your own code, keep the runtime handle for as long as its arrays are live and call <code><a href="https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/cleanup_fmalloc.html" class="external-link">Rfmalloc::cleanup_fmalloc()</a></code> when finished.</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/sounkou-bioinfo/Rfmalloc" class="external-link">Rgguf</a></span><span class="op">)</span></span>
 <span></span>

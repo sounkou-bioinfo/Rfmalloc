@@ -21,7 +21,8 @@ rllm_generate(
   top_p = 1,
   seed = NULL,
   cache = NULL,
-  runtime = NULL
+  runtime = NULL,
+  backend = c("cpu", "cuda")
 )
 ```
 
@@ -76,6 +77,12 @@ rllm_generate(
   Optional
   [`Rfmalloc::open_fmalloc()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/open_fmalloc.html)
   runtime for the cache slabs (file-backed cache).
+
+- backend:
+
+  Compute backend passed to
+  [`rllm_forward()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_forward.md).
+  `"cuda"` requires a CUDA-enabled Rggml build.
 
 ## Value
 

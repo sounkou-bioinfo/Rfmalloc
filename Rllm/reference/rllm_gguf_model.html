@@ -78,9 +78,9 @@ which produce fmalloc results; the weight bytes remain in the GGUF mapping.</p><
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>An object of class <code>rllm_model</code>: a list with <code>hparams</code> (named
-numeric list), <code>tensors</code> (named list of weight payloads), and
-<code>rope_mode</code>.</p>
+    <p>An object of class <code>rllm_model</code> containing its hyperparameters,
+borrowed weight payloads, tokenizer metadata, and model-owned backend
+contexts created lazily by <code><a href="rllm_forward.html">rllm_forward()</a></code>.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>

@@ -13,7 +13,7 @@ staged), quantizing `B` to `Q8_K` on the fly as at inference.
 ## Usage
 
 ``` r
-rggml_test_mul_mat_q4k(A, B)
+rggml_test_mul_mat_q4k(A, B, backend = c("cpu", "blas", "vulkan", "cuda"))
 ```
 
 ## Arguments
@@ -26,6 +26,10 @@ rggml_test_mul_mat_q4k(A, B)
 - B:
 
   Numeric activation matrix with `nrow(B) == nrow(A)`.
+
+- backend:
+
+  The GGML backend that owns the tensor buffer.
 
 ## Value
 

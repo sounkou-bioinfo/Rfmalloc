@@ -49,5 +49,5 @@ Other contributors:
 - The ggml.ai / llama.cpp contributors (GGML CPU backend contributors)
   \[copyright holder\]
 
-- Yuri Baramykov (ggmlR: source of the vendored GGML copy and its
-  R/CRAN-compliance I/O shim, adapted here) \[contributor\]
+- Yuri Baramykov (Author of the ggmlR R/CRAN-compliance I/O shim adapted
+  here) \[contributor\]

@@ -63,7 +63,8 @@ temperature-scaled sampling, optionally narrowed by <code>top_k</code> and/or <c
 <span>  top_p <span class="op">=</span> <span class="fl">1</span>,</span>
 <span>  seed <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  cache <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  runtime <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  runtime <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  backend <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"cpu"</span>, <span class="st">"cuda"</span><span class="op">)</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -113,6 +114,11 @@ fresh cache sized <code>length(prompt) + n_new</code> is created.</p></dd>
 <dt id="arg-runtime">runtime<a class="anchor" aria-label="anchor" href="#arg-runtime"></a></dt>
 <dd><p>Optional <code><a href="https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/open_fmalloc.html" class="external-link">Rfmalloc::open_fmalloc()</a></code> runtime for the cache
 slabs (file-backed cache).</p></dd>
+
+
+<dt id="arg-backend">backend<a class="anchor" aria-label="anchor" href="#arg-backend"></a></dt>
+<dd><p>Compute backend passed to <code><a href="rllm_forward.html">rllm_forward()</a></code>. <code>"cuda"</code>
+requires a CUDA-enabled Rggml build.</p></dd>
 
 </dl></div>
     <div class="section level2">

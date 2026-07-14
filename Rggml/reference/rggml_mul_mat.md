@@ -11,7 +11,7 @@ GPU.
 ## Usage
 
 ``` r
-rggml_mul_mat(A, B, backend = c("cpu", "blas", "vulkan"))
+rggml_mul_mat(A, B, backend = c("cpu", "blas", "vulkan", "cuda"))
 ```
 
 ## Arguments
@@ -27,7 +27,10 @@ rggml_mul_mat(A, B, backend = c("cpu", "blas", "vulkan"))
   dense F32 product to whatever BLAS the R build links against), or
   `"vulkan"` (a Vulkan device; requires Rggml built with `--with-vulkan`
   and a visible device, see
-  [`rggml_vulkan_info()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/reference/rggml_vulkan_info.md)).
+  [`rggml_vulkan_info()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/reference/rggml_vulkan_info.md)),
+  or `"cuda"` (an NVIDIA CUDA device; requires Rggml built with
+  `--with-cuda`, see
+  [`rggml_cuda_info()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/reference/rggml_cuda_info.md)).
   Errors if the requested backend is unavailable.
 
 ## Value
@@ -38,6 +41,7 @@ up to single-precision rounding.
 ## See also
 
 [`rggml_vulkan_info()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/reference/rggml_vulkan_info.md),
+[`rggml_cuda_info()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/reference/rggml_cuda_info.md),
 [`rggml_cpu_info()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/reference/rggml_cpu_info.md)
 
 ## Examples

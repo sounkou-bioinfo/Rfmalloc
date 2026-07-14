@@ -36,13 +36,9 @@ backend testable without a GPU.
 When Rggml was built without Vulkan, this returns zero devices rather
 than failing, so callers can probe and fall back.
 
-Two opt-in environment variables widen which devices are usable, both
-off by default (so the default is upstream GGML's):
-`GGML_VK_ALLOW_CPU=1` accepts a CPU-type Vulkan device (e.g. Mesa
-lavapipe), and `GGML_VK_ALLOW_128_PUSH=1` accepts a device that exposes
-only 128-byte push constants (e.g. a GPU reached through the Mesa dzn
-D3D12 translation layer under WSL) for matrix multiply and other `<=4D`
-operations; 5-D non-contiguous copies still require a 256-byte device.
+`GGML_VK_ALLOW_CPU=1` opts in to CPU-type Vulkan devices such as Mesa
+lavapipe. It is off by default, preserving upstream GGML's device
+selection.
 
 ## Examples
 

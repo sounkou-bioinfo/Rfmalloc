@@ -35,8 +35,10 @@ rllm_gguf_model(path, runtime = NULL, rope_mode = 0L)
 
 ## Value
 
-An object of class `rllm_model`: a list with `hparams` (named numeric
-list), `tensors` (named list of weight payloads), and `rope_mode`.
+An object of class `rllm_model` containing its hyperparameters, borrowed
+weight payloads, tokenizer metadata, and model-owned backend contexts
+created lazily by
+[`rllm_forward()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_forward.md).
 
 ## Details
 

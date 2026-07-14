@@ -11,8 +11,9 @@
 
 - `Rggml` is a low-level **carrier package**. Its generated static
   library contains GGML’s core, official GGUF implementation, CPU and
-  BLAS backends, and the opt-in Vulkan backend. Sibling packages consume
-  these through `R_RegisterCCallable()` rather than re-vendoring GGML.
+  BLAS backends, and the opt-in Vulkan and CUDA backends. Sibling
+  packages consume these through `R_RegisterCCallable()` rather than
+  re-vendoring GGML.
 - Model composition belongs in Rllm and the R-facing GGUF storage layer
   belongs in Rgguf. Rggml’s small R surface provides diagnostics and
   direct matrix multiplication.
@@ -62,5 +63,5 @@
 - Linux, macOS, and Windows are supported. `configure.win` reuses the
   main configure path; keep platform-specific behavior there rather than
   forking the build recipe.
-- Attribution/licensing lives in `inst/COPYRIGHTS` (GGML and ggmlR are
-  MIT; Rggml’s own code is GPL (\>= 2)).
+- Attribution/licensing lives in `inst/COPYRIGHTS` (GGML and the
+  retained ggmlR I/O shim are MIT; Rggml’s own code is GPL (\>= 2)).

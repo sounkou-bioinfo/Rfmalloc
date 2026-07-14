@@ -2,6 +2,16 @@
 
 ## Rllm 0.1.0 (unreleased)
 
+- Added the CUDA transformer path over Rggml’s official backend. A
+  model-owned context uploads codec-native weights once and reuses them;
+  mutable inputs, cache state and logits use the backend-neutral
+  transfer API. The RTX 5050 suite pins whole-batch and incremental
+  logits, plain and fmalloc caches, and CPU/CUDA cache handoff. A
+  12-token prompt plus 128 greedy tokens measured a median 40.2 tok/s on
+  CPU and 69.7 tok/s on CUDA after upload. A persistent GGML scheduler
+  and graph-capture experiment measured 63.7 and 62.6 tok/s and was
+  removed rather than retained as unused machinery.
+
 - [`rllm_gguf_model()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_gguf_model.md)
   now borrows every weight directly from the read-only GGUF mapping. It
   no longer copies all two-dimensional weights into an Rfmalloc file or
@@ -26,11 +36,10 @@
   advancing `n_past` by reference.
   [`rllm_generate()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_generate.md)
   prefills the cache and decodes greedily one token per step; on
-  SmolLM2-135M this measures ~16 tok/s, 8.5x over full re-forwards, with
-  identical outputs. The correctness invariant - incremental logits
-  equal whole-batch logits at every position - is pinned on the
-  synthetic model for plain and fmalloc cache backings
-  (`test_kv_cache.R`).
+  SmolLM2-135M the current CPU path measures 40.2 tok/s for a 128-token
+  controlled run. The correctness invariant - incremental logits equal
+  whole-batch logits at every position - is pinned on the synthetic
+  model for plain and fmalloc cache backings (`test_kv_cache.R`).
 
 - The model I/O boundary is **bytes, not text**:
   [`rllm_encode()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_decode.md)/

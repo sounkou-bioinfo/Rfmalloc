@@ -19,5 +19,5 @@ A length-1 character vector.
 
 ``` r
 ggml_version()
-#> [1] "0.9.5"
+#> [1] "0.11.0"
 ```

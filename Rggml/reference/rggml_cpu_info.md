@@ -39,6 +39,12 @@ A list with
   is a separate question: see
   [`rggml_vulkan_info()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/reference/rggml_vulkan_info.md).
 
+- `cuda`:
+
+  `TRUE` when built with `--with-cuda`. Whether a *device* is visible is
+  a separate question: see
+  [`rggml_cuda_info()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/reference/rggml_cuda_info.md).
+
 ## Details
 
 It exists because the failure mode it guards against is invisible. A
@@ -51,7 +57,8 @@ fallbacks into failures.
 
 ## See also
 
-[`rggml_vulkan_info()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/reference/rggml_vulkan_info.md)
+[`rggml_vulkan_info()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/reference/rggml_vulkan_info.md),
+[`rggml_cuda_info()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/reference/rggml_cuda_info.md)
 
 ## Examples
 
@@ -67,6 +74,9 @@ rggml_cpu_info()
 #> [1] TRUE
 #> 
 #> $vulkan
+#> [1] FALSE
+#> 
+#> $cuda
 #> [1] FALSE
 #> 
 ```

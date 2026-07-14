@@ -42,7 +42,7 @@
 <div class="section level2">
 <h2 id="what-this-repo-is">What this repo is<a class="anchor" aria-label="anchor" href="#what-this-repo-is"></a></h2>
 <ul><li>
-<code>Rggml</code> is a low-level <strong>carrier package</strong>. Its generated static library contains GGML’s core, official GGUF implementation, CPU and BLAS backends, and the opt-in Vulkan backend. Sibling packages consume these through <code>R_RegisterCCallable()</code> rather than re-vendoring GGML.</li>
+<code>Rggml</code> is a low-level <strong>carrier package</strong>. Its generated static library contains GGML’s core, official GGUF implementation, CPU and BLAS backends, and the opt-in Vulkan and CUDA backends. Sibling packages consume these through <code>R_RegisterCCallable()</code> rather than re-vendoring GGML.</li>
 <li>Model composition belongs in Rllm and the R-facing GGUF storage layer belongs in Rgguf. Rggml’s small R surface provides diagnostics and direct matrix multiplication.</li>
 <li>On x86, selected kernels are staged with ISA flags by <code>configure</code> and chosen by runtime dispatch. On aarch64, GGML’s NEON kernels are the baseline. ISA flags must never appear in R’s recorded package flags.</li>
 </ul></div>
@@ -78,7 +78,7 @@
 <code>NAMESPACE</code> and <code>man/*.Rd</code> are roxygen-generated; update source roxygen in <code>R/*.R</code> first, then regenerate.</li>
 <li>Use <code>tinytest</code> in <code>inst/tinytest/</code> for regression coverage. The end-to-end proof is <code>test_mul_mat.R</code>, which drives GGML entirely through the <em>registered</em> C-callables (the same path a <code>LinkingTo</code> package would use).</li>
 <li>Linux, macOS, and Windows are supported. <code>configure.win</code> reuses the main configure path; keep platform-specific behavior there rather than forking the build recipe.</li>
-<li>Attribution/licensing lives in <code>inst/COPYRIGHTS</code> (GGML and ggmlR are MIT; Rggml’s own code is GPL (&gt;= 2)).</li>
+<li>Attribution/licensing lives in <code>inst/COPYRIGHTS</code> (GGML and the retained ggmlR I/O shim are MIT; Rggml’s own code is GPL (&gt;= 2)).</li>
 </ul></div>
 </div>
 

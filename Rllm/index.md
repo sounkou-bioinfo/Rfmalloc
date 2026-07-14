@@ -2,22 +2,24 @@
 
 Rllm is the **composition layer** of the
 [Rfmalloc](https://github.com/sounkou-bioinfo/Rfmalloc) out-of-core
-array stack: it wires (file-backed, memory-mapped storage), (GGUF model
-files as typed storage views) and (vendored GGML compute with
-runtime-SIMD-dispatched quantized kernels) into LLM inference -
-quantized weights stay in their GGUF encoding, memory-mapped from disk,
-and are never decoded to double on the compute path.
+array stack: it wires
+[Rfmalloc](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc)
+(file-backed, memory-mapped storage),
+[Rgguf](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf) (GGUF model
+files as typed storage views) and
+[Rggml](https://sounkou-bioinfo.github.io/Rfmalloc/Rggml) (vendored GGML
+compute with runtime-SIMD-dispatched quantized kernels) into LLM
+inference - quantized weights stay in their GGUF encoding, memory-mapped
+from disk, and are never decoded to double on the compute path.
 
-Two things live here:
+The first composition is a codec-aware matrix-product backend:
+`dense %*% quantized_fmalloc_tensor` contracts the encoded blocks
+directly through GGML after registering with Rfmalloc’s backend
+registry. The second is a llama-architecture inference engine: GGUF
+loading, a forward graph, KV caching and byte-level generation over the
+same typed storage.
 
-1.  a **codec-aware matmul backend**:
-    `dense %*% quantized_fmalloc_tensor` runs natively in quantized
-    space through GGML (registered with Rfmalloc’s backend registry and
-    selected on load);
-2.  a **llama-architecture inference engine**: GGUF loader, forward
-    pass, KV cache, and byte-level generation.
-
-## Quantized products, zero-copy (runs at render time)
+## Quantized products, zero-copy
 
 ``` r
 
@@ -50,77 +52,74 @@ pure-codec models later.
 rt <- Rfmalloc::open_fmalloc("work.bin", size_gb = 0.5)    # outputs and KV cache
 model <- rllm_gguf_model("SmolLM2-135M.Q4_K_M.gguf", runtime = rt)
 model
-#> <rllm_model llama: 30 layers, n_embd 576, 9/3 heads, n_ff 1536,
-#>  vocab 49152; 272 tensors (q5_0/f32/q4_k/q8_0/q6_k)>
 
 gen <- rllm_generate(model, charToRaw(
     "The capital of France is Paris. The capital of Germany is"), n_new = 16L)
 rawToChar(gen$raw)
-#> [1] " Berlin. The capital of Italy is Rome. The capital of Spain is Madrid."
 ```
 
-That transcript is a real recorded run (SmolLM2-135M `Q4_K_M`, 30
-layers, grouped-query attention, a `q5_0`-dominant quantization mix):
-~16 tokens/s CPU decode with the KV cache, 8.5x over cache-less
-re-forwards, identical outputs.
+A recorded run with SmolLM2-135M `Q4_K_M` (30 layers, grouped-query
+attention, a `q5_0`-dominant quantization mix) used a 12-token prompt
+and 128 greedy decode tokens. The median of three complete generations
+was 40.2 tokens/s on CPU and 69.7 tokens/s on the RTX 5050 CUDA path
+after its one-time weight upload.
 
-What the engine does:
+[`rllm_gguf_model()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_gguf_model.md)
+reads the hyperparameters and borrows every weight’s exact read-only
+span. No weight is copied into the Rfmalloc work file. On CPU,
+[`rllm_forward()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_forward.md)
+points GGML tensors at those bytes while assembling RMSNorm, RoPE,
+causal grouped-query attention and SwiGLU through Rggml’s C-callables;
+Rllm links no private GGML copy.
 
-- [`rllm_gguf_model()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_gguf_model.md)
-  reads hyperparameters from GGUF metadata and borrows every weight’s
-  exact read-only span. No weight is copied into the Rfmalloc work file;
-  the forward pass points GGML tensors at the original GGUF bytes.
-- [`rllm_forward()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_forward.md)
-  assembles the GGML graph (RMSNorm, RoPE, causal self-attention with
-  GQA, SwiGLU) and computes it on the GGML CPU backend through ’s
-  C-callables - Rllm links no GGML itself.
-- [`rllm_kv_cache()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_kv_cache.md)
-  allocates per-layer cache slabs, plain R memory or **fmalloc-backed**
-  (the cache as a disk citizen: file-backed, evictable, and open to a
-  quantized-cache codec later).
-- [`rllm_generate()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_generate.md)
-  prefills the cache and decodes greedily one token per step, EOS-aware.
+[`rllm_kv_cache()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_kv_cache.md)
+allocates one key and value slab per layer in plain R memory or in
+fmalloc storage. The latter makes the cache file-backed, evictable and
+open to a different cache codec without changing the graph.
+[`rllm_generate()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_generate.md)
+prefills that cache and then performs EOS-aware decoding one token at a
+time.
 
 ## Correctness discipline
 
-Every layer is pinned to an independent reference:
-
-- the forward pass matches a pure-R implementation of the same
-  arithmetic to ~1e-6 relative on real-model weights (f32-twin
-  roundtrip) and \< 1e-4 on hermetic synthetic models (MHA and GQA),
-  with causality probes;
-- incremental (KV-cache) logits equal whole-batch logits at every
-  position;
-- codec decoders are bit-identical to GGML’s type-traits `to_float`
-  (`Rggml_dequantize`), the cross-validation that caught a real upstream
-  gguf-tools Q4_K bug;
-- `rllm_decode(rllm_encode(x))` is always `x`.
+The forward pass is pinned to a pure-R implementation of the same
+arithmetic: about 1e-6 relative on the f32 twin of a real model and
+below 1e-4 on hermetic MHA and GQA models, with separate causality
+probes. Incremental cache logits must equal whole-batch logits at every
+position. Every codec decoder must be bit-identical to GGML’s
+type-traits `to_float`, the cross-validation that caught the Q4_K bug in
+the earlier partial C port. At the byte boundary,
+`rllm_decode(rllm_encode(x))` must always equal `x`.
 
 The hermetic tests write their synthetic GGUF models at test time with
-’s own writer; an opt-in smoke test
-(`RLLM_TEST_GGUF=<path to a llama-arch GGUF>`) exercises real files.
+[Rgguf](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf)’s own writer;
+an opt-in smoke test (`RLLM_TEST_GGUF=<path to a llama-arch GGUF>`)
+exercises real files.
 
-## Compute backends: today and roadmap
+## Compute follows residency
 
-Today, inference runs on the **GGML CPU backend**:
-runtime-SIMD-dispatched quantized kernels (AVX2 on x86, NEON on aarch64,
-CPUID-selected at runtime - no non-portable flags recorded) with dense
-products offloadable to R’s BLAS.
+The CPU path borrows the GGUF mapping directly and uses GGML’s
+runtime-dispatched quantized kernels: AVX2 selected by CPUID on x86 and
+the mandatory NEON baseline on aarch64, with no non-portable flags
+recorded in the package. Dense products remain available to R’s BLAS.
 
-A **Vulkan GPU backend** ships in , opt-in at build time
-(`configure.args = "--with-vulkan"`; see
-[`rggml_vulkan_info()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/reference/rggml_vulkan_info.html)).
-It runs on any vendor’s GPU. Wiring it through
-[`rllm_forward()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_forward.md)/[`rllm_generate()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_generate.md)
-is the next step: the device-buffer residency API it needed
-(`Rggml_backend_alloc_ctx_tensors`/`tensor_set`/`tensor_get`) is backend
-agnostic, so the same code will drive CUDA.
+The optional CUDA path executes the same graph. Its model-owned context
+uploads the codec-native weights once and retains them in device memory;
+subsequent forward passes move only mutable inputs, cache state and
+logits through Rggml’s backend-neutral transfer interface. The host GGUF
+mapping remains the authoritative storage, while device residency is an
+execution decision rather than another model format. Vulkan also ships
+in Rggml, but Rllm does not yet select it. The rig suite checks
+whole-batch and cached CUDA logits, plain and fmalloc cache slabs, and
+cache handoff in both directions between CPU and CUDA.
 
-**CUDA is the fastest route and is not implemented yet.** The identical
-model and quantization decode at ~455 tokens/s (~28x this CPU stack) on
-an RTX 5050 via upstream GGML CUDA; what remains is vendoring
-`ggml-cuda` at a version matching the core and adding `nvcc` rules to
-the build.
+Persistent allocation by itself is not the missing acceleration. A
+measured GGML scheduler experiment reduced CUDA decode from 69.7 to 63.7
+tokens/s, and CUDA graph capture reached 62.6 because the attention
+extent and graph properties change at every token. Both experiments were
+removed from the default path. Stable graph shapes and a device-resident
+mutable KV cache are the next execution questions; the storage and GGUF
+interfaces need no fork for either.
 
 ## Install
 
@@ -133,5 +132,6 @@ install.packages("Rllm",
 ```
 
 or via a GitHub subdir ref:
-`pak::pak("sounkou-bioinfo/Rfmalloc/packages/Rllm")`. Unix (Linux/macOS)
-only. GPL (\>= 2).
+`pak::pak("sounkou-bioinfo/Rfmalloc/packages/Rllm")`. The CPU stack
+targets Linux, macOS and Windows; the optional CUDA build is currently
+Unix-like. GPL (\>= 2).

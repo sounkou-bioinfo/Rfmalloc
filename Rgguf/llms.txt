@@ -50,10 +50,10 @@ remotes::install_github("sounkou-bioinfo/Rgguf")
 
 ## Usage
 
-The example runs inside [`local()`](https://rdrr.io/r/base/eval.html) so
-its [`on.exit()`](https://rdrr.io/r/base/on.exit.html) cleanup stays
-scoped to the snippet while the README is rendered; in your own code,
-keep the runtime handle you need and call
+The example uses [`local()`](https://rdrr.io/r/base/eval.html) so its
+[`on.exit()`](https://rdrr.io/r/base/on.exit.html) cleanup stays scoped
+to the snippet. In your own code, keep the runtime handle for as long as
+its arrays are live and call
 [`Rfmalloc::cleanup_fmalloc()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/cleanup_fmalloc.html)
 when finished.
 

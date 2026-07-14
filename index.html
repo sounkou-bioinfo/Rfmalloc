@@ -290,304 +290,280 @@ src="https://github.com/sounkou-bioinfo/Rfmalloc/actions/workflows/R-CMD-check.y
 alt="R-CMD-check" /></a></p>
 <!-- badges: end -->
 
-<p><strong>One repo, one story: array computation on data that does not
-fit in RAM, over pluggable storage codecs and compute
-backends.</strong></p>
-<p>Memory-mapped file storage (a patched <a
+<p><strong>One repo, one argument: computation should close over typed
+storage without forcing every representation through a dense R
+object.</strong></p>
+<p>Out-of-core computation is not a file format. It is the refusal to
+treat RAM as the boundary of an array. Rfmalloc begins with a patched <a
 href="https://github.com/yasukata/fmalloc">fmalloc</a> allocator behind
-R’s ALTREP) turns RAM from a hard cutoff into a spectrum of speed
-levels. On top of that substrate sit two plugin registries that
-everything else closes over:</p>
-<ul>
-<li>a <strong>codec registry</strong> - how bytes are stored: lossless
-(<code>f64</code> <code>f32</code> <code>f16</code> <code>bf16</code>
-<code>alp</code> <code>sparse</code>) for scientific data where
-bit-exactness is non-negotiable, and lossy GGUF quantized blocks
-(<code>q4_0</code> … <code>q6_k</code>) for model weights at 2-8 bits
-each;</li>
-<li>a <strong>matmul backend registry</strong> - how products are
-computed: R’s BLAS by default, <a
-href="https://github.com/ggml-org/ggml">GGML</a> natively in quantized
-space, GPU backends next.</li>
-</ul>
-<p>The contract that makes it compose is the <strong>decline
-protocol</strong>: any backend may refuse any product, and the substrate
-falls back to bounded decode panels + BLAS. Plugins change how fast you
-get an answer, never whether it is correct.</p>
-<h2 id="two-domains-one-substrate">Two domains, one substrate</h2>
-<p>The same file-backed matrices and the same backend registry serve
-both larger-than-RAM <strong>scientific computing</strong> and quantized
-<strong>LLM inference</strong> - the whole point of the abstraction.
-Both examples below are <code>%*%</code>/<code>crossprod</code> over
-fmalloc tensors; the only thing that differs is which codec and backend
-the registry dispatches to.</p>
-<h3 id="genomics-out-of-core-pca-runs-at-render-time">Genomics:
-out-of-core PCA (runs at render time)</h3>
-<p>A cells × genes expression matrix lives in a memory-mapped file, so
-it scales past RAM (products stream in panels). Highly-variable-gene
-selection and PCA never materialize an ordinary R copy, and the linear
-algebra goes through the backend registry:</p>
+R’s ALTREP, so a memory-mapped file can be an ordinary R vector whenever
+an ordinary pointer is a truthful representation. RAM then stops being a
+hard cutoff and becomes one fast level in a spectrum that continues
+through the page cache and storage.</p>
+<p>That first move exposes its own limit. A PLINK hardcall occupies two
+bits, a GGUF weight may occupy four and a half, and a phased haplotype
+is not a number waiting to become a double. None of them can honestly
+masquerade as a <code>double*</code>. The abstraction that survives is
+therefore larger than mmap: a storage span carries bytes, extent,
+ownership and runtime context; a codec gives those bytes numeric meaning
+when a numeric algorithm asks for bounded panels; a typed accessor
+preserves non-numeric meaning when it does not; and a compute backend
+chooses how to consume the representation. These decisions remain
+independent.</p>
+<p>The independence is enforced by a small but decisive contract. A
+backend may decline any product. Rfmalloc then decodes bounded panels
+and hands them to BLAS. Specialization may change where bytes live and
+how quickly a result arrives, but never whether the result exists. The
+abstraction was not imposed in advance. It is what remained when the
+same materialization problem appeared in scientific arrays, genotype
+formats and quantized language models.</p>
+<h2 id="a-pointer-is-enough-until-it-is-not">A pointer is enough until
+it is not</h2>
+<p>A cells by genes matrix can live in an fmalloc mapping while R
+continues to see a matrix. Variance reduction and PCA stream over it
+without constructing a second dense payload, and their products still
+pass through the backend registry.</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(Rfmalloc)</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>rt <span class="ot">&lt;-</span> <span class="fu">open_fmalloc</span>(<span class="fu">tempfile</span>(<span class="at">fileext =</span> <span class="st">&quot;.bin&quot;</span>), <span class="at">size_gb =</span> <span class="dv">1</span>)</span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">1</span>)</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="co"># 3000 cells x 600 genes with 4 latent &quot;cell-type&quot; factors + noise; file-backed</span></span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>factors  <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">rnorm</span>(<span class="dv">3000</span> <span class="sc">*</span> <span class="dv">4</span>), <span class="dv">3000</span>, <span class="dv">4</span>)          <span class="co"># per-cell factor scores</span></span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>loadings <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">rnorm</span>(<span class="dv">4</span> <span class="sc">*</span> <span class="dv">600</span>), <span class="dv">4</span>, <span class="dv">600</span>)            <span class="co"># per-gene factor loadings</span></span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>X <span class="ot">&lt;-</span> <span class="fu">create_fmalloc_matrix</span>(<span class="st">&quot;numeric&quot;</span>, <span class="at">nrow =</span> <span class="dv">3000</span>, <span class="at">ncol =</span> <span class="dv">600</span>, <span class="at">runtime =</span> rt)</span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>X[] <span class="ot">&lt;-</span> <span class="dv">3</span> <span class="sc">*</span> (factors <span class="sc">%*%</span> loadings) <span class="sc">+</span> <span class="fu">matrix</span>(<span class="fu">rnorm</span>(<span class="dv">3000</span> <span class="sc">*</span> <span class="dv">600</span>), <span class="dv">3000</span>, <span class="dv">600</span>)</span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>vars <span class="ot">&lt;-</span> <span class="fu">fmalloc_colVars</span>(X)          <span class="co"># per-gene variance, single-pass reduction (no R copy)</span></span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="fu">length</span>(<span class="fu">which</span>(vars <span class="sc">&gt;</span> <span class="fu">quantile</span>(vars, <span class="fl">0.9</span>)))   <span class="co"># candidate highly-variable genes</span></span>
-<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] 60</span></span>
-<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>pca <span class="ot">&lt;-</span> <span class="fu">fmalloc_pca</span>(X, <span class="at">k =</span> <span class="dv">6</span>)        <span class="co"># Gram matrix + scores, dispatched through the backend registry</span></span>
-<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="fu">round</span>(pca<span class="sc">$</span>sdev, <span class="dv">2</span>)                  <span class="co"># 4 factors stand out above the noise floor</span></span>
-<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] 77.74 74.67 72.43 66.61  1.44  1.44</span></span>
-<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="fu">dim</span>(pca<span class="sc">$</span>x)                          <span class="co"># cell scores in the top PC space</span></span>
-<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] 3000    6</span></span></code></pre></div>
-<h3 id="someone-elses-algorithm-our-storage-runs-at-render-time">Someone
-else’s algorithm, our storage (runs at render time)</h3>
-<p><code>bigPCAcpp</code> and <code>bigPLSR</code> link bigmemory; <a
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>factors  <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">rnorm</span>(<span class="dv">3000</span> <span class="sc">*</span> <span class="dv">4</span>), <span class="dv">3000</span>, <span class="dv">4</span>)</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>loadings <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">rnorm</span>(<span class="dv">4</span> <span class="sc">*</span> <span class="dv">600</span>), <span class="dv">4</span>, <span class="dv">600</span>)</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>X <span class="ot">&lt;-</span> <span class="fu">create_fmalloc_matrix</span>(<span class="st">&quot;numeric&quot;</span>, <span class="at">nrow =</span> <span class="dv">3000</span>, <span class="at">ncol =</span> <span class="dv">600</span>, <span class="at">runtime =</span> rt)</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>X[] <span class="ot">&lt;-</span> <span class="dv">3</span> <span class="sc">*</span> (factors <span class="sc">%*%</span> loadings) <span class="sc">+</span> <span class="fu">matrix</span>(<span class="fu">rnorm</span>(<span class="dv">3000</span> <span class="sc">*</span> <span class="dv">600</span>), <span class="dv">3000</span>, <span class="dv">600</span>)</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>vars <span class="ot">&lt;-</span> <span class="fu">fmalloc_colVars</span>(X)</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="fu">length</span>(<span class="fu">which</span>(vars <span class="sc">&gt;</span> <span class="fu">quantile</span>(vars, <span class="fl">0.9</span>)))</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] 60</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>pca <span class="ot">&lt;-</span> <span class="fu">fmalloc_pca</span>(X, <span class="at">k =</span> <span class="dv">6</span>)</span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="fu">round</span>(pca<span class="sc">$</span>sdev, <span class="dv">2</span>)</span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] 77.74 74.67 72.43 66.61  1.44  1.44</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="fu">dim</span>(pca<span class="sc">$</span>x)</span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] 3000    6</span></span></code></pre></div>
+<p>The more revealing case is code that knows nothing about this
+repository. <code>bigPCAcpp</code> and <code>bigPLSR</code> link
+bigmemory, while <a
 href="https://github.com/Zilong-Li/PCAoneR"><code>pcaone</code></a>
-takes an <code>Eigen::Map&lt;MatrixXd&gt;</code>. All three consume a
-bare <code>double*</code>. An fmalloc ALTREP matrix <em>is</em> a
-<code>double*</code>, into an mmap. So a randomized SVD written by
-somebody who has never heard of this package runs out-of-core over it,
-unchanged, with no copy:</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(pcaone)                       <span class="co"># not ours: Li et al. 2023, randomized SVD</span></span>
+takes an <code>Eigen::Map&lt;MatrixXd&gt;</code>. They consume a bare
+pointer. An fmalloc ALTREP matrix is such a pointer into an mmap, so the
+same randomized SVD can work over a payload larger than the R heap
+without being rewritten around a new container.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(pcaone)</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>rt2 <span class="ot">&lt;-</span> <span class="fu">open_fmalloc</span>(<span class="fu">tempfile</span>(<span class="at">fileext =</span> <span class="st">&quot;.bin&quot;</span>), <span class="at">size_gb =</span> <span class="dv">3</span>)</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>m <span class="ot">&lt;-</span> <span class="fl">2e6</span>L; n <span class="ot">&lt;-</span> <span class="dv">40</span><span class="dt">L</span></span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>G <span class="ot">&lt;-</span> <span class="fu">create_fmalloc_matrix</span>(<span class="st">&quot;numeric&quot;</span>, <span class="at">nrow =</span> m, <span class="at">ncol =</span> n, <span class="at">runtime =</span> rt2)</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">1</span>); <span class="cf">for</span> (j <span class="cf">in</span> <span class="fu">seq_len</span>(n)) G[, j] <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(m)   <span class="co"># 610 MB, on disk</span></span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="fu">invisible</span>(<span class="fu">gc</span>(<span class="at">reset =</span> <span class="cn">TRUE</span>))</span>
-<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>sv_mapped <span class="ot">&lt;-</span> <span class="fu">pcaone</span>(G, <span class="at">k =</span> <span class="dv">5</span>)<span class="sc">$</span>d                         <span class="co"># straight off the mmap</span></span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>peak_mapped <span class="ot">&lt;-</span> <span class="fu">gc</span>()[<span class="st">&quot;Vcells&quot;</span>, <span class="st">&quot;max used&quot;</span>] <span class="sc">*</span> <span class="dv">8</span> <span class="sc">/</span> <span class="dv">2</span><span class="sc">^</span><span class="dv">20</span></span>
-<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="fu">invisible</span>(<span class="fu">gc</span>(<span class="at">reset =</span> <span class="cn">TRUE</span>))</span>
-<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>sv_heap <span class="ot">&lt;-</span> <span class="fu">pcaone</span>(<span class="fu">matrix</span>(G[], m, n), <span class="at">k =</span> <span class="dv">5</span>)<span class="sc">$</span>d           <span class="co"># an ordinary R matrix</span></span>
-<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>peak_heap <span class="ot">&lt;-</span> <span class="fu">gc</span>()[<span class="st">&quot;Vcells&quot;</span>, <span class="st">&quot;max used&quot;</span>] <span class="sc">*</span> <span class="dv">8</span> <span class="sc">/</span> <span class="dv">2</span><span class="sc">^</span><span class="dv">20</span></span>
-<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a><span class="fu">round</span>(<span class="fu">c</span>(<span class="at">payload_MB    =</span> m <span class="sc">*</span> n <span class="sc">*</span> <span class="dv">8</span> <span class="sc">/</span> <span class="dv">2</span><span class="sc">^</span><span class="dv">20</span>,</span>
-<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>        <span class="at">peak_heap_MB  =</span> peak_heap,          <span class="co"># pays for the payload</span></span>
-<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>        <span class="at">peak_mmap_MB  =</span> peak_mapped))       <span class="co"># does not</span></span>
-<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   payload_MB peak_heap_MB peak_mmap_MB </span></span>
-<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;          610          697           86</span></span>
-<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a><span class="fu">identical</span>(sv_mapped, sv_heap)               <span class="co"># and the answer is the same one</span></span>
-<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
-<p>The payload never enters the R heap. Nothing in <code>pcaone</code>
-knows why.</p>
-<p>That is the deal for anything already written against a pointer.
-Where it stops working is where no pointer can exist:
-<strong>compressed</strong> data. Nobody can hand <code>pcaone</code> a
-pointer into a PLINK <code>.bed</code>, because a genotype there is two
-bits, not eight bytes. That is what the codec registry is for, and it is
-the only thing it is for:</p>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>m <span class="ot">&lt;-</span> <span class="fl">2e6</span>L</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">40</span><span class="dt">L</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>G <span class="ot">&lt;-</span> <span class="fu">create_fmalloc_matrix</span>(<span class="st">&quot;numeric&quot;</span>, <span class="at">nrow =</span> m, <span class="at">ncol =</span> n, <span class="at">runtime =</span> rt2)</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">1</span>)</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (j <span class="cf">in</span> <span class="fu">seq_len</span>(n)) G[, j] <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(m)</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="fu">invisible</span>(<span class="fu">gc</span>(<span class="at">reset =</span> <span class="cn">TRUE</span>))</span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>sv_mapped <span class="ot">&lt;-</span> <span class="fu">pcaone</span>(G, <span class="at">k =</span> <span class="dv">5</span>)<span class="sc">$</span>d</span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>peak_mapped <span class="ot">&lt;-</span> <span class="fu">gc</span>()[<span class="st">&quot;Vcells&quot;</span>, <span class="st">&quot;max used&quot;</span>] <span class="sc">*</span> <span class="dv">8</span> <span class="sc">/</span> <span class="dv">2</span><span class="sc">^</span><span class="dv">20</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a><span class="fu">invisible</span>(<span class="fu">gc</span>(<span class="at">reset =</span> <span class="cn">TRUE</span>))</span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>sv_heap <span class="ot">&lt;-</span> <span class="fu">pcaone</span>(<span class="fu">matrix</span>(G[], m, n), <span class="at">k =</span> <span class="dv">5</span>)<span class="sc">$</span>d</span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>peak_heap <span class="ot">&lt;-</span> <span class="fu">gc</span>()[<span class="st">&quot;Vcells&quot;</span>, <span class="st">&quot;max used&quot;</span>] <span class="sc">*</span> <span class="dv">8</span> <span class="sc">/</span> <span class="dv">2</span><span class="sc">^</span><span class="dv">20</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a><span class="fu">round</span>(<span class="fu">c</span>(</span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>  <span class="at">payload_MB =</span> m <span class="sc">*</span> n <span class="sc">*</span> <span class="dv">8</span> <span class="sc">/</span> <span class="dv">2</span><span class="sc">^</span><span class="dv">20</span>,</span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>  <span class="at">peak_heap_MB =</span> peak_heap,</span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>  <span class="at">peak_mmap_MB =</span> peak_mapped</span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>))</span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   payload_MB peak_heap_MB peak_mmap_MB </span></span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;          610          697           86</span></span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a><span class="fu">identical</span>(sv_mapped, sv_heap)</span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
+<p>The payload never enters the R heap, and <code>pcaone</code> never
+has to know why. This is the clean pointer case. Compressed storage
+begins exactly where that case ends.</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>rt3 <span class="ot">&lt;-</span> <span class="fu">open_fmalloc</span>(<span class="fu">tempfile</span>(<span class="at">fileext =</span> <span class="st">&quot;.bin&quot;</span>), <span class="at">size_gb =</span> <span class="dv">1</span>)</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">2</span>)</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="co"># 5000 samples x 1000 variants of hardcalls (0/1/2), SNP-major like a real .bed</span></span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>g  <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">sample</span>(<span class="fu">c</span>(<span class="dv">0</span><span class="dt">L</span>, <span class="dv">1</span><span class="dt">L</span>, <span class="dv">2</span><span class="dt">L</span>), <span class="fl">5e6</span>, <span class="at">replace =</span> <span class="cn">TRUE</span>), <span class="dv">5000</span>, <span class="dv">1000</span>)</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>tn <span class="ot">&lt;-</span> <span class="fu">fmalloc_bed</span>(g, <span class="at">runtime =</span> rt3)          <span class="co"># 2 bits per genotype, memory-mapped</span></span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">bits_per_genotype =</span> <span class="dv">8</span> <span class="sc">*</span> <span class="fu">length</span>(<span class="fu">unclass</span>(tn)) <span class="sc">/</span> <span class="fu">length</span>(g),</span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">vs_double         =</span> <span class="fu">length</span>(g) <span class="sc">*</span> <span class="dv">8</span> <span class="sc">/</span> <span class="fu">length</span>(<span class="fu">unclass</span>(tn)))</span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; bits_per_genotype         vs_double </span></span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;          2.000038         31.999386</span></span>
-<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a><span class="co"># Products decode bounded column panels and hand them to BLAS. The genotypes are</span></span>
-<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="co"># never materialized as doubles; these two kernels are what a randomized SVD needs.</span></span>
-<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>Omega <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">rnorm</span>(<span class="dv">1000</span> <span class="sc">*</span> <span class="dv">5</span>), <span class="dv">1000</span>, <span class="dv">5</span>)</span>
-<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a><span class="fu">max</span>(<span class="fu">abs</span>(<span class="fu">matrix</span>((tn <span class="sc">%*%</span> Omega)[], <span class="dv">5000</span>, <span class="dv">5</span>) <span class="sc">-</span> <span class="fu">matrix</span>(<span class="fu">as.numeric</span>(g), <span class="dv">5000</span>, <span class="dv">1000</span>) <span class="sc">%*%</span> Omega))</span>
-<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] 0</span></span></code></pre></div>
-<p>That codec is one of a family, and the family divides along a real
-line. <code>fmalloc_bed</code> stores PLINK hardcalls at 2 bits,
-<code>fmalloc_dosage</code> stores fractional dosages at 1 byte, and
-both <strong>fuse</strong> per-variant centering and scaling into the
-decode: one lookup-table read per genotype does decode, mean-imputation
-(a missing call maps to the variant mean, hence to 0 after centering, so
-imputation is free) and standardization at once.
-<code>fmalloc_bed_standardize()</code> therefore turns a genotype panel
-into a PCA-ready standardized matrix with no genotype ever expanded to a
-double. That is the <strong>numeric</strong> side, and it is what the
-matmul codec ABI serves.</p>
-<p>Phase and multiallelic data are not numbers, so they get a different
-interface. <code>fmalloc_haplotypes</code> stores phased haplotypes at 1
-bit each and is deliberately <strong>not</strong> a matmul codec: it is
-a sibling over the same file-backed storage, with typed accessors
-instead of decode-to-double, and it feeds haplotype HMMs like <a
-href="https://kalis.louisaslett.com/"><code>kalis</code></a> (Li and
-Stephens local ancestry) losslessly, the way <code>pcaone</code>
-consumes the numeric side. Two access interfaces, one storage substrate.
-And <code>Rpgen</code> brings a native PLINK2 <code>.pgen</code> reader
-in C (it vendors pgenlib, GPL-3), so both interfaces can be fed from the
-on-disk format that carries genotypes, dosages, phase and multiple
-alleles at once.</p>
-<h3 id="llm-bytes-in-bytes-out">LLM: bytes in, bytes out</h3>
-<p>A GGUF model’s weights are memory-mapped and stay quantized; the
-transformer runs through GGML’s SIMD kernels with a KV cache, and the
-I/O boundary is raw bytes (the tokenizer is an edge codec built from
-GGUF metadata - text is the caller’s interpretation,
-<code>rawToChar()</code>):</p>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>g <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">sample</span>(<span class="fu">c</span>(<span class="dv">0</span><span class="dt">L</span>, <span class="dv">1</span><span class="dt">L</span>, <span class="dv">2</span><span class="dt">L</span>), <span class="fl">5e6</span>, <span class="at">replace =</span> <span class="cn">TRUE</span>), <span class="dv">5000</span>, <span class="dv">1000</span>)</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>tn <span class="ot">&lt;-</span> <span class="fu">fmalloc_bed</span>(g, <span class="at">runtime =</span> rt3)</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">bits_per_genotype =</span> <span class="dv">8</span> <span class="sc">*</span> <span class="fu">length</span>(<span class="fu">unclass</span>(tn)) <span class="sc">/</span> <span class="fu">length</span>(g),</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">vs_double =</span> <span class="fu">length</span>(g) <span class="sc">*</span> <span class="dv">8</span> <span class="sc">/</span> <span class="fu">length</span>(<span class="fu">unclass</span>(tn))</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; bits_per_genotype         vs_double </span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;          2.000038         31.999386</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>Omega <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">rnorm</span>(<span class="dv">1000</span> <span class="sc">*</span> <span class="dv">5</span>), <span class="dv">1000</span>, <span class="dv">5</span>)</span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>observed <span class="ot">&lt;-</span> <span class="fu">matrix</span>((tn <span class="sc">%*%</span> Omega)[], <span class="dv">5000</span>, <span class="dv">5</span>)</span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>reference <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">as.numeric</span>(g), <span class="dv">5000</span>, <span class="dv">1000</span>) <span class="sc">%*%</span> Omega</span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a><span class="fu">max</span>(<span class="fu">abs</span>(observed <span class="sc">-</span> reference))</span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] 0</span></span></code></pre></div>
+<p>No pointer into the encoded payload could have given BLAS the matrix
+it expects. The codec instead decodes only the panel needed by the
+product. <code>fmalloc_bed</code> stores PLINK hardcalls at two bits and
+<code>fmalloc_dosage</code> stores fractional dosages at one byte. Both
+can fuse centering, mean imputation and scaling into the lookup that
+decodes each value. Missing calls map directly to zero after centering,
+so standardization does not require an intermediate genotype matrix.</p>
+<p>Phase and multiple alleles force the next distinction. They are not
+merely compressed numbers, so <code>fmalloc_haplotypes</code> is
+deliberately not a matrix codec. It stores locus-major phased rows at
+one bit per haplotype and exposes typed access for Li and Stephens or <a
+href="https://kalis.louisaslett.com/"><code>kalis</code></a>-class HMM
+kernels. The physical layout follows the consumer’s traversal instead of
+pretending every future algorithm wants column-major doubles. Numeric
+panels and haplotype rows are two interfaces over the same storage
+substrate.</p>
+<p><code>Rpgen</code> closes the reader side of this argument. Its
+native PLINK2 import closure reads PGEN, BED, PED/MAP, TPED/TFAM, BGEN,
+VCF/BCF, GEN, HAPS/legend, EIGENSTRAT and legacy dosage. Each parser
+emits bounded records into the same destination context, which chooses
+hardcall, dosage, phased-haplotype or dense layout. A format is parsed
+once; it is not serialized through a temporary PGEN merely to be decoded
+again.</p>
+<h2 id="a-model-is-another-typed-array-program">A model is another typed
+array program</h2>
+<p>GGUF presents the same contradiction with different economics. Its
+tensor directory describes weights whose encoded bytes already live in a
+model file. Copying them into a second backing store gains nothing.
+<code>Rgguf</code> uses GGML’s official GGUF implementation, and
+<code>Rllm</code> borrows each tensor’s exact read-only span from the
+original mapping. The model keeps quantized weights quantized; GGML
+consumes those blocks directly; only the KV cache and transient graph
+state require new storage.</p>
 <div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(Rllm)</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>rt <span class="ot">&lt;-</span> Rfmalloc<span class="sc">::</span><span class="fu">open_fmalloc</span>(<span class="st">&quot;rllm-work.bin&quot;</span>, <span class="at">size_gb =</span> <span class="dv">2</span>)</span>
 <span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>model <span class="ot">&lt;-</span> <span class="fu">rllm_gguf_model</span>(<span class="st">&quot;SmolLM2-135M.Q4_K_M.gguf&quot;</span>, <span class="at">runtime =</span> rt)</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Every weight borrows its exact read-only span in the original GGUF mapping.</span></span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="co"># The encoded q4_k/q5_0/q6_k/q8_0 bytes are neither decoded nor copied into a</span></span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="co"># second backing file, and the forward pass points GGML tensors at them directly.</span></span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>gen <span class="ot">&lt;-</span> <span class="fu">rllm_generate</span>(model, <span class="fu">charToRaw</span>(</span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;The capital of France is Paris. The capital of Germany is&quot;</span>), <span class="at">n_new =</span> <span class="dv">16</span><span class="dt">L</span>,</span>
-<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">runtime =</span> rt) <span class="co"># the optional KV cache, not the weights, uses this store</span></span>
-<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="fu">rawToChar</span>(gen<span class="sc">$</span>raw)</span>
-<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] &quot; Berlin. The capital of Italy is Rome. The capital of Spain is Madrid.&quot;</span></span></code></pre></div>
-<p>That is a real recorded run (SmolLM2-135M <code>Q4_K_M</code>, 30
-layers, grouped-query attention): ~16 tokens/s CPU decode with the KV
-cache, 8.5× over cache-less re-forwards, and - checked against a pure-R
-reference forward - numerically exact to the quantization.</p>
-<h2 id="compute-backends-today-and-next">Compute backends: today and
-next</h2>
-<p>Because both PCA and inference dispatch their products through the
-<strong>one</strong> backend registry, a faster backend accelerates both
-at once, with no change to <code>fmalloc_pca()</code> or
-<code>rllm_generate()</code>:</p>
-<ul>
-<li><strong>today, CPU</strong> - R’s BLAS for dense products; GGML’s
-runtime-SIMD-dispatched quantized kernels (AVX2 on x86, NEON on aarch64,
-CPUID-selected - no non-portable flags) for quantized weights; both
-out-of-core.</li>
-<li><strong>today, GPU: Vulkan.</strong> GGML’s Vulkan backend is
-vendored and builds into <code>Rggml</code> <strong>on request</strong>
--
-<code>install.packages("Rggml", configure.args =   "--with-vulkan")</code>,
-needing <code>glslc</code> and the Vulkan headers. It is not
-auto-detected, because GGML embeds 156 compiled SPIR-V shaders and the
-largest is a 141 MB array literal costing ~5 GB of RAM to compile. It
-runs on any vendor’s GPU (NVIDIA, AMD, Intel).
-<code>rggml_vulkan_info()</code> reports what it sees; a build without
-it reports zero devices rather than failing, so callers can probe and
-fall back. Correctness is pinned against the CPU backend, and can be
-exercised without a GPU at all through Mesa’s software driver
-(<code>GGML_VK_ALLOW_CPU=1</code>).</li>
-<li><strong>next: CUDA.</strong> NVIDIA-only, and the fastest: the same
-SmolLM2 <code>Q4_K_M</code> decodes at <strong>~455 tok/s (~28× this CPU
-stack)</strong> on an RTX 5050 via upstream GGML CUDA. The device-buffer
-residency API the Vulkan backend needed
-(<code>Rggml_backend_alloc_ctx_tensors</code>/<code>tensor_set</code>/<code>tensor_get</code>)
-is backend agnostic, so CUDA reuses it; what remains is vendoring
-<code>ggml-cuda</code> at a version matching the core and adding
-<code>nvcc</code> rules to the build.</li>
-</ul>
-<h2 id="the-packages">The packages</h2>
-<p>Six packages, one stack. Each links to its reference documentation;
-the sources live under <a
-href="https://github.com/sounkou-bioinfo/Rfmalloc/tree/main/packages"><code>packages/</code></a>
-in this repository.</p>
-<table>
-<thead>
-<tr>
-<th>package</th>
-<th>role</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><a
-href="https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/"><strong>Rfmalloc</strong></a></td>
-<td>the substrate: file-backed ALTREP vectors/matrices/tensors, codec +
-backend registries, panel matmul, out-of-core eviction,
-<code>fmalloc_pca()</code>, and the genotype codecs
-(<code>bed</code>/<code>dosage</code>/<code>haplotypes</code>) with
-fused standardization</td>
-</tr>
-<tr>
-<td><a
-href="https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/"><strong>Rgguf</strong></a></td>
-<td>GGUF model files through GGML’s official parser: metadata, tensor
-directory, explicit decoded copies, encoded copies, or borrowed
-read-only tensor views</td>
-</tr>
-<tr>
-<td><a
-href="https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/"><strong>Rggml</strong></a></td>
-<td>compute and format authority: vendored GGML kernels and official
-GGUF implementation, with BLAS and runtime-SIMD-dispatched quantized
-backends</td>
-</tr>
-<tr>
-<td><a
-href="https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/"><strong>Rllm</strong></a></td>
-<td>composition + inference: registers Rggml as Rfmalloc’s codec-aware
-matmul backend, and builds the llama forward pass, KV cache, and
-byte-level generation</td>
-</tr>
-<tr>
-<td><a
-href="https://github.com/sounkou-bioinfo/Rfmalloc/tree/main/packages/Rpgen"><strong>Rpgen</strong></a></td>
-<td>genomics I/O: bounded ingestion from PGEN, BED, PED/MAP, TPED/TFAM,
-BGEN, VCF/BCF, GEN, HAPS/legend, EIGENSTRAT, and legacy dosage into
-hardcall, dosage, haplotype, or dense stores</td>
-</tr>
-<tr>
-<td><a
-href="https://github.com/sounkou-bioinfo/Rfmalloc/tree/main/packages/RfmallocStatgen"><strong>RfmallocStatgen</strong></a></td>
-<td>statistical genetics over those stores: streamed regression/PCA,
-banded LD, LDpred2, and matrix-form colocalisation</td>
-</tr>
-</tbody>
-</table>
-<h2 id="install">Install</h2>
-<p>From the <a
-href="https://sounkou-bioinfo.r-universe.dev">r-universe</a>:</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">install.packages</span>(<span class="st">&quot;Rllm&quot;</span>,</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">repos =</span> <span class="fu">c</span>(<span class="st">&quot;https://sounkou-bioinfo.r-universe.dev&quot;</span>, <span class="fu">getOption</span>(<span class="st">&quot;repos&quot;</span>)))</span></code></pre></div>
-<p>or a GitHub subdir ref:
-<code>pak::pak("sounkou-bioinfo/Rfmalloc/packages/Rllm")</code>.</p>
-<p>All six packages target Linux, macOS and Windows (Rtools), and all
-six are verified on ARM in CI: Apple Silicon and Linux aarch64. On
-Windows, Rgguf maps the tensor bytes through a small
-<code>CreateFileMapping</code> shim in place of <code>mmap</code>, while
-Rggml remains the official parser authority. Rpgen’s vendored pgenlib
-builds with the same <code>Makevars.win</code> pattern that carries
-pgenlibr on CRAN.</p>
-<h2 id="correctness-discipline">Correctness discipline</h2>
-<p>Every quantized codec decoder is pinned
-<strong>bit-identical</strong> to GGML’s reference
-(<code>Rggml_dequantize</code>, GGML’s own type-traits
-<code>to_float</code>) by regression fixtures in Rgguf and live
-cross-validation in Rllm - the discipline that caught a real upstream
-Q4_K dequantization bug in gguf-tools (~33% wrong decodes of the most
-common real-model format; fixed in our vendored copy). The inference
-graph is pinned to a pure-R reference forward (~1e-6 on real weights);
-incremental KV-cache logits equal whole-batch logits at every position;
-lossless codecs round-trip exactly. The integration CI job installs the
-whole stack and runs every package’s test suite against it
-(<code>tests/integration.R</code>).</p>
-<h2 id="layout--provenance">Layout &amp; provenance</h2>
-<pre><code>packages/    the six R packages (independent installable units)
-experiments/ falsifiable probes of storage and compute bets
-tests/       cross-package integration entry points (run in CI)
-tools/       fixture generators and shared scripts</code></pre>
-<p>The vendored GGML is currently <strong>v0.9.5</strong> (via the
-CRAN-facing <a
-href="https://github.com/Zabis13/ggmlR"><code>ggmlR</code></a>, which
-supplies the stdio/abort compliance shim; upstream standalone GGML is at
-v0.9.11). It is refreshed deliberately, not continuously: the next
-refresh is folded into the CUDA work and tested on real hardware, since
-the CUDA sources must version-match the core. See
-<code>packages/Rggml/inst/COPYRIGHTS</code> for the full version &amp;
-update policy.</p>
-<p>Related but deliberately separate: <a
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>gen <span class="ot">&lt;-</span> <span class="fu">rllm_generate</span>(</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>  model,</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">charToRaw</span>(<span class="st">&quot;The capital of France is Paris. The capital of Germany is&quot;</span>),</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">n_new =</span> <span class="dv">16</span><span class="dt">L</span>,</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>  <span class="at">runtime =</span> rt</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="fu">rawToChar</span>(gen<span class="sc">$</span>raw)</span></code></pre></div>
+<p>The I/O boundary is bytes, not a hidden theory of text. The tokenizer
+is an edge codec built from GGUF metadata, generation returns raw
+output, and <code>rawToChar()</code> is the caller’s interpretation. On
+the recorded SmolLM2-135M <code>Q4_K_M</code> run on the RTX 5050 rig, a
+12-token prompt followed by 128 greedy decode tokens reached a median
+40.2 tokens per second on CPU and 69.7 on CUDA after the one-time weight
+upload. These are medians of three complete generations, not a kernel
+microbenchmark. The logits are checked against a pure-R reference
+forward to the tolerance imposed by the quantized weights, and cached
+CUDA logits are checked against both whole-batch CUDA and CPU cache
+handoffs.</p>
+<p>ALP is a useful counterexample to protecting a beautiful idea from a
+bad measurement. The current decimal ALP codec is lossless and effective
+for analytical values with decimal structure. On a model-like 2048 by
+2048 Q4_K weight, however, it expands the values to 64.2 bits each and
+its scalar decode plus BLAS takes 20.75 ms for batch one. Native Q4_K
+occupies 4.5 bits and its GGML product takes 0.30 ms. The LLM version of
+the lossless-compressed bet now has to earn its way back through ALP-RD,
+SIMD decode or a fused compressed dot kernel. The failed form is
+evidence, not an API to preserve.</p>
+<h2 id="compute-follows-storage">Compute follows storage</h2>
+<p>The storage representation does not dictate one machine. Dense
+products use R’s BLAS. Quantized CPU products use GGML kernels, with
+runtime CPUID dispatch on x86 and the mandatory NEON baseline on
+aarch64. The ISA-specific flags are confined to staged objects and never
+leak into R’s recorded package flags. Both paths operate over bounded or
+mapped storage rather than demanding that the entire problem enter
+RAM.</p>
+<p>Vulkan is the first device backend. It is built explicitly with
+<code>configure.args = "--with-vulkan"</code> because compiling GGML’s
+embedded SPIR-V set is itself expensive.
+<code>rggml_vulkan_info()</code> reports visible devices, while a build
+without Vulkan reports none and leaves callers free to fall back. The
+same correctness graph can run on a real GPU or, with
+<code>GGML_VK_ALLOW_CPU=1</code>, through Mesa’s software driver. Device
+allocation, tensor upload, graph execution and download pass through
+backend-neutral GGML interfaces rather than Vulkan-shaped application
+code.</p>
+<p>CUDA now comes from the exact same pinned GGML source as the core. It
+is an opt-in <code>nvcc</code> build, and Rllm’s model-owned context
+uploads codec-native weights once and reuses them while the host GGUF
+mapping remains authoritative. The RTX 5050 rig passes the full Rggml,
+Rgguf and Rllm suites, including whole-graph CUDA, plain and fmalloc KV
+caches, and CPU-to-CUDA and CUDA-to-CPU cache handoffs.</p>
+<p>The remaining gap is measured rather than euphemized. Upstream
+<code>llama-bench</code> on the same model and rig reaches 156.1 tokens
+per second with CUDA graphs disabled and 460.1 with them enabled. This
+stack reaches 69.7. Replacing each pass’s activation buffer with GGML’s
+persistent backend scheduler reduced it to 63.7, while enabling graph
+capture reached 62.6 because the graph and attention extent change on
+every token. That machinery was removed. The next experiment must make
+execution reusable, most likely through stable attention shapes and
+device-resident mutable cache state; another storage API cannot solve
+it.</p>
+<h2 id="one-monorepo-because-the-abstractions-cross-packages">One
+monorepo because the abstractions cross packages</h2>
+<p>The package boundaries separate bets, not teams. <a
+href="https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/">Rfmalloc</a>
+owns mapped storage, typed spans, codecs, backend dispatch, bounded
+panel products and eviction. <a
+href="https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/">Rggml</a> is
+the compute and format authority: it carries the pinned GGML core,
+official GGUF implementation, CPU kernels, BLAS and optional device
+backends. <a
+href="https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/">Rgguf</a> turns
+GGUF metadata and tensor spans into an R-facing storage layer without
+maintaining another parser. <a
+href="https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/">Rllm</a>
+composes those pieces into quantized products, a llama graph, KV caching
+and byte-level generation.</p>
+<p>The statistical genetics side pushes the same contracts in directions
+an LLM does not. <a
+href="https://github.com/sounkou-bioinfo/Rfmalloc/tree/main/packages/Rpgen">Rpgen</a>
+owns the native format-reader closure and bounded record transfer. <a
+href="https://github.com/sounkou-bioinfo/Rfmalloc/tree/main/packages/RfmallocStatgen">RfmallocStatgen</a>
+owns streamed regression and PCA, banded LD, LDpred2 and matrix-form
+colocalisation. When one experiment changes a shared contract, every
+consumer changes in the same commit. There is no external consumer that
+justifies compatibility theatre while the abstraction is still being
+discovered.</p>
+<p>This is also why the repository keeps <code>experiments/</code>
+beside <code>packages/</code>. Experiments are falsifiable probes of
+storage and compute bets; <code>tests/</code> contains the cross-package
+consequences; <code>tools/</code> records how third-party sources and
+fixtures are reproduced. Synthesis is allowed to delete a failed
+materialization or merge two accidental interfaces. The monorepo makes
+that movement visible and testable.</p>
+<h2 id="correctness-is-the-invariant">Correctness is the invariant</h2>
+<p>Every quantized decoder is checked bit-for-bit against GGML’s own
+<code>to_float</code> reference through fixtures in Rgguf and live
+cross-validation in Rllm. That discipline caught a real Q4_K
+dequantization bug in the earlier C port. The inference graph is checked
+against a pure-R forward; incremental KV-cache logits must equal
+whole-batch logits at every position; lossless codecs must round-trip
+exactly; and every specialized backend must be free to decline into the
+decode-and-BLAS reference path. Performance claims come from measured
+paths, not from the presence of a backend name in a build.</p>
+<h2 id="install-and-provenance">Install and provenance</h2>
+<p>The packages are available from <a
+href="https://sounkou-bioinfo.r-universe.dev">r-universe</a>. Installing
+<code>Rllm</code> pulls the composed CPU stack.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">install.packages</span>(</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>  <span class="st">&quot;Rllm&quot;</span>,</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">repos =</span> <span class="fu">c</span>(<span class="st">&quot;https://sounkou-bioinfo.r-universe.dev&quot;</span>, <span class="fu">getOption</span>(<span class="st">&quot;repos&quot;</span>))</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div>
+<p>A package can also be installed directly from its monorepo
+subdirectory, for example
+<code>pak::pak("sounkou-bioinfo/Rfmalloc/packages/Rllm")</code>. Linux,
+macOS, Windows, Apple Silicon and Linux aarch64 remain part of the
+ordinary test surface. Platform shims exist where the operating system
+really differs, such as <code>CreateFileMapping</code> in Rgguf on
+Windows, but the storage and compute contracts remain shared.</p>
+<p>The vendored GGML core is generated from pinned sources by
+<code>tools/vendor-ggml/vendorggml.R</code>; it is never edited in
+place. GGML, fmalloc, pgenlib, PCAone and ALP retain their upstream
+licenses and provenance in each package’s <code>inst/COPYRIGHTS</code>.
+The runtime SIMD staging pattern is developed separately in <a
 href="https://github.com/sounkou-bioinfo/RsimdDispatch">RsimdDispatch</a>
-(the runtime-SIMD staging pattern Rggml adopts).</p>
+and used here where it survives contact with the larger stack.</p>
 <h2 id="license">License</h2>
 <p>The stack is GPL (&gt;= 2). Rpgen is GPL-3 because it combines
-PLINK2’s GPL-3 import closure with LGPL (&gt;= 3) pgenlib, and
+PLINK2’s GPL-3 import closure with LGPL (&gt;= 3) pgenlib.
 RfmallocStatgen is GPL-3 because its pinned PCAone workhorse is GPL-3.
-Vendored third-party components (fmalloc, GGML, pgenlib, PCAone, and
-ALP) keep their upstream licenses; see each package’s
-<code>inst/COPYRIGHTS</code>.</p>
+Vendored components keep their own MIT, BSD, LGPL or GPL terms as
+recorded in the package copyright files.</p>
 </body>
 </html>

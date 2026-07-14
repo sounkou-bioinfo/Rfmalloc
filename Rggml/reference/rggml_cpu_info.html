@@ -72,6 +72,10 @@ the only BLAS routine R guarantees.</p></dd>
 <dd><p><code>TRUE</code> when built with <code>--with-vulkan</code>. Whether a <em>device</em>
 is visible is a separate question: see <code><a href="rggml_vulkan_info.html">rggml_vulkan_info()</a></code>.</p></dd>
 
+<dt><code>cuda</code></dt>
+<dd><p><code>TRUE</code> when built with <code>--with-cuda</code>. Whether a <em>device</em>
+is visible is a separate question: see <code><a href="rggml_cuda_info.html">rggml_cuda_info()</a></code>.</p></dd>
+
 
 </dl></div>
     <div class="section level2">
@@ -85,7 +89,7 @@ this list in the test suite turns those silent fallbacks into failures.</p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
-    <div class="dont-index"><p><code><a href="rggml_vulkan_info.html">rggml_vulkan_info()</a></code></p></div>
+    <div class="dont-index"><p><code><a href="rggml_vulkan_info.html">rggml_vulkan_info()</a></code>, <code><a href="rggml_cuda_info.html">rggml_cuda_info()</a></code></p></div>
     </div>
 
     <div class="section level2">
@@ -101,6 +105,9 @@ this list in the test suite turns those silent fallbacks into failures.</p>
 <span class="r-out co"><span class="r-pr">#&gt;</span> [1] TRUE</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> $vulkan</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [1] FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> $cuda</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> [1] FALSE</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
 </code></pre></div>

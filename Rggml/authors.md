@@ -11,8 +11,7 @@
   GGML CPU backend contributors
 
 - **Yuri Baramykov**. Contributor.  
-  ggmlR: source of the vendored GGML copy and its R/CRAN-compliance I/O
-  shim, adapted here
+  Author of the ggmlR R/CRAN-compliance I/O shim adapted here
 
 ## Citation
 
