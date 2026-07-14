@@ -26,7 +26,6 @@ same typed storage.
 
 ``` r
 library(Rllm)   # registers + selects the ggml backend
-#> Rllm: ggml quantized matmul backend registered and active for Rfmalloc typed tensors (disable with rllm_use_ggml(FALSE)).
 
 rt <- Rfmalloc::open_fmalloc(tempfile(fileext = ".bin"))
 set.seed(1)
@@ -59,9 +58,10 @@ local({
     "extdata", "tiny-byte-model.gguf", package = "Rllm", mustWork = TRUE
   )
   model <- rllm_gguf_model(model_path, runtime = rt)
+  probe <- charToRaw("systems-path probe")
   gen <- rllm_generate(
     model,
-    charToRaw("The capital of France is Paris. The capital of Germany is"),
+    probe,
     n_new = 16L,
     runtime = rt
   )
@@ -70,10 +70,11 @@ local({
 #> [1] "!!!!!!!!!!!!!!!!"
 ```
 
-The bundled model is deliberately tiny and deterministic. It drives the
-real GGUF loader, borrowed weight spans, transformer graph, KV cache,
-generation loop and raw-byte decoder without downloading a model; its
-output is a systems check rather than a language-quality claim.
+The bundled model is deliberately tiny and deterministic. It emits `!`
+as a sentinel while driving the real GGUF loader, borrowed weight spans,
+transformer graph, KV cache, generation loop and raw-byte decoder
+without downloading a model. Its output is a systems check rather than a
+language-quality claim.
 
 A recorded run with SmolLM2-135M `Q4_K_M` (30 layers, grouped-query
 attention, a `q5_0`-dominant quantization mix) used a 12-token prompt

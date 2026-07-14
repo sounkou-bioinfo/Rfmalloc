@@ -175,9 +175,10 @@ local({
     "extdata", "tiny-byte-model.gguf", package = "Rllm", mustWork = TRUE
   )
   model <- rllm_gguf_model(model_path, runtime = rt)
+  probe <- charToRaw("systems-path probe")
   gen <- rllm_generate(
     model,
-    charToRaw("The capital of France is Paris. The capital of Germany is"),
+    probe,
     n_new = 16L,
     runtime = rt
   )
@@ -185,10 +186,10 @@ local({
 })
 ```
 
-The bundled model is deliberately tiny and deterministic: it makes the
-evaluated example traverse the real GGUF loader, borrowed weight spans,
-transformer graph, KV cache, generation loop and byte decoder without a model
-download. Its output is a systems check, not a language-quality claim.
+The bundled model is deliberately tiny and deterministic: it emits `!` as a
+sentinel. The evaluated example traverses the real GGUF loader, borrowed weight
+spans, transformer graph, KV cache, generation loop and byte decoder without a
+model download. Its output is a systems check, not a language-quality claim.
 
 The I/O boundary is bytes, not a hidden theory of text. The tokenizer is an
 edge codec built from GGUF metadata, generation returns raw output, and

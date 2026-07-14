@@ -14,7 +14,7 @@ local({
     }, add = TRUE)
 
     model <- rllm_gguf_model(path, runtime = rt)
-    prompt <- charToRaw("The capital of Germany is")
+    prompt <- charToRaw("systems-path probe")
     expect_identical(rllm_decode(model, rllm_encode(model, prompt)), prompt)
 
     gen <- rllm_generate(model, prompt, n_new = 8L, runtime = rt)
