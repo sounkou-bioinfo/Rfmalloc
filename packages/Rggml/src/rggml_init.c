@@ -39,7 +39,6 @@ static const R_CallMethodDef CallEntries[] = {
 
 static void register_c_callables(DllInfo *dll)
 {
-    R_RegisterCCallable("Rggml", "Rggml_api_version",          (DL_FUNC) Rggml_api_version);
     R_RegisterCCallable("Rggml", "Rggml_version",               (DL_FUNC) Rggml_version);
 
     R_RegisterCCallable("Rggml", "Rggml_context_create",        (DL_FUNC) Rggml_context_create);
@@ -94,6 +93,7 @@ static void register_c_callables(DllInfo *dll)
     R_RegisterCCallable("Rggml", "Rggml_gguf_writer_open",      (DL_FUNC) Rggml_gguf_writer_open);
     R_RegisterCCallable("Rggml", "Rggml_gguf_writer_close",     (DL_FUNC) Rggml_gguf_writer_close);
     R_RegisterCCallable("Rggml", "Rggml_gguf_writer_set_string", (DL_FUNC) Rggml_gguf_writer_set_string);
+    R_RegisterCCallable("Rggml", "Rggml_gguf_writer_set_strings", (DL_FUNC) Rggml_gguf_writer_set_strings);
     R_RegisterCCallable("Rggml", "Rggml_gguf_writer_set_f64",   (DL_FUNC) Rggml_gguf_writer_set_f64);
     R_RegisterCCallable("Rggml", "Rggml_gguf_writer_add_f32",   (DL_FUNC) Rggml_gguf_writer_add_f32);
     R_RegisterCCallable("Rggml", "Rggml_gguf_writer_write",     (DL_FUNC) Rggml_gguf_writer_write);

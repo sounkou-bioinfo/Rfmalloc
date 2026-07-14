@@ -3,7 +3,7 @@
  * backend, plus a quantizer that turns a dense R matrix into an Rfmalloc-backed
  * quantized tensor payload.
  *
- * Rfmalloc's typed-GEMM hook (Rfmalloc_register_matmul_backend_ex, API v6)
+ * Rfmalloc's typed-GEMM hook (Rfmalloc_register_matmul_backend_ex)
  * hands a backend the *raw compressed payload* of a typed tensor together with
  * a dense double operand, so an engine can multiply without Rfmalloc decoding
  * the tensor to f64 first. Because Rgguf registers the GGUF quantized codecs

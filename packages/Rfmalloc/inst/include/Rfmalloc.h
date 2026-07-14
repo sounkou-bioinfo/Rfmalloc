@@ -11,7 +11,7 @@ extern "C" {
 #endif
 
 /*
- * Rfmalloc C-callable API, version 8.
+ * Rfmalloc C-callable interface.
  *
  * These functions are resolved with R_GetCCallable(). Packages should import
  * Rfmalloc at runtime before calling them, for example by listing Rfmalloc in
@@ -20,7 +20,6 @@ extern "C" {
  * outlive the current call.
  */
 
-typedef int (*Rfmalloc_api_version_fun)(void);
 typedef SEXP (*Rfmalloc_default_runtime_fun)(void);
 typedef SEXP (*Rfmalloc_open_runtime_fun)(const char *filepath, double size_gb,
                                           const char *mode);
@@ -43,7 +42,7 @@ typedef SEXP (*Rfmalloc_vector_info_fun)(SEXP vector);
 typedef SEXP (*Rfmalloc_destroy_vector_fun)(SEXP vector, int unsafe);
 
 /*
- * Tensor codec registration (API version 4). A codec decodes a flat,
+ * Tensor codec registration. A codec decodes a flat,
  * block-aligned element range of a typed tensor payload into doubles.
  * Ranges start on a block boundary and cover a whole number of blocks,
  * except possibly the final range for a payload; the codec must write
@@ -58,7 +57,7 @@ typedef int (*Rfmalloc_register_tensor_codec_fun)(const char *name,
                                                   Rfmalloc_tensor_decode_fn decode);
 
 /*
- * Pluggable matrix-multiply backend (API version 5). Register a GEMM kernel
+ * Pluggable matrix-multiply backend. Register a GEMM kernel
  * and select it (from R via fmalloc_matmul_backend(name), or another package)
  * so Rfmalloc's matrix products dispatch to it instead of R's BLAS. The
  * kernel computes C = alpha op(A) op(B) + beta C (op = 'N'/'T'), returning 0
@@ -74,7 +73,7 @@ typedef int (*Rfmalloc_register_matmul_backend_fun)(const char *name,
                                                     Rfmalloc_gemm_fn fn);
 
 /*
- * Codec-aware (typed) backend hook (API version 6). Multiply a compressed
+ * Codec-aware (typed) backend hook. Multiply a compressed
  * tensor by a dense double operand WITHOUT Rfmalloc decoding it to f64 first:
  * the backend receives the raw codec payload (byte-identical to how the codec
  * stored it - e.g. an fmalloc-mmap'd q4_k payload is a valid ggml Q4_K tensor)
@@ -94,7 +93,7 @@ typedef int (*Rfmalloc_register_matmul_backend_ex_fun)(const char *name,
                                                        Rfmalloc_typed_gemm_fn typed_fn);
 
 /*
- * Streaming decode primitive (API version 7). Decode a flat, block-aligned
+ * Streaming decode primitive. Decode a flat, block-aligned
  * element range [elem_offset, elem_offset + n_elems) of a typed tensor into a
  * caller-owned double buffer, using the tensor's own registered codec, so an
  * out-of-core consumer can decode one column range at a time instead of
@@ -108,7 +107,7 @@ typedef int (*Rfmalloc_register_matmul_backend_ex_fun)(const char *name,
 typedef int (*Rfmalloc_tensor_decode_range_fun)(SEXP tensor, R_xlen_t elem_offset,
                                                 R_xlen_t n_elems, double *out);
 
-/* Record-panel transfer context. Sources provide decoded records while
+/* Record-panel transfer context. Sources provide semantic records while
  * Rfmalloc owns allocation, packing, alignment, and persistent layout. This
  * is the same interface for plain f64, packed hardcalls, fixed-point dosage,
  * and locus-major haplotype bits. */
@@ -126,6 +125,22 @@ typedef int (*Rfmalloc_buffer_write_fun)(
     size_t record_stride);
 typedef SEXP (*Rfmalloc_buffer_finish_fun)(struct Rfmalloc_buffer_context *ctx);
 typedef void (*Rfmalloc_buffer_abort_fun)(struct Rfmalloc_buffer_context *ctx);
+
+/* Direct read-only view of the locus-major phased-haplotype store. The caller
+ * must keep `store` reachable while using `data`. Row `locus` begins at
+ * data + locus * stride and carries n_haplotype bits, least-significant bit
+ * first within each byte. row_bytes excludes zero padding, while stride
+ * includes it. The body and every row are 64-byte aligned, so a SIMD HMM
+ * cache can borrow them without repacking. */
+struct Rfmalloc_haplotype_view {
+    const uint8_t *data;
+    R_xlen_t n_locus;
+    R_xlen_t n_haplotype;
+    size_t row_bytes;
+    size_t stride;
+};
+typedef int (*Rfmalloc_haplotypes_data_fun)(
+    SEXP store, struct Rfmalloc_haplotype_view *view);
 
 /* Borrow bytes already owned by another mapped container. `owner` remains
  * reachable for the lifetime of the returned external pointer; `runtime` is
@@ -145,7 +160,7 @@ typedef int (*Rfmalloc_storage_advise_fun)(SEXP object, size_t offset,
                                            size_t nbytes, int advice);
 
 /*
- * Banded LD-matrix accessor API (API version 8). An "ld" store is a compressed,
+ * Banded LD-matrix accessor API. An "ld" store is a compressed,
  * mmap-backed banded symmetric correlation matrix built by fmalloc_ld() /
  * RfmallocStatgen's statgen_snp_cor(); it is a typed accessor sibling of the
  * tensor codec (like the haplotype store), not a decode-to-f64 matmul codec.
@@ -171,11 +186,6 @@ typedef int (*Rfmalloc_ld_col_raw_fun)(SEXP store, R_xlen_t j, R_xlen_t *lo,
 typedef SEXP (*Rfmalloc_ld_build_fun)(SEXP runtime, R_xlen_t n_variants, int bits,
                                       int window, const R_xlen_t *lo,
                                       const R_xlen_t *len, const double *rvals);
-
-static inline Rfmalloc_api_version_fun Rfmalloc_api_version_ptr(void)
-{
-    return (Rfmalloc_api_version_fun) R_GetCCallable("Rfmalloc", "Rfmalloc_api_version");
-}
 
 static inline Rfmalloc_default_runtime_fun Rfmalloc_default_runtime_ptr(void)
 {
@@ -260,11 +270,6 @@ static inline Rfmalloc_destroy_vector_fun Rfmalloc_destroy_vector_ptr(void)
 static inline Rfmalloc_register_tensor_codec_fun Rfmalloc_register_tensor_codec_ptr(void)
 {
     return (Rfmalloc_register_tensor_codec_fun) R_GetCCallable("Rfmalloc", "Rfmalloc_register_tensor_codec");
-}
-
-static inline int Rfmalloc_api_version(void)
-{
-    return Rfmalloc_api_version_ptr()();
 }
 
 static inline SEXP Rfmalloc_default_runtime(void)
@@ -415,6 +420,18 @@ static inline Rfmalloc_buffer_abort_fun Rfmalloc_buffer_abort_ptr(void)
 {
     return (Rfmalloc_buffer_abort_fun)
         R_GetCCallable("Rfmalloc", "Rfmalloc_buffer_abort");
+}
+
+static inline Rfmalloc_haplotypes_data_fun Rfmalloc_haplotypes_data_ptr(void)
+{
+    return (Rfmalloc_haplotypes_data_fun)
+        R_GetCCallable("Rfmalloc", "Rfmalloc_haplotypes_data");
+}
+
+static inline int Rfmalloc_haplotypes_data(
+    SEXP store, struct Rfmalloc_haplotype_view *view)
+{
+    return Rfmalloc_haplotypes_data_ptr()(store, view);
 }
 
 static inline Rfmalloc_storage_view_fun Rfmalloc_storage_view_ptr(void)

@@ -1,16 +1,16 @@
 //==============================================================================
 // Record-panel transfer context.
 //
-// Sources describe decoded records; Rfmalloc owns their destination layout.
+// Sources describe semantic records; Rfmalloc owns their destination layout.
 // The same context writes plain f64 storage, fixed-point dosage, packed
 // hardcalls, or locus-major haplotype bits. A reader therefore does not branch
 // on "compressed" versus "uncompressed" allocation and never reaches into a
 // codec header.
 //==============================================================================
 
-#define RFM_BUFFER_I32 1
-#define RFM_BUFFER_F64 2
-#define RFM_BUFFER_PACKED_BITS 3
+#define RFMALLOC_BUFFER_I32 1
+#define RFMALLOC_BUFFER_F64 2
+#define RFMALLOC_BUFFER_PACKED_BITS 3
 
 #define RFM_BUFFER_BED 1
 #define RFM_BUFFER_DOSAGE 2
@@ -121,7 +121,8 @@ Rfmalloc_buffer_write(Rfmalloc_buffer_context *ctx, R_xlen_t first_record,
         return -1;
     }
 
-    if (ctx->storage == RFM_BUFFER_BED && source_type == RFM_BUFFER_I32) {
+    if (ctx->storage == RFM_BUFFER_BED &&
+        source_type == RFMALLOC_BUFFER_I32) {
         size_t tight;
         if (!rfm_buffer_record_bytes(ctx->n_item, sizeof(int32_t), &tight) ||
             record_stride < tight) {
@@ -141,7 +142,8 @@ Rfmalloc_buffer_write(Rfmalloc_buffer_context *ctx, R_xlen_t first_record,
         return 0;
     }
 
-    if (ctx->storage == RFM_BUFFER_DOSAGE && source_type == RFM_BUFFER_F64) {
+    if (ctx->storage == RFM_BUFFER_DOSAGE &&
+        source_type == RFMALLOC_BUFFER_F64) {
         size_t tight;
         if (!rfm_buffer_record_bytes(ctx->n_item, sizeof(double), &tight) ||
             record_stride < tight) {
@@ -162,13 +164,14 @@ Rfmalloc_buffer_write(Rfmalloc_buffer_context *ctx, R_xlen_t first_record,
     }
 
     if (ctx->storage == RFM_BUFFER_HAPLOTYPE &&
-        source_type == RFM_BUFFER_PACKED_BITS) {
+        source_type == RFMALLOC_BUFFER_PACKED_BITS) {
         return Rfmalloc_hap_write(ctx->payload, first_record, n_record,
                                   static_cast<const uint8_t *>(data),
                                   record_stride);
     }
 
-    if (ctx->storage == RFM_BUFFER_PLAIN_F64 && source_type == RFM_BUFFER_F64) {
+    if (ctx->storage == RFM_BUFFER_PLAIN_F64 &&
+        source_type == RFMALLOC_BUFFER_F64) {
         size_t tight;
         if (!rfm_buffer_record_bytes(ctx->n_item, sizeof(double), &tight) ||
             record_stride < tight) {

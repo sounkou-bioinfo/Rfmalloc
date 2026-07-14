@@ -137,3 +137,27 @@ if (.Platform$OS.type != "windows") (function() {
 
     message("  Read-only GGUF test passed")
 })()
+
+(function() {
+    message("  Test 7: scalar and array metadata preserve their GGUF shapes")
+    tmp <- tempfile(fileext = ".gguf")
+    on.exit(unlink(tmp), add = TRUE)
+
+    gguf_write_tensors(
+        tmp,
+        list(x = 1),
+        metadata = list(
+            scalar = "one",
+            strings = c("alpha", "beta", "gamma"),
+            empty = character(),
+            number = 2.5
+        )
+    )
+    metadata <- gguf_metadata(tmp)
+    expect_identical(metadata$scalar, "one")
+    expect_identical(metadata$strings, c("alpha", "beta", "gamma"))
+    expect_identical(metadata$empty, character())
+    expect_equal(metadata$number, 2.5)
+
+    message("  Metadata-shape round-trip test passed")
+})()

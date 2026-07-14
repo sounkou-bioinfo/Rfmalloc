@@ -32,16 +32,10 @@
 #'   `"integer"`; if FALSE, return the underlying R `SEXPTYPE` integer code.
 #'
 #' @return Depends on the helper: logical predicates, runtime external pointers,
-#'   integer API versions, metadata lists, or payload external pointers.
+#'   metadata lists, or payload external pointers.
 #'
 #' @name fmalloc_api
 NULL
-
-#' @rdname fmalloc_api
-#' @export
-fmalloc_api_version <- function() {
-    .Call("fmalloc_api_version_impl")
-}
 
 #' @rdname fmalloc_api
 #' @export

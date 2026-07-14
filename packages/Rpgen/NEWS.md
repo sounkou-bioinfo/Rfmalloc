@@ -1,5 +1,9 @@
 # Rpgen 0.1.0 (unreleased)
 
+- Removed the unused C-callable API counter. Rpgen and every native consumer
+  evolve together in this monorepo, so the installed header describes one
+  current contract without compatibility branches.
+
 - Added `rpgen_ingest()` as the single composition point for PGEN, PLINK 1
   BED, PED/MAP, TPED/TFAM, VCF/BCF, BGEN, Oxford GEN, HAPS/legend,
   EIGENSTRAT, and legacy PLINK 1 dosage. Destinations include packed

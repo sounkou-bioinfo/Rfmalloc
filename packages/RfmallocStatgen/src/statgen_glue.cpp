@@ -10,7 +10,7 @@
 #include <R_ext/Rdynload.h>
 #include <R_ext/Random.h>  // GetRNGstate/PutRNGstate, unif_rand, norm_rand
 #include <Rmath.h>         // Rf_rbeta (Beta deviate for LDpred2-auto)
-#include <Rfmalloc.h>  // Rfmalloc_tensor_decode + fmalloc_ld accessors (API v8)
+#include <Rfmalloc.h>  // Rfmalloc_tensor_decode + fmalloc_ld accessors
 
 #include <cstddef>
 #include <cstring>

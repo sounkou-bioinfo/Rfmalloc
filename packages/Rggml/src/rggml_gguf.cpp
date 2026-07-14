@@ -155,6 +155,17 @@ int Rggml_gguf_writer_set_string(Rggml_gguf_writer *ctx, const char *key,
     return 0;
 }
 
+int Rggml_gguf_writer_set_strings(Rggml_gguf_writer *ctx, const char *key,
+                                   const char **values, size_t n)
+{
+    if (!ctx || !ctx->meta || !key || (n && !values)) return -1;
+    for (size_t i = 0; i < n; ++i) {
+        if (!values[i]) return -1;
+    }
+    gguf_set_arr_str(ctx->meta, key, values, n);
+    return 0;
+}
+
 int Rggml_gguf_writer_set_f64(Rggml_gguf_writer *ctx, const char *key,
                                double value)
 {

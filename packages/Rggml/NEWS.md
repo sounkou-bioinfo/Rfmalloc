@@ -1,5 +1,10 @@
 # Rggml 0.1.0 (unreleased)
 
+- Removed the unused C-callable API counter and its accumulated version strata.
+  The installed header is the one current monorepo contract. The official GGUF
+  writer service also accepts string-array metadata, which makes hermetic
+  tokenizer-bearing model fixtures possible without another writer.
+
 - The generated engine now comes directly from one content-pinned official
   GGML v0.11.0 source tree. Core, CPU, BLAS, GGUF, Vulkan and CUDA share commit
   `1f09c6987071`; the unused ggmlR 5D fork and its split translation units are

@@ -8,7 +8,7 @@
  * typed entry point with R_GetCCallable(). The range readers below are
  * stateless helpers: each opens a source, fills a caller-owned buffer, and
  * closes it. Rpgen's Rfmalloc ingestion path instead keeps one reader open
- * across bounded panels and is intentionally package-internal for now.
+ * across bounded panels and is package-internal.
  *
  * The import functions call PLINK 2's own VCF, BCF, BGEN, GEN, HAPS,
  * PLINK 1 dosage, PED/MAP, TPED/TFAM, and EIGENSTRAT closure. They use
@@ -26,10 +26,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/* -- version / identity ---------------------------------------------------- */
-
-typedef int (*Rpgen_api_version_fun)(void);
 
 /* -- open a .pgen far enough to read its header counts ---------------------- */
 

@@ -1,4 +1,4 @@
-## Rfmalloc_tensor_decode (API v7): decode a block-aligned element range of a
+## Rfmalloc_tensor_decode: decode a block-aligned element range of a
 ## typed tensor into a caller buffer, using the tensor's own codec. This is the
 ## streaming read primitive an out-of-core consumer (e.g. RfmallocStatgen's
 ## RSVD) uses to pull one variant-column range at a time. Oracle: the same
@@ -13,8 +13,6 @@ decode_range <- function(tensor, elem_offset, n_elems) {
 }
 
 (function() {
-    expect_true(.Call("fmalloc_api_version_impl") >= 7L)
-
     rt <- open_fmalloc(tempfile(fileext = ".bin"), mode = "scratch", size_gb = 0.2)
     on.exit(cleanup_fmalloc(rt), add = TRUE)
 

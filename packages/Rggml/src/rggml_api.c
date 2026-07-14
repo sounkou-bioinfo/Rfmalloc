@@ -1,8 +1,8 @@
 /*
  * rggml_api.c - Rggml's C-callable compute API.
  *
- * Thin, clean `extern "C"` wrapper functions around the vendored GGML CPU
- * backend. These are the functions registered with R_RegisterCCallable() in
+ * Thin `extern "C"` wrapper functions around the vendored GGML engine.
+ * These are the functions registered with R_RegisterCCallable() in
  * rggml_init.c and re-exposed to downstream packages via the inline
  * R_GetCCallable() wrappers in inst/include/Rggml.h.
  *
@@ -31,11 +31,6 @@
 #endif
 
 #include "rggml_api.h"
-
-int Rggml_api_version(void)
-{
-    return RGGML_API_VERSION;
-}
 
 const char *Rggml_version(void)
 {
@@ -131,7 +126,7 @@ ggml_backend_t Rggml_backend_blas_init(void)
 }
 
 /*
- * Vulkan backend (API version 7). Present unconditionally as a C-callable so
+ * Vulkan backend. Present unconditionally as a C-callable so
  * downstream packages can probe for it at run time; it reports zero devices and
  * refuses to initialize when Rggml was built without --with-vulkan. Freeing is
  * the usual Rggml_backend_free().
@@ -157,7 +152,7 @@ ggml_backend_t Rggml_backend_vulkan_init(int device)
 }
 
 /*
- * Device-buffer residency (API version 7).
+ * Device-buffer residency.
  *
  * The CPU and BLAS backends compute on ordinary host memory, so a tensor whose
  * ->data points at an R buffer just works. A GPU backend does not: its tensors
@@ -426,7 +421,7 @@ int Rggml_dequantize_double(enum ggml_type type, const void *src, double *dst,
 }
 
 /*
- * Graph ops (API version 5). Thin wrappers over the ggml ops a transformer
+ * Graph ops. Thin wrappers over the ggml ops a transformer
  * forward pass composes: embedding lookup, RMSNorm, elementwise, activation,
  * RoPE, masked softmax, and the shape ops. Scalar parameters cross the
  * C-callable boundary as double and are narrowed here. All return NULL on
@@ -538,7 +533,7 @@ struct ggml_tensor *Rggml_transpose(struct ggml_context *ctx, struct ggml_tensor
 }
 
 /*
- * Views and copies (API version 6) - what a KV cache is made of: strided
+ * Views and copies - what a KV cache is made of: strided
  * views into a persistent cache tensor, written with ggml_cpy nodes expanded
  * into the graph ahead of the attention that reads them. Offsets and strides
  * are in bytes, as in ggml itself.

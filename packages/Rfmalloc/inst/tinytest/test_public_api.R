@@ -12,7 +12,6 @@ message("Testing public Rfmalloc API helpers...")
         unlink(tmp)
     }, add = TRUE)
 
-    expect_true(fmalloc_api_version() >= 3L)
     expect_true(is_fmalloc_runtime(rt))
     expect_false(is_fmalloc_runtime(NULL))
 

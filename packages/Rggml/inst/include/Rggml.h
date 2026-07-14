@@ -4,13 +4,12 @@
 /*
  * Rggml.h - C-callable compute API for the Rggml carrier package.
  *
- * Rggml vendors the CPU backend of the GGML tensor library
- * (https://github.com/ggml-org/ggml) as a static library and exposes a
- * minimal, clean C API to it via R_RegisterCCallable(). Other R packages
- * link to Rggml ('LinkingTo: Rggml' in DESCRIPTION) and #include this
- * header to build and compute GGML tensor graphs - including quantized
- * types such as GGML_TYPE_Q4_K - from their own C or C++ code, without
- * re-vendoring GGML themselves.
+ * Rggml carries one pinned official GGML tree: core tensors and GGUF, CPU and
+ * BLAS compute, plus opt-in Vulkan and CUDA backends. It exposes the subset
+ * sibling packages compose through R_RegisterCCallable(). Other R packages
+ * link to Rggml ('LinkingTo: Rggml' in DESCRIPTION) and #include this header
+ * to build and compute GGML tensor graphs, including quantized types such as
+ * GGML_TYPE_Q4_K, without re-vendoring GGML themselves.
  *
  * Usage:
  *   1. List Rggml under LinkingTo (and Imports, so it is loaded first) in
@@ -51,9 +50,8 @@
 extern "C" {
 #endif
 
-/* -- version / identity -------------------------------------------------- */
+/* -- upstream identity --------------------------------------------------- */
 
-typedef int (*Rggml_api_version_fun)(void);
 typedef const char *(*Rggml_version_fun)(void);
 
 /* -- context lifecycle ---------------------------------------------------- */
@@ -167,6 +165,9 @@ typedef struct Rggml_gguf_writer *(*Rggml_gguf_writer_open_fun)(void);
 typedef void (*Rggml_gguf_writer_close_fun)(struct Rggml_gguf_writer *ctx);
 typedef int (*Rggml_gguf_writer_set_string_fun)(
     struct Rggml_gguf_writer *ctx, const char *key, const char *value);
+typedef int (*Rggml_gguf_writer_set_strings_fun)(
+    struct Rggml_gguf_writer *ctx, const char *key,
+    const char **values, size_t n);
 typedef int (*Rggml_gguf_writer_set_f64_fun)(struct Rggml_gguf_writer *ctx,
                                              const char *key, double value);
 typedef int (*Rggml_gguf_writer_add_f32_fun)(
@@ -175,7 +176,7 @@ typedef int (*Rggml_gguf_writer_add_f32_fun)(
 typedef int (*Rggml_gguf_writer_write_fun)(struct Rggml_gguf_writer *ctx,
                                            const char *path);
 
-/* -- graph ops (API version 5) ------------------------------------------------ */
+/* -- graph ops --------------------------------------------------------------- */
 /*
  * The ggml ops a transformer forward pass composes. Scalar parameters cross
  * the boundary as double. Rggml_rope wraps ggml_rope_ext with YaRN off
@@ -220,7 +221,7 @@ typedef struct ggml_tensor *(*Rggml_cont_fun)(struct ggml_context *ctx,
 typedef struct ggml_tensor *(*Rggml_transpose_fun)(struct ggml_context *ctx,
                                                     struct ggml_tensor *a);
 
-/* -- Vulkan backend (API version 7) -------------------------------------------- */
+/* -- Vulkan backend ---------------------------------------------------------- */
 /* Always resolvable; reports 0 devices and refuses to init unless Rggml was
  * built with --with-vulkan. Free with Rggml_backend_free(). */
 typedef int (*Rggml_backend_vulkan_device_count_fun)(void);
@@ -236,7 +237,7 @@ typedef ggml_backend_t (*Rggml_backend_cuda_init_fun)(int device);
 typedef int (*Rggml_backend_cuda_device_description_fun)(int device, char *buf,
                                                           size_t buf_size);
 
-/* -- device-buffer residency (API version 7) ----------------------------------- */
+/* -- device-buffer residency ------------------------------------------------- */
 /* The backend-agnostic allocate/upload/compute/download path. CPU and BLAS
  * compute on host memory, but a GPU backend's tensors must live in device
  * memory: allocate every tensor of a no_alloc context into one backend buffer,
@@ -249,7 +250,7 @@ typedef void (*Rggml_backend_tensor_set_fun)(struct ggml_tensor *tensor, const v
 typedef void (*Rggml_backend_tensor_get_fun)(const struct ggml_tensor *tensor, void *data,
                                               size_t offset, size_t size);
 
-/* -- views and copies (API version 6) ----------------------------------------- */
+/* -- views and copies -------------------------------------------------------- */
 /* Strided views into a tensor (offsets/strides in bytes, as in ggml) and the
  * copy op - the building blocks of a KV cache: cpy nodes write new K/V into
  * views of a persistent cache tensor, expanded into the graph ahead of the
@@ -281,11 +282,6 @@ typedef const char *(*Rggml_type_name_fun)(enum ggml_type type);
 /* -------------------------------------------------------------------------- */
 /* R_GetCCallable() accessors                                                 */
 /* -------------------------------------------------------------------------- */
-
-static inline Rggml_api_version_fun Rggml_api_version_ptr(void)
-{
-    return (Rggml_api_version_fun) R_GetCCallable("Rggml", "Rggml_api_version");
-}
 
 static inline Rggml_version_fun Rggml_version_ptr(void)
 {
@@ -638,6 +634,11 @@ static inline Rggml_gguf_writer_set_string_fun Rggml_gguf_writer_set_string_ptr(
 {
     return (Rggml_gguf_writer_set_string_fun)
         R_GetCCallable("Rggml", "Rggml_gguf_writer_set_string");
+}
+static inline Rggml_gguf_writer_set_strings_fun Rggml_gguf_writer_set_strings_ptr(void)
+{
+    return (Rggml_gguf_writer_set_strings_fun)
+        R_GetCCallable("Rggml", "Rggml_gguf_writer_set_strings");
 }
 static inline Rggml_gguf_writer_set_f64_fun Rggml_gguf_writer_set_f64_ptr(void)
 {

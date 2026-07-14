@@ -2,6 +2,13 @@
 
 ## 0.1.0 (unreleased)
 
+- Added a zero-copy C view over phased-haplotype stores. HMM consumers receive
+  the 64-byte-aligned locus body, dimensions, meaningful row bytes, and padded
+  stride while the owning R object remains alive. Full integer-matrix
+  materialization is an explicit adapter rather than the native compute path.
+  Removed the unused API-version counter: all C-callable consumers live in the
+  monorepo and change with the contract in the same commit.
+
 - Added borrowed read-only storage views. A typed tensor can now refer to bytes
   already owned by another mapping, keep that owner alive, and enter codec or
   backend compute without a copy into fmalloc. `fmalloc_storage_advise()` adds

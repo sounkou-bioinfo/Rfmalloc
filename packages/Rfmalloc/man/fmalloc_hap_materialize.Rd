@@ -2,7 +2,7 @@
 % Please edit documentation in R/fmalloc_hap.R
 \name{fmalloc_hap_materialize}
 \alias{fmalloc_hap_materialize}
-\title{Materialize a bit-packed haplotype store into a 0/1 matrix}
+\title{Adapt a bit-packed haplotype store to a 0/1 matrix}
 \usage{
 fmalloc_hap_materialize(x, runtime = NULL)
 }
@@ -23,13 +23,12 @@ this is the same "decode into typed storage, not into a plain R object"
 discipline \code{\link[=fmalloc_tensor_materialize]{fmalloc_tensor_materialize()}} uses for the matmul codecs.
 }
 \details{
-Passing the result straight to \code{kalis::CacheHaplotypes()} is the intended
-use: kalis's matrix path only requires \code{is.matrix()} and \code{is.integer()},
-both true of an fmalloc-backed integer matrix, so no separate R-heap copy
-of the decoded 0/1 matrix is needed before handing it to kalis. kalis then
-copies the calls once more, into its own private SIMD cache layout - that
-copy is intrinsic to kalis's architecture and would happen for any input
-source, fmalloc-backed or not.
+This adapter exists for consumers that require a conventional R matrix.
+Native HMM consumers should instead resolve \code{Rfmalloc_haplotypes_data()}
+from the installed C header and borrow the aligned locus rows directly.
+\code{kalis::CacheHaplotypes()} can consume the adapted matrix, but a kalis
+packed-buffer method can use the direct view without either expansion or
+repacking.
 }
 \examples{
 rt <- open_fmalloc(tempfile(), size_gb = 0.1)

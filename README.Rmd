@@ -160,20 +160,35 @@ span from the original mapping. The model keeps quantized weights quantized;
 GGML consumes those blocks directly; only the KV cache and transient graph
 state require new storage.
 
-```{r llm, eval = FALSE}
+```{r llm}
 library(Rllm)
 
-rt <- Rfmalloc::open_fmalloc("rllm-work.bin", size_gb = 2)
-model <- rllm_gguf_model("SmolLM2-135M.Q4_K_M.gguf", runtime = rt)
+local({
+  backing <- tempfile(fileext = ".bin")
+  rt <- Rfmalloc::open_fmalloc(backing, mode = "scratch", size_gb = 0.1)
+  on.exit({
+    Rfmalloc::cleanup_fmalloc(rt)
+    unlink(backing)
+  }, add = TRUE)
 
-gen <- rllm_generate(
-  model,
-  charToRaw("The capital of France is Paris. The capital of Germany is"),
-  n_new = 16L,
-  runtime = rt
-)
-rawToChar(gen$raw)
+  model_path <- system.file(
+    "extdata", "tiny-byte-model.gguf", package = "Rllm", mustWork = TRUE
+  )
+  model <- rllm_gguf_model(model_path, runtime = rt)
+  gen <- rllm_generate(
+    model,
+    charToRaw("The capital of France is Paris. The capital of Germany is"),
+    n_new = 16L,
+    runtime = rt
+  )
+  rawToChar(gen$raw)
+})
 ```
+
+The bundled model is deliberately tiny and deterministic: it makes the
+evaluated example traverse the real GGUF loader, borrowed weight spans,
+transformer graph, KV cache, generation loop and byte decoder without a model
+download. Its output is a systems check, not a language-quality claim.
 
 The I/O boundary is bytes, not a hidden theory of text. The tokenizer is an
 edge codec built from GGUF metadata, generation returns raw output, and
@@ -187,12 +202,12 @@ and cached CUDA logits are checked against both whole-batch CUDA and CPU cache
 handoffs.
 
 ALP is a useful counterexample to protecting a beautiful idea from a bad
-measurement. The current decimal ALP codec is lossless and effective for
+measurement. The decimal ALP codec is lossless and effective for
 analytical values with decimal structure. On a model-like 2048 by 2048 Q4_K
 weight, however, it expands the values to 64.2 bits each and its scalar decode
 plus BLAS takes 20.75 ms for batch one. Native Q4_K occupies 4.5 bits and its
-GGML product takes 0.30 ms. The LLM version of the lossless-compressed bet now
-has to earn its way back through ALP-RD, SIMD decode or a fused compressed dot
+GGML product takes 0.30 ms. The LLM version of the lossless-compressed bet has
+to earn its way back through ALP-RD, SIMD decode or a fused compressed dot
 kernel. The failed form is evidence, not an API to preserve.
 
 ## Compute follows storage
@@ -213,7 +228,7 @@ same correctness graph can run on a real GPU or, with
 tensor upload, graph execution and download pass through backend-neutral GGML
 interfaces rather than Vulkan-shaped application code.
 
-CUDA now comes from the exact same pinned GGML source as the core. It is an
+CUDA comes from the exact same pinned GGML source as the core. It is an
 opt-in `nvcc` build, and Rllm's model-owned context uploads codec-native
 weights once and reuses them while the host GGUF mapping remains authoritative.
 The RTX 5050 rig passes the full Rggml, Rgguf and Rllm suites, including
@@ -225,8 +240,8 @@ on the same model and rig reaches 156.1 tokens per second with CUDA graphs
 disabled and 460.1 with them enabled. This stack reaches 69.7. Replacing each
 pass's activation buffer with GGML's persistent backend scheduler reduced it
 to 63.7, while enabling graph capture reached 62.6 because the graph and
-attention extent change on every token. That machinery was removed. The next
-experiment must make execution reusable, most likely through stable attention
+attention extent change on every token. That machinery was removed. Closing
+the gap requires reusable execution, most likely through stable attention
 shapes and device-resident mutable cache state; another storage API cannot
 solve it.
 

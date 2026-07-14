@@ -13,8 +13,8 @@
 //     ...
 //
 // The body and every row are 64-byte aligned. The small padding cost buys the
-// access pattern the compute actually consumes and lets a future HMM backend
-// map locus rows directly instead of repacking a haplotype-major file.
+// access pattern the compute actually consumes. Rfmalloc_haplotypes_data()
+// exposes these rows directly to HMM consumers.
 //==============================================================================
 
 #define RFM_HAP_PREFIX_BYTES 64
@@ -29,6 +29,14 @@ struct rfm_hap_header {
     uint64_t stride;
     uint64_t body_offset;
     uint8_t reserved[24];
+};
+
+struct Rfmalloc_haplotype_view {
+    const uint8_t *data;
+    R_xlen_t n_locus;
+    R_xlen_t n_haplotype;
+    size_t row_bytes;
+    size_t stride;
 };
 
 static inline size_t rfm_hap_row_bytes(R_xlen_t N)
@@ -60,6 +68,8 @@ static int rfm_hap_view(SEXP payload, fm_vector **vec_out,
         hdr.stride != rfm_hap_stride((R_xlen_t)hdr.N) ||
         hdr.body_offset < RFM_HAP_PREFIX_BYTES ||
         hdr.body_offset >= RFM_HAP_PREFIX_BYTES + RFM_HAP_ALIGN ||
+        (((uintptr_t)p + (uintptr_t)hdr.body_offset) &
+         (RFM_HAP_ALIGN - 1)) != 0 ||
         hdr.L > (uint64_t)(std::numeric_limits<size_t>::max() -
                            hdr.body_offset) / hdr.stride ||
         (size_t)vec->len < (size_t)hdr.body_offset +
@@ -76,6 +86,69 @@ static int rfm_hap_view(SEXP payload, fm_vector **vec_out,
         *body_out = p + hdr.body_offset;
     }
     return 0;
+}
+
+extern "C" int Rfmalloc_haplotypes_data(
+    SEXP store, Rfmalloc_haplotype_view *view)
+{
+    rfm_hap_header hdr;
+    uint8_t *body;
+
+    if (!view || rfm_hap_view(store, nullptr, &hdr, &body) != 0) {
+        return -1;
+    }
+    view->data = body;
+    view->n_locus = (R_xlen_t)hdr.L;
+    view->n_haplotype = (R_xlen_t)hdr.N;
+    view->row_bytes = rfm_hap_row_bytes(view->n_haplotype);
+    view->stride = (size_t)hdr.stride;
+    return 0;
+}
+
+extern "C" SEXP rfm_hap_view_info_impl(SEXP store)
+{
+    Rfmalloc_haplotype_view view;
+    if (Rfmalloc_haplotypes_data(store, &view) != 0) {
+        Rf_error("x must be a valid locus-major fmalloc_haplotypes object");
+    }
+
+    int padding_zero = 1;
+    const unsigned int tail = (unsigned int)(view.n_haplotype & 7);
+    for (R_xlen_t l = 0; l < view.n_locus && padding_zero; ++l) {
+        const uint8_t *row = view.data + (size_t)l * view.stride;
+        if (tail && (row[view.row_bytes - 1] &
+                     (uint8_t)~((1u << tail) - 1u))) {
+            padding_zero = 0;
+        }
+        for (size_t b = view.row_bytes; b < view.stride; ++b) {
+            if (row[b]) {
+                padding_zero = 0;
+                break;
+            }
+        }
+    }
+
+    SEXP out = PROTECT(Rf_allocVector(VECSXP, 7));
+    SEXP names = PROTECT(Rf_allocVector(STRSXP, 7));
+    const char *labels[] = {
+        "n_locus", "n_haplotype", "row_bytes", "stride",
+        "body_alignment", "stride_alignment", "padding_zero"
+    };
+    for (int i = 0; i < 7; ++i) {
+        SET_STRING_ELT(names, i, Rf_mkChar(labels[i]));
+    }
+    SET_VECTOR_ELT(out, 0, Rf_ScalarReal((double)view.n_locus));
+    SET_VECTOR_ELT(out, 1, Rf_ScalarReal((double)view.n_haplotype));
+    SET_VECTOR_ELT(out, 2, Rf_ScalarReal((double)view.row_bytes));
+    SET_VECTOR_ELT(out, 3, Rf_ScalarReal((double)view.stride));
+    SET_VECTOR_ELT(out, 4, Rf_ScalarInteger(
+        (int)((uintptr_t)view.data % RFM_HAP_ALIGN)));
+    SET_VECTOR_ELT(out, 5, Rf_ScalarInteger(
+        (int)(view.stride % RFM_HAP_ALIGN)));
+    SET_VECTOR_ELT(out, 6, Rf_ScalarLogical(padding_zero));
+    Rf_setAttrib(out, R_NamesSymbol, names);
+    UNPROTECT(2);
+    return out;
 }
 
 // Allocate an empty locus-major store. L is the number of records and N is
@@ -201,27 +274,26 @@ extern "C" SEXP rfm_hap_encode_impl(SEXP x, SEXP runtime_xptr)
 // fmalloc-backed integer matrix.
 extern "C" SEXP rfm_hap_materialize_impl(SEXP payload, SEXP runtime_xptr)
 {
-    fm_vector *in_vec;
-    rfm_hap_header hdr;
-    uint8_t *body;
-    if (rfm_hap_view(payload, &in_vec, &hdr, &body) != 0) {
+    Rfmalloc_haplotype_view view;
+    if (Rfmalloc_haplotypes_data(payload, &view) != 0) {
         Rf_error("x must be a valid locus-major fmalloc_haplotypes object");
     }
     fm_runtime *runtime = runtime_from_xptr(runtime_xptr);
     if (!runtime || !runtime->info) {
         Rf_error("fmalloc runtime is closed");
     }
-    if (hdr.L > (uint64_t)std::numeric_limits<R_xlen_t>::max() / hdr.N) {
+    if (view.n_locus > std::numeric_limits<R_xlen_t>::max() /
+                           view.n_haplotype) {
         Rf_error("haplotype matrix is too large");
     }
-    const R_xlen_t L = (R_xlen_t)hdr.L;
-    const R_xlen_t N = (R_xlen_t)hdr.N;
+    const R_xlen_t L = view.n_locus;
+    const R_xlen_t N = view.n_haplotype;
     fm_vector *out_vec = allocate_fm_vector(runtime, INTSXP, L * N, true, false);
     SEXP ans = PROTECT(fmalloc_new_altrep(out_vec));
     int *out = static_cast<int *>(vector_data_or_dummy(out_vec));
 
     for (R_xlen_t l = 0; l < L; l++) {
-        const uint8_t *row = body + (size_t)l * (size_t)hdr.stride;
+        const uint8_t *row = view.data + (size_t)l * view.stride;
         for (R_xlen_t h = 0; h < N; h++) {
             out[l + h * L] = (row[h >> 3] >> (h & 7)) & 1;
         }

@@ -14,13 +14,10 @@
 #include <ggml.h>
 #include <ggml-backend.h>
 
-#define RGGML_API_VERSION 7
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-int Rggml_api_version(void);
 const char *Rggml_version(void);
 
 struct ggml_context *Rggml_context_create(size_t mem_size, int no_alloc);
@@ -43,7 +40,7 @@ int Rggml_backend_graph_compute(ggml_backend_t backend, struct ggml_cgraph *cgra
 ggml_backend_t Rggml_backend_blas_init(void);
 void Rggml_backend_blas_set_n_threads(ggml_backend_t backend_blas, int n_threads);
 
-/* Vulkan backend (API version 7); reports 0 devices unless built --with-vulkan */
+/* Vulkan backend; reports 0 devices unless built --with-vulkan. */
 int Rggml_backend_vulkan_device_count(void);
 ggml_backend_t Rggml_backend_vulkan_init(int device);
 int Rggml_backend_vulkan_device_description(int device, char *buf, size_t buf_size);
@@ -53,7 +50,7 @@ int Rggml_backend_cuda_device_count(void);
 ggml_backend_t Rggml_backend_cuda_init(int device);
 int Rggml_backend_cuda_device_description(int device, char *buf, size_t buf_size);
 
-/* device-buffer residency (API version 7): the backend-agnostic
+/* Device-buffer residency: the backend-agnostic
  * allocate/upload/compute/download path, required by GPU backends */
 ggml_backend_buffer_t Rggml_backend_alloc_ctx_tensors(struct ggml_context *ctx,
                                                        ggml_backend_t backend);
@@ -117,6 +114,9 @@ struct Rggml_gguf_writer *Rggml_gguf_writer_open(void);
 void Rggml_gguf_writer_close(struct Rggml_gguf_writer *ctx);
 int Rggml_gguf_writer_set_string(struct Rggml_gguf_writer *ctx,
                                  const char *key, const char *value);
+int Rggml_gguf_writer_set_strings(struct Rggml_gguf_writer *ctx,
+                                  const char *key, const char **values,
+                                  size_t n);
 int Rggml_gguf_writer_set_f64(struct Rggml_gguf_writer *ctx, const char *key,
                               double value);
 int Rggml_gguf_writer_add_f32(struct Rggml_gguf_writer *ctx, const char *name,
@@ -124,7 +124,7 @@ int Rggml_gguf_writer_add_f32(struct Rggml_gguf_writer *ctx, const char *name,
                               const double *data);
 int Rggml_gguf_writer_write(struct Rggml_gguf_writer *ctx, const char *path);
 
-/* graph ops (API version 5) */
+/* Graph operations used to compose a transformer forward pass. */
 struct ggml_tensor *Rggml_get_rows(struct ggml_context *ctx, struct ggml_tensor *a,
                                     struct ggml_tensor *b);
 struct ggml_tensor *Rggml_rms_norm(struct ggml_context *ctx, struct ggml_tensor *a,
@@ -151,7 +151,7 @@ struct ggml_tensor *Rggml_permute(struct ggml_context *ctx, struct ggml_tensor *
 struct ggml_tensor *Rggml_cont(struct ggml_context *ctx, struct ggml_tensor *a);
 struct ggml_tensor *Rggml_transpose(struct ggml_context *ctx, struct ggml_tensor *a);
 
-/* views and copies (API version 6) */
+/* Views and copies. */
 struct ggml_tensor *Rggml_view_1d(struct ggml_context *ctx, struct ggml_tensor *a,
                                    int64_t ne0, size_t offset);
 struct ggml_tensor *Rggml_view_2d(struct ggml_context *ctx, struct ggml_tensor *a,

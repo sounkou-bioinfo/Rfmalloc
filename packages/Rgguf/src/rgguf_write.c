@@ -27,10 +27,22 @@ SEXP RC_gguf_write(SEXP path, SEXP tensors, SEXP metadata)
     for (R_xlen_t i = 0; i < XLENGTH(metadata); ++i) {
         const char *key = CHAR(STRING_ELT(meta_names, i));
         SEXP value = VECTOR_ELT(metadata, i);
-        int rc = TYPEOF(value) == STRSXP
-            ? Rggml_gguf_writer_set_string_ptr()(
-                  writer, key, CHAR(STRING_ELT(value, 0)))
-            : Rggml_gguf_writer_set_f64_ptr()(writer, key, Rf_asReal(value));
+        int rc;
+        if (TYPEOF(value) == STRSXP && XLENGTH(value) == 1) {
+            rc = Rggml_gguf_writer_set_string_ptr()(
+                writer, key, CHAR(STRING_ELT(value, 0)));
+        } else if (TYPEOF(value) == STRSXP) {
+            const R_xlen_t n = XLENGTH(value);
+            const char **strings = (const char **)R_alloc(
+                n ? (size_t)n : 1, sizeof(*strings));
+            for (R_xlen_t j = 0; j < n; ++j)
+                strings[j] = CHAR(STRING_ELT(value, j));
+            rc = Rggml_gguf_writer_set_strings_ptr()(
+                writer, key, strings, (size_t)n);
+        } else {
+            rc = Rggml_gguf_writer_set_f64_ptr()(
+                writer, key, Rf_asReal(value));
+        }
         if (rc != 0) {
             Rggml_gguf_writer_close_ptr()(writer);
             Rf_error("failed to write metadata key '%s'", key);

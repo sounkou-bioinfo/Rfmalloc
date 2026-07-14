@@ -1,5 +1,10 @@
 # Rllm 0.1.0 (unreleased)
 
+- Added a small deterministic tokenizer-bearing GGUF model for evaluated
+  README inference. Its reproducible recipe exercises the real loader, borrowed
+  weight spans, transformer graph, KV cache, generation loop, and raw-byte
+  decoder without a download or a success-shaped unevaluated transcript.
+
 - Added the CUDA transformer path over Rggml's official backend. A model-owned
   context uploads codec-native weights once and reuses them; mutable inputs,
   cache state and logits use the backend-neutral transfer API. The RTX 5050

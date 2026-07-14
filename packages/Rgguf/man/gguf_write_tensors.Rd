@@ -12,10 +12,11 @@ gguf_write_tensors(path, tensors, metadata = list())
 \item{tensors}{A non-empty named list of numeric vectors, matrices, or
 arrays. Names become tensor names and must be unique and non-empty.}
 
-\item{metadata}{A named list of metadata key-value pairs to write. Each
-value must be a single (length-1), non-missing string or numeric value;
-numeric values are written as 64-bit floats (\code{FLOAT64}). Defaults to
-\code{list()} (no metadata).}
+\item{metadata}{A named list of metadata key-value pairs to write. Values
+may be non-missing character vectors or single non-missing numeric
+values. Character vectors of length other than one are written as GGUF
+string arrays; numeric values are written as 64-bit floats (\code{FLOAT64}).
+Defaults to \code{list()} (no metadata).}
 }
 \value{
 \code{path}, invisibly.

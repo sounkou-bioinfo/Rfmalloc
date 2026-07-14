@@ -40,10 +40,6 @@
 #  undef TRUE
 #endif
 
-// Existing internal query retained for current in-repo callers. New work in
-// this monorepo does not add compatibility shims or bump it mechanically.
-#define RPGEN_API_VERSION 5
-
 namespace {
 
 // Open fname just far enough to read PgenFileInfo's header counts, then
@@ -746,8 +742,6 @@ int rpgen_read_bed_hardcalls(const char *bed_fname, uint32_t raw_sample_ct,
 
 extern "C" {
 
-int Rpgen_api_version(void) { return RPGEN_API_VERSION; }
-
 int Rpgen_open_info(const char *path, uint32_t *n_sample_out,
                      uint32_t *n_variant_out, char *errbuf,
                      size_t errbuf_len) {
@@ -1164,8 +1158,6 @@ static const R_CallMethodDef CallEntries[] = {
     {NULL, NULL, 0}};
 
 static void register_c_callables(DllInfo *dll) {
-  R_RegisterCCallable("Rpgen", "Rpgen_api_version",
-                       (DL_FUNC)Rpgen_api_version);
   R_RegisterCCallable("Rpgen", "Rpgen_open_info", (DL_FUNC)Rpgen_open_info);
   R_RegisterCCallable("Rpgen", "Rpgen_read_hardcalls",
                        (DL_FUNC)Rpgen_read_hardcalls);

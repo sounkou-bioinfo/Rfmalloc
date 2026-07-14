@@ -897,7 +897,7 @@ accepts only `NULL` or Rfmalloc-backed vectors from the same runtime; ordinary R
 objects such as base vectors, data frames, or arbitrary lists are rejected. This
 keeps lists inside the same file-backed object universe.
 
-For persistent runtimes, list containers now serialize as reference state when all
+For persistent runtimes, list containers serialize as reference state when all
 children are recoverable fmalloc vectors. The serialized state stores per-slot
 child descriptors, so nested list containers can reopen recursively from the same
 backing file without carrying session-local `SEXP` pointers.
@@ -905,8 +905,8 @@ backing file without carrying session-local `SEXP` pointers.
 This is reference-based recovery, not name-based object discovery. The catalog
 stores physical allocation records, not user variable names. Serialized
 references use the catalog record offset and generation for validation; the
-catalog can be listed, but it is not yet a high-level object store for recovering
-vectors by name.
+catalog can be listed, but it does not provide a high-level object store for
+recovering vectors by name.
 
 ## List constraints and recovery examples
 

@@ -466,20 +466,10 @@ SEXP cleanup_fmalloc_impl(SEXP runtime_xptr)
     return R_NilValue;
 }
 
-int Rfmalloc_api_version(void)
-{
-    return 8;
-}
-
-SEXP fmalloc_api_version_impl(void)
-{
-    return Rf_ScalarInteger(Rfmalloc_api_version());
-}
-
 /*
  * Decode a flat, block-aligned element range of a typed fmalloc tensor into a
- * caller-owned double buffer, using the tensor's own registered codec (API
- * version 7). This is the streaming read primitive an out-of-core consumer
+ * caller-owned double buffer, using the tensor's own registered codec. This is
+ * the streaming read primitive an out-of-core consumer
  * (e.g. RfmallocStatgen's RSVD) needs: decode one column range of variants at a
  * time instead of materializing the whole matrix. Because standardization is a
  * property of the tensor - a standardized 'bed'/'dosage' payload decodes
@@ -702,7 +692,6 @@ SEXP Rfmalloc_destroy_vector(SEXP vector_x, int unsafe)
 
 static void register_c_callables(void)
 {
-    R_RegisterCCallable("Rfmalloc", "Rfmalloc_api_version", (DL_FUNC)Rfmalloc_api_version);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_default_runtime", (DL_FUNC)Rfmalloc_default_runtime);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_open_runtime", (DL_FUNC)Rfmalloc_open_runtime);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_create_vector", (DL_FUNC)Rfmalloc_create_vector);
@@ -727,6 +716,7 @@ static void register_c_callables(void)
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_buffer_write", (DL_FUNC)Rfmalloc_buffer_write);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_buffer_finish", (DL_FUNC)Rfmalloc_buffer_finish);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_buffer_abort", (DL_FUNC)Rfmalloc_buffer_abort);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_haplotypes_data", (DL_FUNC)Rfmalloc_haplotypes_data);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_storage_view", (DL_FUNC)Rfmalloc_storage_view);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_storage_data", (DL_FUNC)Rfmalloc_storage_data);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_storage_advise", (DL_FUNC)Rfmalloc_storage_advise);
@@ -741,7 +731,6 @@ static void register_c_callables(void)
 static const R_CallMethodDef CallEntries[] = {
     {"open_fmalloc_impl", (DL_FUNC)&open_fmalloc_impl, 3},
     {"init_fmalloc_impl", (DL_FUNC)&init_fmalloc_impl, 3},
-    {"fmalloc_api_version_impl", (DL_FUNC)&fmalloc_api_version_impl, 0},
     {"fmalloc_default_runtime_impl", (DL_FUNC)&fmalloc_default_runtime_impl, 0},
     {"set_default_fmalloc_runtime_impl", (DL_FUNC)&set_default_fmalloc_runtime_impl, 1},
     {"create_fmalloc_vector_impl", (DL_FUNC)&create_fmalloc_vector_impl, 4},
@@ -772,6 +761,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"rfm_tensor_dosage_standardize_impl", (DL_FUNC)&rfm_tensor_dosage_standardize_impl, 3},
     {"rfm_hap_encode_impl", (DL_FUNC)&rfm_hap_encode_impl, 2},
     {"rfm_hap_materialize_impl", (DL_FUNC)&rfm_hap_materialize_impl, 2},
+    {"rfm_hap_view_info_impl", (DL_FUNC)&rfm_hap_view_info_impl, 1},
     {"rfm_ld_encode_triplets_impl", (DL_FUNC)&rfm_ld_encode_triplets_impl, 7},
     {"rfm_ld_info_impl", (DL_FUNC)&rfm_ld_info_impl, 1},
     {"rfm_ld_ncol_impl", (DL_FUNC)&rfm_ld_ncol_impl, 1},
