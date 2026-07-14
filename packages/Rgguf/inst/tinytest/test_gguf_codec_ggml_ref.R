@@ -1,19 +1,14 @@
 library(tinytest)
 library(Rgguf)
 
-# Regression test: Rgguf's quantized codec decoders (the vendored gguflib
-# dequantizers registered with Rfmalloc) must agree with GGML's own reference
-# dequantizers on identical bytes. This is what separates a codec bug from a
-# quantization type's intrinsic (lossy) error - and it is exactly the test that
-# would have caught the upstream gguf-tools Q4_K bug fixed in our vendored
-# gguflib.c (the high-nibble half of every 64-weight group was dequantized with
-# the previous sub-block's scale/min, making q4_k decodes ~33% wrong).
+# Regression test: Rgguf's registered storage codecs must agree with GGML's
+# reference values on identical bytes. It pins codec registration, geometry,
+# and panel offsets independently of quantization's intrinsic lossy error.
 #
 # The fixture (inst/tinytest/fixtures/kquant_ggml_ref.rds) holds, per type, a
 # payload quantized by GGML (ggml_quantize_chunk) from set.seed(42) gaussians
 # and the f32 values GGML's type-traits to_float decodes it back to. It was
-# generated with the Rllm/Rggml stack (see that repo's RC_rllm_dequantize);
-# committing payload + expected keeps this test free of any Rggml dependency.
+# generated with the Rllm/Rggml stack (see RC_rllm_dequantize).
 
 fixture <- readRDS(system.file("tinytest/fixtures/kquant_ggml_ref.rds",
                                package = "Rgguf"))

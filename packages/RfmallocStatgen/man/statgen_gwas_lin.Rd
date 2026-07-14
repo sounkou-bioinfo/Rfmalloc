@@ -4,7 +4,7 @@
 \alias{statgen_gwas_lin}
 \title{Univariate linear-regression GWAS over an fmalloc genotype tensor}
 \usage{
-statgen_gwas_lin(genotypes, y, covar = NULL)
+statgen_gwas_lin(genotypes, y, covar = NULL, block_size = NULL)
 }
 \arguments{
 \item{genotypes}{A \code{"bed"} or \code{"dosage"} \link[Rfmalloc:fmalloc_tensor]{Rfmalloc::fmalloc_tensor}
@@ -17,6 +17,10 @@ statgen_gwas_lin(genotypes, y, covar = NULL)
 \item{covar}{\code{NULL} (the default), or a numeric vector/matrix/data frame
 of covariates, one row per sample. An intercept column is prepended
 automatically; do not include one.}
+
+\item{block_size}{Number of variant columns decoded at once. \code{NULL} chooses
+a block holding at most roughly 64 MiB of decoded doubles. This affects
+memory use and speed, not the result.}
 }
 \value{
 A data frame with one row per variant (in tensor column order)

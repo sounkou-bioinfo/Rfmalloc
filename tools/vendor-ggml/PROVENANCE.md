@@ -33,11 +33,10 @@ immutable CRAN artifact plus a small, documented patch set, both kept here.
   the stdio/abort compliance shim GGML's C needs to run safely inside R. Its
   *git* history is not usable for pinning (the maintainer resets/squashes the
   repo on each release); its *CRAN tarballs* are. We vendor from the tarball.
-- `manifest.txt` lists the 52 GGML files we compile (the CPU backend subset);
-  ggmlR 0.7.8 also ships `ggml-opt`, `onnx/`, x86 arch kernels, and a full
-  `ggml-vulkan/` tree that we do **not** copy (see "GPU path" below).
-- 45 of those 52 files are byte-identical to stock ggmlR 0.7.8; the other 7 are
-  our patches below.
+- `manifest.txt` is the exact source-of-truth list copied from ggmlR. It covers
+  the GGML core, CPU and optional Vulkan backends, quantization, shaders, and
+  the official `gguf.cpp` implementation. Files changed locally are represented
+  by the patch set below.
 
 ## Second base: the ARM kernels
 
@@ -60,7 +59,7 @@ instruction the host lacks.
   dispatcher (`packages/Rggml/tools/simd/`) exists to avoid, and what forces
   GGML upstream into `GGML_CPU_ALL_VARIANTS` + `dlopen`.
 
-## patches/ - our 9 local edits, on top of stock 0.7.8
+## patches/ - local edits on top of stock 0.7.8
 
 | patch | rationale |
 |---|---|

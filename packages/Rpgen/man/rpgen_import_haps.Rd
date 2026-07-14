@@ -28,13 +28,10 @@ calling plink2's own \code{OxHapslegendToPgen()} importer, with the defaults a
 plain \verb{plink2 --haps <haps> --legend <legend> <chr> --sample <sample> --make-pgen} would use.
 }
 \details{
-A \code{.haps}/\code{.legend} pair encodes \emph{phased} haplotypes, and the produced
-\code{.pgen} faithfully carries that phase - but Rpgen's current readers
-(\code{\link[=rpgen_read_hardcalls]{rpgen_read_hardcalls()}}, \code{\link[=rpgen_read_dosages]{rpgen_read_dosages()}}) only read the
-collapsed, unphased hardcall/dosage view; reading phase back is a future
-milestone. The genotypes themselves (0/1/2 copies of the alternate
-allele) still round-trip correctly through the existing readers - only
-which haplotype carries which allele is not yet recoverable.
+A \code{.haps}/\code{.legend} pair encodes phased haplotypes and the produced \code{.pgen}
+carries that phase. \code{\link[=rpgen_haplotypes]{rpgen_haplotypes()}} and \code{\link[=rpgen_ingest]{rpgen_ingest()}} recover it
+through pgenlib's \code{PgrGetP()} path. The hardcall and dosage readers expose
+the corresponding phase-collapsed non-reference count.
 
 \code{chr} is required: the classic IMPUTE2 \code{.legend} format (\verb{id position a0 a1}, no chromosome column) does not carry its own chromosome, so plink2
 itself requires one whenever \code{--legend} is used (confirmed via

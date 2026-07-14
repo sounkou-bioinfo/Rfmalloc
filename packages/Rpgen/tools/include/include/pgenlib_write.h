@@ -20,6 +20,10 @@
 
 // pgenlib_write contains writer-specific code.
 
+#ifdef RPGEN_DIRECT_SINK
+#include "rpgen_direct_sink.h"
+#endif
+
 #include "pgenlib_misc.h"
 #include "plink2_base.h"
 
@@ -226,7 +230,23 @@ void PwcAppendBiallelicGenovec(const uintptr_t* __restrict genovec, PgenWriterCo
 
 BoolErr SpgwFlush(STPgenWriter* spgwp);
 
+#ifdef RPGEN_DIRECT_SINK
+HEADER_INLINE PglErr RpgenSpgwAppendDirect(const uintptr_t* genovec, int phase_supplied, const uintptr_t* phasepresent, const uintptr_t* phaseinfo, const uintptr_t* dosage_present, const uint16_t* dosage_main, uint32_t dosage_ct, STPgenWriter* spgwp) {
+  PgenWriterCommon* pwcp = &GET_PRIVATE(*spgwp, pwc);
+  if (unlikely(::rpgen_direct_sink_append(pwcp->vidx, pwcp->sample_ct, genovec, phase_supplied, phasepresent, phaseinfo, dosage_present, dosage_main, dosage_ct))) {
+    return kPglRetWriteFail;
+  }
+  ++pwcp->vidx;
+  return kPglRetSuccess;
+}
+#endif
+
 HEADER_INLINE PglErr SpgwAppendBiallelicGenovec(const uintptr_t* __restrict genovec, STPgenWriter* spgwp) {
+#ifdef RPGEN_DIRECT_SINK
+  if (unlikely(::rpgen_direct_sink_active())) {
+    return RpgenSpgwAppendDirect(genovec, 0, nullptr, nullptr, nullptr, nullptr, 0, spgwp);
+  }
+#endif
   if (unlikely(SpgwFlush(spgwp))) {
     return kPglRetWriteFail;
   }
@@ -243,6 +263,16 @@ HEADER_INLINE PglErr SpgwAppendBiallelicGenovec(const uintptr_t* __restrict geno
 void PwcAppendBiallelicDifflistLimited(const uintptr_t* __restrict raregeno, const uint32_t* __restrict difflist_sample_ids, uint32_t difflist_common_geno, uint32_t difflist_len, PgenWriterCommon* pwcp);
 
 HEADER_INLINE PglErr SpgwAppendBiallelicDifflistLimited(const uintptr_t* __restrict raregeno, const uint32_t* __restrict difflist_sample_ids, uint32_t difflist_common_geno, uint32_t difflist_len, STPgenWriter* spgwp) {
+#ifdef RPGEN_DIRECT_SINK
+  if (unlikely(::rpgen_direct_sink_active())) {
+    PgenWriterCommon* pwcp = &GET_PRIVATE(*spgwp, pwc);
+    if (unlikely(::rpgen_direct_sink_append_difflist(pwcp->vidx, pwcp->sample_ct, raregeno, difflist_sample_ids, difflist_common_geno, difflist_len))) {
+      return kPglRetWriteFail;
+    }
+    ++pwcp->vidx;
+    return kPglRetSuccess;
+  }
+#endif
   if (unlikely(SpgwFlush(spgwp))) {
     return kPglRetWriteFail;
   }
@@ -268,6 +298,11 @@ HEADER_INLINE PglErr SpgwAppendBiallelicDifflistLimited(const uintptr_t* __restr
 BoolErr PwcAppendMultiallelicSparse(const uintptr_t* __restrict genovec, const uintptr_t* __restrict patch_01_set, const AlleleCode* __restrict patch_01_vals, const uintptr_t* __restrict patch_10_set, const AlleleCode* __restrict patch_10_vals, uint32_t allele_ct, uint32_t patch_01_ct, uint32_t patch_10_ct, PgenWriterCommon* pwcp);
 
 HEADER_INLINE PglErr SpgwAppendMultiallelicSparse(const uintptr_t* __restrict genovec, const uintptr_t* __restrict patch_01_set, const AlleleCode* __restrict patch_01_vals, const uintptr_t* __restrict patch_10_set, const AlleleCode* __restrict patch_10_vals, uint32_t allele_ct, uint32_t patch_01_ct, uint32_t patch_10_ct, STPgenWriter* spgwp) {
+#ifdef RPGEN_DIRECT_SINK
+  if (unlikely(::rpgen_direct_sink_active())) {
+    return RpgenSpgwAppendDirect(genovec, 0, nullptr, nullptr, nullptr, nullptr, 0, spgwp);
+  }
+#endif
   if (unlikely(SpgwFlush(spgwp))) {
     return kPglRetWriteFail;
   }
@@ -303,6 +338,11 @@ void PwcAppendBiallelicGenovecHphase(const uintptr_t* __restrict genovec, const 
 // ok for trailing bits of phaseinfo to not be zeroed out, NOT currently ok for
 //   phasepresent
 HEADER_INLINE PglErr SpgwAppendBiallelicGenovecHphase(const uintptr_t* __restrict genovec, const uintptr_t* __restrict phasepresent, const uintptr_t* __restrict phaseinfo, STPgenWriter* spgwp) {
+#ifdef RPGEN_DIRECT_SINK
+  if (unlikely(::rpgen_direct_sink_active())) {
+    return RpgenSpgwAppendDirect(genovec, 1, phasepresent, phaseinfo, nullptr, nullptr, 0, spgwp);
+  }
+#endif
   if (unlikely(SpgwFlush(spgwp))) {
     return kPglRetWriteFail;
   }
@@ -314,6 +354,11 @@ HEADER_INLINE PglErr SpgwAppendBiallelicGenovecHphase(const uintptr_t* __restric
 BoolErr PwcAppendMultiallelicGenovecHphase(const uintptr_t* __restrict genovec, const uintptr_t* __restrict patch_01_set, const AlleleCode* __restrict patch_01_vals, const uintptr_t* __restrict patch_10_set, const AlleleCode* __restrict patch_10_vals, const uintptr_t* __restrict phasepresent, const uintptr_t* __restrict phaseinfo, uint32_t allele_ct, uint32_t patch_01_ct, uint32_t patch_10_ct, PgenWriterCommon* pwcp);
 
 HEADER_INLINE PglErr SpgwAppendMultiallelicGenovecHphase(const uintptr_t* __restrict genovec, const uintptr_t* __restrict patch_01_set, const AlleleCode* __restrict patch_01_vals, const uintptr_t* __restrict patch_10_set, const AlleleCode* __restrict patch_10_vals, const uintptr_t* __restrict phasepresent, const uintptr_t* __restrict phaseinfo, uint32_t allele_ct, uint32_t patch_01_ct, uint32_t patch_10_ct, STPgenWriter* spgwp) {
+#ifdef RPGEN_DIRECT_SINK
+  if (unlikely(::rpgen_direct_sink_active())) {
+    return RpgenSpgwAppendDirect(genovec, 1, phasepresent, phaseinfo, nullptr, nullptr, 0, spgwp);
+  }
+#endif
   if (unlikely(SpgwFlush(spgwp))) {
     return kPglRetWriteFail;
   }
@@ -330,6 +375,11 @@ HEADER_INLINE PglErr SpgwAppendMultiallelicGenovecHphase(const uintptr_t* __rest
 BoolErr PwcAppendBiallelicGenovecDosage16(const uintptr_t* __restrict genovec, const uintptr_t* __restrict dosage_present, const uint16_t* dosage_main, uint32_t dosage_ct, PgenWriterCommon* pwcp);
 
 HEADER_INLINE PglErr SpgwAppendBiallelicGenovecDosage16(const uintptr_t* __restrict genovec, const uintptr_t* __restrict dosage_present, const uint16_t* dosage_main, uint32_t dosage_ct, STPgenWriter* spgwp) {
+#ifdef RPGEN_DIRECT_SINK
+  if (unlikely(::rpgen_direct_sink_active())) {
+    return RpgenSpgwAppendDirect(genovec, 0, nullptr, nullptr, dosage_present, dosage_main, dosage_ct, spgwp);
+  }
+#endif
   if (unlikely(SpgwFlush(spgwp))) {
     return kPglRetWriteFail;
   }
@@ -343,6 +393,11 @@ HEADER_INLINE PglErr SpgwAppendBiallelicGenovecDosage16(const uintptr_t* __restr
 BoolErr PwcAppendBiallelicGenovecHphaseDosage16(const uintptr_t* __restrict genovec, const uintptr_t* __restrict phasepresent, const uintptr_t* __restrict phaseinfo, const uintptr_t* __restrict dosage_present, const uint16_t* dosage_main, uint32_t dosage_ct, PgenWriterCommon* pwcp);
 
 HEADER_INLINE PglErr SpgwAppendBiallelicGenovecHphaseDosage16(const uintptr_t* __restrict genovec, const uintptr_t* __restrict phasepresent, const uintptr_t* __restrict phaseinfo, const uintptr_t* __restrict dosage_present, const uint16_t* dosage_main, uint32_t dosage_ct, STPgenWriter* spgwp) {
+#ifdef RPGEN_DIRECT_SINK
+  if (unlikely(::rpgen_direct_sink_active())) {
+    return RpgenSpgwAppendDirect(genovec, 1, phasepresent, phaseinfo, dosage_present, dosage_main, dosage_ct, spgwp);
+  }
+#endif
   if (unlikely(SpgwFlush(spgwp))) {
     return kPglRetWriteFail;
   }
@@ -361,6 +416,11 @@ HEADER_INLINE PglErr SpgwAppendBiallelicGenovecHphaseDosage16(const uintptr_t* _
 BoolErr PwcAppendBiallelicGenovecDphase16(const uintptr_t* __restrict genovec, const uintptr_t* __restrict phasepresent, const uintptr_t* __restrict phaseinfo, const uintptr_t* __restrict dosage_present, const uintptr_t* __restrict dphase_present, const uint16_t* dosage_main, const int16_t* dphase_delta, uint32_t dosage_ct, uint32_t dphase_ct, PgenWriterCommon* pwcp);
 
 HEADER_INLINE PglErr SpgwAppendBiallelicGenovecDphase16(const uintptr_t* __restrict genovec, const uintptr_t* __restrict phasepresent, const uintptr_t* __restrict phaseinfo, const uintptr_t* __restrict dosage_present, const uintptr_t* dphase_present, const uint16_t* dosage_main, const int16_t* dphase_delta, uint32_t dosage_ct, uint32_t dphase_ct, STPgenWriter* spgwp) {
+#ifdef RPGEN_DIRECT_SINK
+  if (unlikely(::rpgen_direct_sink_active())) {
+    return RpgenSpgwAppendDirect(genovec, 1, phasepresent, phaseinfo, dosage_present, dosage_main, dosage_ct, spgwp);
+  }
+#endif
   if (unlikely(SpgwFlush(spgwp))) {
     return kPglRetWriteFail;
   }

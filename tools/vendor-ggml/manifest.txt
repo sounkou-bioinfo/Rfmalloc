@@ -244,4 +244,5 @@ ggml-vulkan/vulkan-shaders/vulkan-shaders-gen.cpp
 ggml-vulkan/vulkan-shaders/wkv6.comp
 ggml-vulkan/vulkan-shaders/wkv7.comp
 ggml-vulkan/vulkan-shaders/xielu.comp
+gguf.cpp
 gguf.h

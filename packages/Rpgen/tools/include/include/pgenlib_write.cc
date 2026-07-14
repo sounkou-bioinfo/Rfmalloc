@@ -273,6 +273,25 @@ static_assert(kPglMaxAlleleCt == 255, "Need to update SpgwInitPhase1Ex().");
 PglErr SpgwInitPhase1Ex(const char* __restrict fname, const uintptr_t* __restrict allele_idx_offsets, uintptr_t* __restrict explicit_nonref_flags, PgenExtensionLl* header_exts, PgenExtensionLl* footer_exts, uint32_t variant_ct_limit, uint32_t sample_ct, uint32_t allele_ct_upper_bound, PgenWriteMode write_mode, PgenGlobalFlags phase_dosage_gflags, uint32_t nonref_flags_storage, STPgenWriter* spgwp, uintptr_t* alloc_cacheline_ct_ptr, uint32_t* max_vrec_len_ptr) {
   assert(variant_ct_limit);
   assert(sample_ct);
+#ifdef RPGEN_DIRECT_SINK
+  if (unlikely(::rpgen_direct_sink_active())) {
+    PgenWriterCommon* pwcp = GetPwcp(spgwp);
+    memset(pwcp, 0, sizeof(*pwcp));
+    pwcp->variant_ct_limit = variant_ct_limit;
+    pwcp->sample_ct = sample_ct;
+    pwcp->phase_dosage_gflags = phase_dosage_gflags;
+    pwcp->nonref_flags_storage = nonref_flags_storage;
+    *GetPgenOutfilep(spgwp) = nullptr;
+    *GetPgiOrFinalPgenOutfilep(spgwp) = nullptr;
+    *GetFnameBufp(spgwp) = nullptr;
+    *alloc_cacheline_ct_ptr = 0;
+    *max_vrec_len_ptr = 0;
+    if (unlikely(::rpgen_direct_sink_open(variant_ct_limit, sample_ct))) {
+      return kPglRetWriteFail;
+    }
+    return kPglRetSuccess;
+  }
+#endif
 
   // separate from MpgwInitPhase1's version of this computation since the
   // latter wants a better bound on the compressed size of an entire vblock
@@ -552,6 +571,11 @@ void PwcInitPhase2(uintptr_t fwrite_cacheline_ct, uint32_t thread_ct, PgenWriter
 }
 
 void SpgwInitPhase2(uint32_t max_vrec_len, STPgenWriter* spgwp, unsigned char* spgw_alloc) {
+#ifdef RPGEN_DIRECT_SINK
+  if (unlikely(::rpgen_direct_sink_active())) {
+    return;
+  }
+#endif
   const uintptr_t fwrite_cacheline_ct = DivUp(max_vrec_len + kPglFwriteBlockSize + (5 + sizeof(AlleleCode)) * kPglDifflistGroupSize, kCacheline);
   PgenWriterCommon* pwcp = GetPwcp(spgwp);
   PwcInitPhase2(fwrite_cacheline_ct, 1, &pwcp, spgw_alloc);
@@ -1040,6 +1064,11 @@ void PwcAppendBiallelicGenovec(const uintptr_t* __restrict genovec, PgenWriterCo
 }
 
 BoolErr SpgwFlush(STPgenWriter* spgwp) {
+#ifdef RPGEN_DIRECT_SINK
+  if (unlikely(::rpgen_direct_sink_active())) {
+    return 0;
+  }
+#endif
   PgenWriterCommon* pwcp = GetPwcp(spgwp);
   if (pwcp->fwrite_bufp >= &(pwcp->fwrite_buf[kPglFwriteBlockSize])) {
     const uintptr_t cur_byte_ct = pwcp->fwrite_bufp - pwcp->fwrite_buf;
@@ -2528,6 +2557,13 @@ PglErr PwcFinish(PgenWriterCommon* pwcp, FILE** pgen_outfile_ptr, FILE** pgi_or_
 }
 
 PglErr SpgwFinish(STPgenWriter* spgwp) {
+#ifdef RPGEN_DIRECT_SINK
+  if (unlikely(::rpgen_direct_sink_active())) {
+    PgenWriterCommon* pwcp = GetPwcp(spgwp);
+    return ::rpgen_direct_sink_writer_finish(pwcp->variant_ct_limit,
+        pwcp->vidx)? kPglRetWriteFail : kPglRetSuccess;
+  }
+#endif
   PgenWriterCommon* pwcp = GetPwcp(spgwp);
   FILE** pgen_outfilep = GetPgenOutfilep(spgwp);
   if (unlikely(fwrite_checked(pwcp->fwrite_buf, pwcp->fwrite_bufp - pwcp->fwrite_buf, *pgen_outfilep))) {
@@ -2570,6 +2606,11 @@ PglErr MpgwFlush(MTPgenWriter* mpgwp) {
 }
 
 BoolErr CleanupSpgw(STPgenWriter* spgwp, PglErr* reterrp) {
+#ifdef RPGEN_DIRECT_SINK
+  if (unlikely(::rpgen_direct_sink_active())) {
+    return 0;
+  }
+#endif
   // assume file is open if spgw.pgen_outfile is not null
   // memory is the responsibility of the caller for now
   FILE** pgen_outfilep = GetPgenOutfilep(spgwp);

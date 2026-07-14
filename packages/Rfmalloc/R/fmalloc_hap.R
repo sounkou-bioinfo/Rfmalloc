@@ -3,7 +3,10 @@
 #' Encodes an `L x N` matrix of phased haplotype calls (`0`/`1`, variants in
 #' rows, haplotypes in columns - the convention `kalis::CacheHaplotypes()`
 #' expects for a matrix source) into fmalloc-backed, memory-mapped storage at
-#' one bit per call.
+#' one bit per call. The file layout is locus-major: all haplotypes at one
+#' variant form a contiguous bit row, and each row begins on a 64-byte
+#' boundary. This is the layout kalis builds internally and the access pattern
+#' Li and Stephens forward/backward kernels consume.
 #'
 #' This is a SIBLING interface to the matmul [fmalloc_tensor] codec ABI, not
 #' an instance of it: haplotype hidden-Markov methods (Li and Stephens local-
@@ -12,14 +15,17 @@
 #' participates in `%*%`. It shares the same fmalloc storage substrate as
 #' [fmalloc_bed()] and the typed tensors, with its own encode/decode pair.
 #'
-#' One bit per call is thirty-two times tighter than an integer `0`/`1`
-#' matrix and sixty-four times tighter than the double matrix a naive
-#' pipeline would build, so a haplotype panel that does not fit in RAM as
-#' doubles still fits as a memory-mapped bitset.
+#' The packed body is one bit per call, asymptotically thirty-two times tighter
+#' than an integer `0`/`1` matrix and sixty-four times tighter than doubles.
+#' Each locus is padded to a 64-byte boundary so an HMM kernel can load donor
+#' words without repacking; that padding is visible for very small panels.
 #'
 #' @param x An integer, numeric, or logical matrix of haplotype calls, values
 #'   `0` or `1` only (no missing calls: phased haplotypes do not have them,
 #'   and neither does `kalis`'s own matrix input).
+#' @param payload An fmalloc raw vector created by the native haplotype buffer
+#'   writer.
+#' @param dim Integer dimensions `c(n_variant, n_haplotype)` for `payload`.
 #' @param runtime Runtime handle from [open_fmalloc()]; defaults to the
 #'   runtime established by [init_fmalloc()].
 #' @param ... Unused.
@@ -47,7 +53,20 @@ fmalloc_haplotypes <- function(x, runtime = NULL) {
         }
     }
     payload <- .Call("rfm_hap_encode_impl", x, runtime)
-    attr(payload, "rfm_dims") <- dim(x)
+    create_fmalloc_haplotypes(payload, dim(x))
+}
+
+#' @rdname fmalloc_haplotypes
+#' @export
+create_fmalloc_haplotypes <- function(payload, dim) {
+    if (!is_fmalloc_vector(payload) || !is.raw(payload)) {
+        stop("payload must be an fmalloc raw vector")
+    }
+    dims <- .fmalloc_validate_dimensions(dim, "dim")
+    if (length(dims) != 2L) {
+        stop("dim must be c(n_variant, n_haplotype)")
+    }
+    attr(payload, "rfm_dims") <- as.integer(dims)
     class(payload) <- c("fmalloc_haplotypes", "fmalloc")
     payload
 }
@@ -103,7 +122,7 @@ dim.fmalloc_haplotypes <- function(x) {
 print.fmalloc_haplotypes <- function(x, ...) {
     dims <- attr(x, "rfm_dims")
     cat(sprintf(
-        "<fmalloc_haplotypes [%d variants x %d haplotypes], %d payload bytes (1 bit/call)>\n",
+        "<fmalloc_haplotypes [%d variants x %d haplotypes], %d locus-major payload bytes>\n",
         dims[1L], dims[2L], length(unclass(x))
     ))
     invisible(x)

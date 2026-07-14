@@ -1,54 +1,32 @@
-# RfmallocStatgen roadmap
+# RfmallocStatgen research programme
 
-RfmallocStatgen is the statistical-genetics layer of the Rfmalloc stack: it
-runs genome-scale methods over fmalloc-backed genotype tensors, closing over
-bigsnpr's analysis stack on denser storage with native readers, and adding
-the haplotype methods bigsnpr cannot.
+RfmallocStatgen closes statistical-genetics algorithms over the smallest typed
+store each one needs. Dense genotype matrices and dense LD matrices are not the
+universal intermediate.
 
-Every method is validated against bigsnpr/bigstatsr as the reference oracle
-(clean-room from the published algorithms; both are GPL-3, so we implement
-the methods, never lift code).
+## Implemented
 
-**Tier 1: genotype-touching** (over `bed`/`dosage` fmalloc tensors)
+- Genotype tensor methods: linear GWAS in `statgen_gwas_lin()`, streamed
+  randomized-SVD PCA in `statgen_pca()`, and banded LD construction in
+  `statgen_snp_cor()`.
+- LD-store methods: `statgen_ldpred2_inf()`, `statgen_ldpred2()`, and
+  `statgen_ldpred2_auto()` read neighbour runs from `fmalloc_ld` rather than a
+  dense variant-by-variant matrix.
+- Signal-matrix methods: `statgen_coloc_bf()` casts every signal-pair coupling
+  as one matrix multiply and can use any registered backend.
 
-- Univariate GWAS regression, linear and logistic (bigstatsr
-  `big_univLinReg`/`big_univLogReg`). [linear: SHIPPED as the first method,
-  `statgen_gwas_lin()`]
-- `snp_cor`: windowed LD correlation into a banded LD matrix (Rfmalloc `ld`
-  codec). [SHIPPED as `statgen_snp_cor()`: streams the genotype tensor one
-  variant column at a time, packs the banded correlations into an `fmalloc_ld`
-  store; validated against `stats::cor()` and `bigsnpr::snp_cor()`]
-- LD clumping and pruning.
-- Genetic relatedness matrix (GRM) / `tcrossprodSelf`.
-- Randomized-SVD PCA with iterative LD-region removal (`autoSVD`), PCA
-  projection.
+Direct dense references and optional bigsnpr/bigstatsr comparisons pin the
+numerical contracts. PCA's randomized-SVD core is pinned from GPL-3 PCAone;
+the other methods are clean-room implementations of their published
+algorithms.
 
-**Tier 2: LD-matrix-only** (storage-agnostic sparse linear algebra over the
-LD matrix)
+## Open contradictions
 
-- LDpred2 and LDpred2-auto (Gibbs sampling over the LD matrix + GWAS
-  `beta_hat`). [SHIPPED as `statgen_ldpred2_inf()` (deterministic ridge solve),
-  `statgen_ldpred2()` (grid Gibbs) and `statgen_ldpred2_auto()` (auto Gibbs),
-  clean-room over the banded `fmalloc_ld` store; validated against
-  `bigsnpr::snp_ldpred2_inf` (exact) / `snp_ldpred2_grid` / `snp_ldpred2_auto`]
-- lassosum2 (coordinate descent).
-- LD score regression (heritability).
-- `split-LD`: min-cost dynamic-programming partition of the genome into LD
-  blocks.
-
-**Haplotype methods** (additive; bigsnpr has none)
-
-- Li and Stephens HMM local ancestry (kalis-class, over
-  `fmalloc_haplotypes`).
-- Chromosome painting, IBD, phasing-aware analyses.
-- A fork of kalis reading directly from `fmalloc_haplotypes` (and eventually
-  GPU-accelerating the Li and Stephens forward-backward) is a candidate,
-  since plink2's Oxford .haps import gives a lean phased-haplotype input
-  path.
-
-**GPU**: Rfmalloc's own portable, vendor-neutral GPU composition (Rggml's
-Vulkan backend + the device-buffer residency API) already serves the
-genotype GEMM (`crossprod`/`%*%`); it runs on any vendor's GPU, not just
-NVIDIA. Benchmarking a real GPU number needs a Vulkan-visible discrete GPU (a
-native-Linux vendor driver); the WSL rig exposes only llvmpipe to Vulkan, so
-its RTX 5050 is CUDA-only there.
+- Genotype touching: logistic regression, LD clumping and pruning, GRM,
+  iterative LD-region removal, autoSVD, and PCA projection.
+- LD only: lassosum2, LD score regression, and split-LD.
+- Phase aware: direct locus-row access for Li and Stephens local ancestry,
+  chromosome painting, IBD, and kalis-class forward-backward kernels.
+- Compute: keep GPU work behind the backend decline contract. The current WSL
+  rig exposes the RTX 5050 through CUDA only, so a real Vulkan measurement
+  needs a native-Linux Vulkan-visible device.

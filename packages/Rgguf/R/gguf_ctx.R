@@ -2,14 +2,11 @@
 #'
 #' Opens a 'GGUF' model file and returns a lightweight context handle used by
 #' [gguf_metadata()], [gguf_tensors()], [gguf_tensor()], and [gguf_import()].
-#' The file is memory-mapped by the vendored 'gguflib' parser and unmapped
+#' Metadata and the tensor directory are parsed by Rggml's official GGUF
+#' implementation. Tensor bytes are mapped read-only and unmapped
 #' automatically when the returned object is garbage collected, or earlier if
 #' you call `gguf_import()`/friends with a plain file path (which open and
 #' close their own short-lived context internally).
-#'
-#' The vendored parser memory-maps the file read/write (`mmap(..., PROT_READ
-#' | PROT_WRITE, MAP_SHARED, ...)`), so `path` must point to a *writable*
-#' file even if you only intend to read tensors from it.
 #'
 #' @param path Character string giving the path to a GGUF file.
 #'

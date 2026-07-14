@@ -11,13 +11,13 @@
 #       - Data.{hpp,cpp}   the read_block_initial/read_block_update abstraction
 #       - RSVD.hpp         the header-only Eigen RSVD primitives
 #       - Common.hpp Cmd.hpp Logger.hpp Timer.hpp   the small header closure
-#       + (one deterministic trim: Common.hpp's zstd include, see below)
+#       + deterministic R-package adaptations described below
 #
 # recorded here and verifiable by re-running this script.
 #
 # WHAT IS VENDORED (this script, byte-checked in `check` mode):
-#   verbatim : Halko.hpp Halko.cpp Data.hpp Data.cpp RSVD.hpp Logger.hpp
-#              Timer.hpp Cmd.hpp   - copied byte-for-byte from the pinned commit.
+#   verbatim : Halko.hpp Halko.cpp Data.hpp Data.cpp RSVD.hpp Timer.hpp Cmd.hpp
+#              - copied byte-for-byte from the pinned commit.
 #   trimmed  : Common.hpp - copied verbatim EXCEPT the two consecutive lines
 #              "#define ZSTD_STATIC_LINKING_ONLY" and #include "zstd.h". PCAone
 #              pulls zstd in through Common.hpp for its compressed readers;
@@ -25,6 +25,11 @@
 #              zstd, and nothing in Common.hpp itself uses it. Removing exactly
 #              those two lines is deterministic, so the trimmed result is still
 #              byte-checked against the recipe.
+#   adapted  : Logger.hpp - initializes its screen flag to false and routes the
+#              optional ostream-compatible screen sink through Rprintf/REprintf
+#              instead of std::cout/std::cerr. This removes undefined behaviour
+#              from the upstream default constructor and keeps output on R's
+#              console. The transformation asserts every edited anchor.
 #
 # WHAT IS NOT VENDORED BY THIS SCRIPT (hand-authored, NOT byte-checked - the same
 # rule vendorpgen.R applies to its Makevars):
@@ -83,11 +88,12 @@ verbatim_files <- c(
   "Halko.hpp", "Halko.cpp",
   "Data.hpp", "Data.cpp",
   "RSVD.hpp",
-  "Logger.hpp", "Timer.hpp",
+  "Timer.hpp",
   "Cmd.hpp"
 )
 # Common.hpp gets the one deterministic trim described in the header.
 trimmed_file <- "Common.hpp"
+adapted_file <- "Logger.hpp"
 
 sha256 <- function(path) unname(tools::sha256sum(path))
 
@@ -137,6 +143,67 @@ trim_common <- function(lines) {
   lines[-c(def_idx, inc_idx)]
 }
 
+adapt_logger <- function(lines) {
+  guard <- grep("^#define LOG_H_$", lines)
+  include_end <- grep("^#include <sstream>$", lines)
+  flag <- grep("^  bool is_screen;$", lines)
+  ctor <- grep("^  Logger\\(\\) \\{\\}$", lines)
+  if (length(guard) != 1 || length(include_end) != 1 ||
+      length(flag) != 1 || length(ctor) != 1) {
+    stop("Logger.hpp: R-console adaptation anchors changed upstream")
+  }
+
+  lines <- append(lines, "#include <R_ext/Print.h>", after = guard)
+  include_end <- grep("^#include <sstream>$", lines)
+  bridge <- c(
+    "",
+    "class RConsoleBuffer : public std::streambuf {",
+    " public:",
+    "  explicit RConsoleBuffer(bool error) : error_(error) {}",
+    "",
+    " protected:",
+    "  int_type overflow(int_type ch) override {",
+    "    if (traits_type::eq_int_type(ch, traits_type::eof()))",
+    "      return traits_type::not_eof(ch);",
+    "    const char c = traits_type::to_char_type(ch);",
+    "    xsputn(&c, 1);",
+    "    return ch;",
+    "  }",
+    "",
+    "  std::streamsize xsputn(const char* text, std::streamsize size) override {",
+    "    if (size <= 0) return 0;",
+    "    const std::string value(text, static_cast<size_t>(size));",
+    "    if (error_)",
+    "      REprintf(\"%s\", value.c_str());",
+    "    else",
+    "      Rprintf(\"%s\", value.c_str());",
+    "    return size;",
+    "  }",
+    "",
+    " private:",
+    "  bool error_;",
+    "};",
+    "",
+    "inline RConsoleBuffer r_stdout_buffer(false);",
+    "inline RConsoleBuffer r_stderr_buffer(true);",
+    "inline std::ostream r_cout(&r_stdout_buffer);",
+    "inline std::ostream r_cerr(&r_stderr_buffer);"
+  )
+  lines <- append(lines, bridge, after = include_end)
+  lines[grep("^  bool is_screen;$", lines)] <- "  bool is_screen = false;"
+  lines[grep("^  Logger\\(\\) \\{\\}$", lines)] <- "  Logger() = default;"
+  if (!any(grepl("std::cout", lines, fixed = TRUE)) ||
+      !any(grepl("std::cerr", lines, fixed = TRUE))) {
+    stop("Logger.hpp: expected std::cout and std::cerr uses were not found")
+  }
+  lines <- gsub("std::cout", "r_cout", lines, fixed = TRUE)
+  lines <- gsub("std::cerr", "r_cerr", lines, fixed = TRUE)
+  if (any(grepl("std::cout|std::cerr", lines))) {
+    stop("Logger.hpp: incomplete R-console adaptation")
+  }
+  lines
+}
+
 ## --- regenerate --------------------------------------------------------------
 tb   <- fetch_base()
 work <- tempfile("vendorpcaone-")
@@ -165,6 +232,10 @@ message("copy Common.hpp with the zstd-include trim")
 common_lines <- readLines(file.path(src, trimmed_file))
 writeLines(trim_common(common_lines), file.path(out_pcaone, trimmed_file))
 
+message("copy Logger.hpp with the R-console adaptation")
+logger_lines <- readLines(file.path(src, adapted_file))
+writeLines(adapt_logger(logger_lines), file.path(out_pcaone, adapted_file))
+
 if (mode == "check") {
   mism <- character(0)
   check_file <- function(rel) {
@@ -174,11 +245,12 @@ if (mode == "check") {
   }
   for (f in verbatim_files) check_file(f)
   check_file(trimmed_file)
+  check_file(adapted_file)
 
   if (length(mism) == 0) {
     message("OK: committed vendored PCAone core == vendorpcaone.R output (",
             length(verbatim_files) + 1L,
-            " files; Utils.{hpp,cpp} hand-authored, not checked)")
+            " files plus Logger.hpp; Utils.{hpp,cpp} hand-authored, not checked)")
   } else {
     stop("MISMATCH - committed tree no longer equals the recipe:\n  ",
          paste(mism, collapse = "\n  "))

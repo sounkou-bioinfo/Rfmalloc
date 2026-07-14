@@ -1,11 +1,8 @@
 /*
  * rllm_graph.c - a llama-architecture forward pass assembled from Rggml's
- * C-callable graph ops (API version 5) over weights that live in caller-owned
- * memory: fmalloc-mmap'd GGUF payloads (still quantized, or f32) and small f32
- * buffers for the 1-d norm weights. No KV cache yet: the graph attends over
- * the whole token batch with a causal mask and returns the logits for every
- * position - the "prompt -> logits" milestone, verified against a pure-R
- * reference implementation in the tinytest suite.
+ * C-callable graph ops over borrowed GGUF weight spans. Quantized and float
+ * weights point directly into the model's read-only mapping. The graph handles
+ * a whole causal batch or appends to an optional KV cache.
  *
  * Two ggml contexts, llama.cpp-style:
  *   - a no_alloc weights context whose tensors point zero-copy at the R-owned
@@ -22,6 +19,7 @@
 #include <R.h>
 #include <Rinternals.h>
 
+#include <Rfmalloc.h>
 #include <Rggml.h>
 
 /* From rllm_backend.c: codec-name -> quantized ggml type (declines floats). */
@@ -62,7 +60,8 @@ static double rllm_hparam(SEXP hparams, const char *name)
  */
 static struct ggml_tensor *rllm_weight(struct ggml_context *wctx, SEXP tensors,
                                        const char *name,
-                                       Rggml_new_tensor_fun new_tensor)
+                                       Rggml_new_tensor_fun new_tensor,
+                                       Rfmalloc_storage_data_fun storage_data)
 {
     SEXP w = rllm_list_elt(tensors, name);
     if (w == R_NilValue) Rf_error("missing weight tensor '%s'", name);
@@ -70,9 +69,9 @@ static struct ggml_tensor *rllm_weight(struct ggml_context *wctx, SEXP tensors,
     SEXP payload = rllm_list_elt(w, "payload");
     SEXP type_s  = rllm_list_elt(w, "type");
     SEXP dims_s  = rllm_list_elt(w, "dims");
-    if (TYPEOF(payload) != RAWSXP || TYPEOF(type_s) != STRSXP ||
-        TYPEOF(dims_s) != INTSXP) {
-        Rf_error("weight '%s' must be list(payload = raw, type = chr, dims = int)", name);
+    if (TYPEOF(type_s) != STRSXP || XLENGTH(type_s) != 1 ||
+        STRING_ELT(type_s, 0) == NA_STRING || TYPEOF(dims_s) != INTSXP) {
+        Rf_error("weight '%s' must be list(payload, type = chr, dims = int)", name);
     }
 
     enum ggml_type type;
@@ -85,25 +84,39 @@ static struct ggml_tensor *rllm_weight(struct ggml_context *wctx, SEXP tensors,
     if (n_dims < 1 || n_dims > 2) {
         Rf_error("weight '%s': expected 1 or 2 dims, got %d", name, n_dims);
     }
+    for (int i = 0; i < n_dims; ++i) {
+        if (INTEGER(dims_s)[i] == NA_INTEGER || INTEGER(dims_s)[i] <= 0) {
+            Rf_error("weight '%s': dimensions must be positive", name);
+        }
+    }
     int64_t ne[2] = { INTEGER(dims_s)[0], n_dims == 2 ? INTEGER(dims_s)[1] : 1 };
 
+    const void *payload_data;
+    size_t payload_bytes;
+    if (storage_data(payload, &payload_data, &payload_bytes, NULL) != 0) {
+        Rf_error("weight '%s': unsupported storage payload", name);
+    }
     Rggml_row_size_fun row_size = Rggml_row_size_ptr();
-    if ((double) XLENGTH(payload) < (double) row_size(type, ne[0]) * (double) ne[1]) {
+    const size_t one_row = row_size(type, ne[0]);
+    if (one_row == 0 || (uint64_t)ne[1] > SIZE_MAX / one_row ||
+        payload_bytes < one_row * (size_t)ne[1]) {
         Rf_error("weight '%s': payload too short", name);
     }
 
-    struct ggml_tensor *t = new_tensor(wctx, type, n_dims, ne, RAW(payload));
+    struct ggml_tensor *t = new_tensor(wctx, type, n_dims, ne,
+                                       (void *)payload_data);
     if (!t) Rf_error("failed to wrap weight '%s'", name);
     return t;
 }
 
 static struct ggml_tensor *rllm_layer_weight(struct ggml_context *wctx, SEXP tensors,
                                              int il, const char *suffix,
-                                             Rggml_new_tensor_fun new_tensor)
+                                             Rggml_new_tensor_fun new_tensor,
+                                             Rfmalloc_storage_data_fun storage_data)
 {
     char name[128];
     snprintf(name, sizeof(name), "blk.%d.%s", il, suffix);
-    return rllm_weight(wctx, tensors, name, new_tensor);
+    return rllm_weight(wctx, tensors, name, new_tensor, storage_data);
 }
 
 /*
@@ -221,6 +234,7 @@ SEXP RC_rllm_llama_forward(SEXP hparams, SEXP tensors, SEXP tokens_sexp,
     Rggml_view_2d_fun            view_2d    = Rggml_view_2d_ptr();
     Rggml_view_3d_fun            view_3d    = Rggml_view_3d_ptr();
     Rggml_cpy_fun                cpy        = Rggml_cpy_ptr();
+    Rfmalloc_storage_data_fun    storage_data = Rfmalloc_storage_data_ptr();
 
     ggml_backend_t backend = cpu_init();
     if (!backend) Rf_error("failed to initialize the GGML CPU backend");
@@ -271,11 +285,13 @@ SEXP RC_rllm_llama_forward(SEXP hparams, SEXP tensors, SEXP tokens_sexp,
     }
 
     /* -- weights ------------------------------------------------------------ */
-    struct ggml_tensor *tok_embd = rllm_weight(wctx, tensors, "token_embd.weight", new_tensor);
-    struct ggml_tensor *out_norm = rllm_weight(wctx, tensors, "output_norm.weight", new_tensor);
+    struct ggml_tensor *tok_embd = rllm_weight(
+        wctx, tensors, "token_embd.weight", new_tensor, storage_data);
+    struct ggml_tensor *out_norm = rllm_weight(
+        wctx, tensors, "output_norm.weight", new_tensor, storage_data);
     struct ggml_tensor *output_w =
         rllm_list_elt(tensors, "output.weight") != R_NilValue
-            ? rllm_weight(wctx, tensors, "output.weight", new_tensor)
+            ? rllm_weight(wctx, tensors, "output.weight", new_tensor, storage_data)
             : tok_embd;   /* tied embeddings */
 
     /* -- the graph ----------------------------------------------------------- */
@@ -290,15 +306,15 @@ SEXP RC_rllm_llama_forward(SEXP hparams, SEXP tensors, SEXP tokens_sexp,
     RLLM_CHECK(inpL);
 
     for (int il = 0; il < n_layer; il++) {
-        struct ggml_tensor *attn_norm = rllm_layer_weight(wctx, tensors, il, "attn_norm.weight", new_tensor);
-        struct ggml_tensor *wq = rllm_layer_weight(wctx, tensors, il, "attn_q.weight", new_tensor);
-        struct ggml_tensor *wk = rllm_layer_weight(wctx, tensors, il, "attn_k.weight", new_tensor);
-        struct ggml_tensor *wv = rllm_layer_weight(wctx, tensors, il, "attn_v.weight", new_tensor);
-        struct ggml_tensor *wo = rllm_layer_weight(wctx, tensors, il, "attn_output.weight", new_tensor);
-        struct ggml_tensor *ffn_norm = rllm_layer_weight(wctx, tensors, il, "ffn_norm.weight", new_tensor);
-        struct ggml_tensor *w_gate = rllm_layer_weight(wctx, tensors, il, "ffn_gate.weight", new_tensor);
-        struct ggml_tensor *w_up   = rllm_layer_weight(wctx, tensors, il, "ffn_up.weight", new_tensor);
-        struct ggml_tensor *w_down = rllm_layer_weight(wctx, tensors, il, "ffn_down.weight", new_tensor);
+        struct ggml_tensor *attn_norm = rllm_layer_weight(wctx, tensors, il, "attn_norm.weight", new_tensor, storage_data);
+        struct ggml_tensor *wq = rllm_layer_weight(wctx, tensors, il, "attn_q.weight", new_tensor, storage_data);
+        struct ggml_tensor *wk = rllm_layer_weight(wctx, tensors, il, "attn_k.weight", new_tensor, storage_data);
+        struct ggml_tensor *wv = rllm_layer_weight(wctx, tensors, il, "attn_v.weight", new_tensor, storage_data);
+        struct ggml_tensor *wo = rllm_layer_weight(wctx, tensors, il, "attn_output.weight", new_tensor, storage_data);
+        struct ggml_tensor *ffn_norm = rllm_layer_weight(wctx, tensors, il, "ffn_norm.weight", new_tensor, storage_data);
+        struct ggml_tensor *w_gate = rllm_layer_weight(wctx, tensors, il, "ffn_gate.weight", new_tensor, storage_data);
+        struct ggml_tensor *w_up   = rllm_layer_weight(wctx, tensors, il, "ffn_up.weight", new_tensor, storage_data);
+        struct ggml_tensor *w_down = rllm_layer_weight(wctx, tensors, il, "ffn_down.weight", new_tensor, storage_data);
 
         /* attention */
         struct ggml_tensor *cur = mul(cctx, rms_norm(cctx, inpL, rms_eps), attn_norm);
@@ -412,20 +428,4 @@ SEXP RC_rllm_llama_forward(SEXP hparams, SEXP tensors, SEXP tokens_sexp,
 
 #undef RLLM_CHECK
 #undef RLLM_FAIL
-}
-
-/*
- * RC_rllm_as_f32(x) - double vector -> raw vector of packed f32 values, for
- * staging 1-d norm weights (loaded as doubles by Rgguf) as ggml F32 buffers.
- */
-SEXP RC_rllm_as_f32(SEXP x)
-{
-    if (TYPEOF(x) != REALSXP) Rf_error("x must be a double vector");
-    R_xlen_t n = XLENGTH(x);
-    SEXP out = PROTECT(Rf_allocVector(RAWSXP, n * (R_xlen_t) sizeof(float)));
-    float *fp = (float *) RAW(out);
-    const double *xp = REAL(x);
-    for (R_xlen_t i = 0; i < n; i++) fp[i] = (float) xp[i];
-    UNPROTECT(1);
-    return out;
 }

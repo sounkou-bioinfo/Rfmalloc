@@ -1,15 +1,13 @@
 /* Minimal POSIX mmap/munmap shim for Windows (Rtools/mingw-w64), enough for
- * gguflib's whole-file read/write mapping. gguflib opens the file O_RDWR and
- * maps it PROT_READ|PROT_WRITE, MAP_SHARED; the matching Windows call is a
- * PAGE_READWRITE file-mapping object plus a FILE_MAP_WRITE view.
+ * Rgguf's read-only whole-file mapping. It also retains the write flag mapping
+ * for completeness.
  *
  * The mapping object is closed right after MapViewOfFile: the view holds a
  * reference to it, so it stays valid until UnmapViewOfFile, and munmap then
  * needs nothing but the address (no handle bookkeeping). This is the standard
  * mman-win32 technique.
  *
- * mingw-w64 already provides unistd.h/fcntl.h/sys/stat.h and open/close/read/
- * fstat, so sys/mman.h is the only POSIX header gguflib needs replaced. */
+ * mingw-w64 already provides the remaining file APIs. */
 #ifndef RGGUF_WIN_MMAN_H
 #define RGGUF_WIN_MMAN_H
 

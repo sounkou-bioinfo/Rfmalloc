@@ -1,9 +1,10 @@
-# Vendored plink2 VCF/BCF/BGEN/Oxford import closure - provenance & update policy
+# Vendored PLINK 2 genotype format-import closure: provenance and update policy
 
-Milestone 4a's path to `VcfToPgen()`: reuse plink2's own importer instead of
-writing a from-scratch htslib-based VCF reader, because the same vendored
-closure also covers BCF/BGEN/Oxford for a later milestone - one codebase for
-every genotype-file format plink2 itself imports, not one per format.
+Rpgen reuses PLINK 2's own importers instead of maintaining parallel parsers.
+The closure covers VCF, BCF, BGEN, Oxford GEN/HAPS, PLINK 1 dosage, PED/MAP,
+TPED/TFAM, and EIGENSTRAT. Every one of those entry points is wired through
+`src/rpgen_import.cpp`: one upstream implementation per format, not one local
+parser per package boundary.
 
 The vendored subset under `packages/Rpgen/tools/include/{plink2_*.cc,*.h}`
 (program level) and `packages/Rpgen/tools/include/include/{pgenlib_write,SFMT}.{cc,c,h}`
@@ -12,8 +13,8 @@ The vendored subset under `packages/Rpgen/tools/include/{plink2_*.cc,*.h}`
 [`vendorplink2import.R`](vendorplink2import.R) from one pinned input:
 
 ```
-tools/include/ VcfToPgen() closure  =  (SHA-pinned plink-ng commit tarball)
-                                      + (one local patch: plink2_cmdline.cc logging -> R I/O)
+tools/include/ format-import closure  =  (SHA-pinned plink-ng commit tarball)
+                                        + (R logging and direct-sink patches)
 ```
 
 Re-run and verify at any time:
@@ -37,7 +38,7 @@ outside it, so it is always safe to run last.
 (`LIBPLINK2_SOURCES` gets `pgenlib_write.cc` + the program-level `plink2_*.cc`
 files appended; a new `LIBPLINK2_C_SOURCES`/`LIBPLINK2_CO` pair is added for
 `SFMT.c`, which is plain C). See `tools/vendor-pgenlib/vendorpgen.R`'s own
-header comment ("edit 2") - this is the one piece of milestone 4a's wiring
+header comment ("edit 2") - this is the one piece of importer wiring
 that lives in that script rather than this one, because it touches the same
 two files `vendorpgen.R` already generates and patches for its own `OBJECTS=`
 edit.
@@ -71,26 +72,24 @@ library subset to keep resolving: `packages/Rpgen/tools/include/` (mirrors
 `2.0/`) vs. `packages/Rpgen/tools/include/include/` (mirrors `2.0/include/`,
 where `tools/vendor-pgenlib`'s files already live).
 
-Program level (`tools/include/`, new in milestone 4a):
+Program level (`tools/include/`):
 
   `plink2_import.cc`/`.h` - `VcfToPgen()`, `BcfToPgen()`, `OxGenToPgen()`,
-    `OxBgenToPgen()`, `OxHapslegendToPgen()`, and friends. The entry point
-    this milestone calls is `VcfToPgen()`; the others come along for free in
-    the same translation unit and are exactly what a later milestone needs
-    for BCF/BGEN/Oxford - "one codebase," not a VCF-only extraction.
+    `OxBgenToPgen()`, `OxHapslegendToPgen()`, `Plink1DosageToPgen()`, and
+    `EigfileToPgen()`. All are called by Rpgen.
   `plink2_common.cc`/`.h`, `plink2_cmdline.cc`/`.h` - shared plink2 program
     infrastructure: the "bigstack" arena (`g_bigstack_base`/`g_bigstack_end`,
     `InitBigstack()`), `ChrInfo` (`InitChrInfoHuman()`/`CleanupChrInfo()`),
     and logging (`logputs()`/`logerrputs()`/...). `plink2_cmdline.cc` carries
-    this tool's one local patch, see "Local patch" below.
+    the R logging patch described below.
   `plink2_pvar.cc`/`.h`, `plink2_psam.cc`/`.h` - `.pvar`/`.psam` writers
     `VcfToPgen()` calls while producing its output trio.
   `plink2_compress_stream.cc`/`.h`, `plink2_decompress.cc`/`.h` - the zstd/
     gzip streaming wrappers plink2's own file I/O is written against.
-  `plink2_import_legacy.cc`/`.h`, `plink2_random.cc`/`.h` - pulled in by
-    `plink2_import.h`'s own `#include` graph (import_legacy: legacy-format
-    scaffolding shared with the modern importers; random: the SFMT-backed
-    PRNG some import paths use for tie-breaking, not cryptographic).
+  `plink2_import_legacy.cc`/`.h`, `plink2_random.cc`/`.h` - the former owns
+    the wired `PedmapToPgen()` and `TpedToPgen()` entry points; the latter is
+    the SFMT-backed PRNG some import paths use for tie-breaking, not
+    cryptographic use.
   `plink2_data.cc`/`.h`, `plink2_family.cc`/`.h` - **not** in the initial
     `#include` graph guess; discovered by actually compiling and linking the
     closure (see "How the closure was verified" below) - `VcfToPgen()` calls
@@ -99,7 +98,7 @@ Program level (`tools/include/`, new in milestone 4a):
     `AppendPhenoStrEx()`, and `ApplyHardCallThreshPhased()`, all defined in
     `plink2_data.cc`, which itself `#include`s `plink2_family.h`.
   Deliberately **not** vendored: `plink2.cc` itself (the CLI's `main()` and
-    argv parser - milestone 4a's own driver, `src/rpgen_import.cpp`, replaces
+    argv parser - Rpgen's driver in `src/rpgen_import.cpp` replaces
     it entirely, see below), `plink2_merge.h` (only `SortMode`/`kSortNone`/
     etc., needed solely by `plink2.cc`'s own argv-to-flags translation, not
     by anything in the vendored closure - `rpgen_import_vcf()` passes
@@ -111,8 +110,9 @@ Library level (`tools/include/include/`, joining the existing pgenlib read
 subset):
 
   `pgenlib_write.cc`/`.h` - the `.pgen` writer (`STPgenWriter` and friends),
-    LGPL like the read subset; `VcfToPgen()` writes through this, not the
-    read-only path `tools/vendor-pgenlib` vendors.
+    LGPL like the read subset. Ordinary `rpgen_import_*()` calls write through
+    it. During `rpgen_ingest()`, the local direct-sink patch redirects its
+    decoded terminal records to Rfmalloc instead.
   `SFMT.c`/`.h` - the SFMT PRNG `plink2_random.h` wraps. BSD-3-Clause
     (Mutsuo Saito, Makoto Matsumoto, Hiroshima University / University of
     Tokyo), not LGPL - see its own header for the verbatim license text.
@@ -120,7 +120,18 @@ subset):
     suffix rule in Makevars.in/.win - `SFMT.h` wraps its declarations in
     `extern "C"` for its C++ callers, so no name-mangling mismatch results).
 
-## Local patch
+## Local patches
+
+`patches/pgenlib_write_direct_sink.patch` adds a compile-time terminal hook to
+the single-threaded PGEN writer. With `RPGEN_DIRECT_SINK` enabled, writer
+initialization opens Rpgen's Rfmalloc record context, every biallelic,
+multiallelic, phased, dosage, and sparse-difflist append transfers the decoded
+semantic record, and finish validates the emitted count. With no active direct
+context, the upstream writer is byte-for-byte on its ordinary path. This keeps
+the public file-producing `rpgen_import_*()` functions interoperable while
+`rpgen_ingest()` avoids PGEN serialization and read-back. HAPS is the one
+upstream importer whose writer count is an upper bound, so Rpgen performs a
+bounded line-count pass before entering it to size the destination exactly.
 
 `patches/plink2_cmdline.cc.patch` (unified diff, applied with
 `patch -p1 -s -d tools/include/`, same mechanism `tools/vendor-ggml` uses for
@@ -128,8 +139,10 @@ its own patches): replaces five small logging functions
 (`logputs_silent()`, `logputs()`, `logerrputs()`, `logputsb()`,
 `logerrputsb()`) so they route through R's own `Rprintf()`/`REprintf()`
 (declared by the minimal `<R_ext/Print.h>`, added by the same patch) instead
-of a log `FILE*`/stdout/stderr. Two independent reasons this is required, not
-optional:
+of a log `FILE*`/stdout/stderr. In direct mode the same patch replaces the
+upstream final `.pgen written` line with an accurate record-transfer message;
+metadata companions may still have been written, but no genotype PGEN exists.
+Two independent reasons this patch is required, not optional:
 
   1. **Correctness.** Upstream's `logputs_silent()` unconditionally
      `fputs(str, g_logfile)`. `g_logfile` is only ever non-null if
@@ -189,9 +202,7 @@ writes through the raw `stdout`/`stderr` `FILE*`. `R CMD check --no-manual`
 flags this as a WARNING ("checking compiled code", symbols `__printf_chk`/
 `exit`/`stderr`/`stdout` in `libPLINK2.a`) - unacceptable for a
 `--as-cran`/error-on-warning CI gate. Closed with a small, hand-maintained
-shim, **not** part of `vendorplink2import.R`'s automated `vendor` action
-(unlike `patches/plink2_cmdline.cc.patch`, which *is* applied by that
-script): three new `packages/Rpgen/src/` files -
+shim. The hand-authored `packages/Rpgen/src/` support consists of
 `rpgen_cli_shim.h` (the macro redirections: `printf` -> `Rprintf()`,
 `stdout`/`stderr` -> a shared `/dev/null` `FILE*`, `exit`/`abort` -> a
 longjmp relay), `rpgen_null_stream.c` (that shared bit-bucket `FILE*`,
@@ -203,27 +214,22 @@ vendored code is not an acceptable substitute: it would longjmp past the
 driver's own arena-free/file-close cleanup). `src/Makevars.in`/`.win` force
 `rpgen_cli_shim.h` into every `LIBPLINK2`/`LIBPLINK2_CO` object via
 `-include` (never into `rpgen.cpp`/`rpgen_import.cpp`/
-`rpgen_null_stream.c`/`rpgen_plink2_glue.c`, which already use the R API,
-or real `stdio.h`/`setjmp.h`, directly) - a target-specific `PKG_CPPFLAGS`
+`rpgen_direct_sink.cpp`/`rpgen_null_stream.c`/`rpgen_plink2_glue.c`, which
+already use the R API, or real `stdio.h`/`setjmp.h`, directly) - a
+target-specific `PKG_CPPFLAGS`
 override built from a `PKG_CPPFLAGS_BASE` variable, using plain `=` rather
 than `PKG_CPPFLAGS +=` (a GNU Make extension `R CMD check`'s "checking for
 GNU extensions in Makefiles" step itself flags, and which would also be
 circular here, since a target-specific `PKG_CPPFLAGS` referencing
 `$(PKG_CPPFLAGS)` is a self-reference once that override is in scope).
 
-**Consequence for re-vendoring**: this wiring lives directly in
-`packages/Rpgen/src/Makevars.in`/`.win`, files `vendorpgen.R`'s `vendor`
-action fully regenerates from the pgenlibr CRAN tarball (see that script's
-own header comment, "edit"/"edit 2") and `vendorplink2import.R`'s `vendor`
-action then patches (see this file's own top comment, "Ordering matters").
-Neither script currently knows about the CLI-shim block - re-running either
-one will silently drop it, and `R CMD check` will regress to the WARNING
-above until the `OBJECTS =`/`PKG_CPPFLAGS_BASE`/target-specific-override
-lines are re-added by hand (or `vendorpgen.R`/`vendorplink2import.R` are
-themselves extended to re-apply this block, the same way they already own
-the `LIBPLINK2_SOURCES`/`OBJECTS=` edits). The three new `.h`/`.c` files
-themselves are untouched by re-vendoring either way (they are
-hand-authored, like `rpgen_import.cpp`, not vendored).
+The build wiring is reproducible too. `vendorpgen.R` generates the complete
+`Makevars.in`/`.win` object list, the non-recursive `PKG_CPPFLAGS_BASE`, and
+the target-specific `RPGEN_DIRECT_SINK`/CLI-shim rule. It checks those files
+for drift. `vendorplink2import.R` then restores and patches its source subset.
+Running the two recipes in the documented order therefore recreates the
+current build without a manual repair step. The support `.h`/`.c`/`.cpp` files
+remain hand-authored and neither recipe overwrites them.
 
 ## Update policy
 

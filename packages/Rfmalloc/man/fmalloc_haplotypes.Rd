@@ -2,11 +2,14 @@
 % Please edit documentation in R/fmalloc_hap.R
 \name{fmalloc_haplotypes}
 \alias{fmalloc_haplotypes}
+\alias{create_fmalloc_haplotypes}
 \alias{dim.fmalloc_haplotypes}
 \alias{print.fmalloc_haplotypes}
 \title{Phased haplotypes as a 1-bit fmalloc store}
 \usage{
 fmalloc_haplotypes(x, runtime = NULL)
+
+create_fmalloc_haplotypes(payload, dim)
 
 \method{dim}{fmalloc_haplotypes}(x)
 
@@ -20,6 +23,11 @@ and neither does \code{kalis}'s own matrix input).}
 \item{runtime}{Runtime handle from \code{\link[=open_fmalloc]{open_fmalloc()}}; defaults to the
 runtime established by \code{\link[=init_fmalloc]{init_fmalloc()}}.}
 
+\item{payload}{An fmalloc raw vector created by the native haplotype buffer
+writer.}
+
+\item{dim}{Integer dimensions \code{c(n_variant, n_haplotype)} for \code{payload}.}
+
 \item{...}{Unused.}
 }
 \value{
@@ -29,7 +37,10 @@ An \code{fmalloc_haplotypes} object with \code{dim(x)}.
 Encodes an \verb{L x N} matrix of phased haplotype calls (\code{0}/\code{1}, variants in
 rows, haplotypes in columns - the convention \code{kalis::CacheHaplotypes()}
 expects for a matrix source) into fmalloc-backed, memory-mapped storage at
-one bit per call.
+one bit per call. The file layout is locus-major: all haplotypes at one
+variant form a contiguous bit row, and each row begins on a 64-byte
+boundary. This is the layout kalis builds internally and the access pattern
+Li and Stephens forward/backward kernels consume.
 }
 \details{
 This is a SIBLING interface to the matmul \link{fmalloc_tensor} codec ABI, not
@@ -39,10 +50,10 @@ never registers a tensor codec and the resulting object never
 participates in \code{\%*\%}. It shares the same fmalloc storage substrate as
 \code{\link[=fmalloc_bed]{fmalloc_bed()}} and the typed tensors, with its own encode/decode pair.
 
-One bit per call is thirty-two times tighter than an integer \code{0}/\code{1}
-matrix and sixty-four times tighter than the double matrix a naive
-pipeline would build, so a haplotype panel that does not fit in RAM as
-doubles still fits as a memory-mapped bitset.
+The packed body is one bit per call, asymptotically thirty-two times tighter
+than an integer \code{0}/\code{1} matrix and sixty-four times tighter than doubles.
+Each locus is padded to a 64-byte boundary so an HMM kernel can load donor
+words without repacking; that padding is visible for very small panels.
 }
 \examples{
 rt <- open_fmalloc(tempfile(), size_gb = 0.1)

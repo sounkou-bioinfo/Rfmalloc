@@ -7,16 +7,17 @@ Authors@R: c(
     person(given = "The ggml.ai / llama.cpp contributors", role = "cph", comment = "GGML CPU backend contributors"),
     person(given = "Yuri", family = "Baramykov", role = "ctb", comment = "ggmlR: source of the vendored GGML copy and its R/CRAN-compliance I/O shim, adapted here")
     )
-Description: Vendors the CPU backend of the 'GGML' tensor library
+Description: Vendors the core, official 'GGUF' implementation, and CPU
+    backend of the 'GGML' tensor library
     (<https://github.com/ggml-org/ggml>) as a static library and exposes its
     core tensor-context and matrix-multiply compute path through
     'R_RegisterCCallable' C-callable entry points. This is a carrier package:
     it has no high-level R modeling API of its own. Other R packages link to
     it ('LinkingTo') to build and compute 'GGML' tensor graphs (including
     quantized types such as Q4_K) from their own C or C++ code without
-    re-vendoring 'GGML'. The CPU and BLAS backends are built (dense products
-    offload to R's own BLAS); GPU ('Vulkan') support is a possible future
-    addition.
+    re-vendoring 'GGML'. The CPU and BLAS backends are always built (dense
+    products offload to R's own BLAS); the 'Vulkan' backend is opt-in at
+    installation.
 License: GPL (>= 2)
 Encoding: UTF-8
 SystemRequirements: GNU make, C++17, 'glslc' and Vulkan headers (optional,

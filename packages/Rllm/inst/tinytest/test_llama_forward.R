@@ -1,7 +1,7 @@
 library(tinytest)
 library(Rllm)
 
-# The graph-builder milestone: rllm_forward() assembles the GGML compute graph
+# This regression pins the GGML graph assembled by rllm_forward()
 # for a llama-architecture forward pass (RMSNorm -> QKV -> RoPE -> causal
 # attention -> SwiGLU) over GGUF weights held in fmalloc storage, and its
 # logits must match a pure-R reference implementation of the same arithmetic.
@@ -131,6 +131,10 @@ for (cfg_name in names(configs)) {
     expect_inherits(model, "rllm_model")
     expect_equal(model$hparams$n_layer, hp$n_layer, info = cfg_name)
     expect_equal(model$hparams$n_vocab, hp$n_vocab, info = cfg_name)
+    expect_true(all(vapply(model$tensors, function(w) {
+        identical(typeof(w$payload), "externalptr") &&
+            !Rfmalloc::is_fmalloc_vector(w$payload)
+    }, logical(1))), info = paste(cfg_name, "weights borrow GGUF spans"))
 
     tokens <- c(3L, 41L, 0L, 17L, 63L)          # 0-based ids, S = 5
     logits <- rllm_forward(model, tokens)

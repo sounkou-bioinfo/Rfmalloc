@@ -501,8 +501,9 @@ int Rfmalloc_tensor_decode(SEXP tensor, R_xlen_t elem_offset, R_xlen_t n_elems,
     if (!out || elem_offset < 0 || n_elems < 0) {
         return -1;
     }
-    fm_vector *vec = maybe_vector_from_altrep(tensor);
-    if (!vec || vec->type != RAWSXP || !vec->runtime || !vec->runtime->info) {
+    const void *payload;
+    size_t payload_bytes;
+    if (Rfmalloc_storage_data(tensor, &payload, &payload_bytes, nullptr) != 0) {
         return -1;
     }
     SEXP dtype = Rf_getAttrib(tensor, Rf_install("rfm_dtype"));
@@ -523,7 +524,7 @@ int Rfmalloc_tensor_decode(SEXP tensor, R_xlen_t elem_offset, R_xlen_t n_elems,
     R_xlen_t total = 1;
     for (R_xlen_t i = 0; i < XLENGTH(dims); i++) {
         R_xlen_t d = (R_xlen_t)INTEGER(dims)[i];
-        if (d < 0) {
+        if (d < 0 || (d != 0 && total > R_XLEN_T_MAX / d)) {
             return -1;
         }
         total *= d;
@@ -534,7 +535,13 @@ int Rfmalloc_tensor_decode(SEXP tensor, R_xlen_t elem_offset, R_xlen_t n_elems,
     if (n_elems == 0) {
         return 0;
     }
-    return codec->decode(vector_data_or_dummy(vec), elem_offset, n_elems, out);
+    const uint64_t n_blocks = (uint64_t)(total / codec->items_per_block) +
+        (total % codec->items_per_block != 0);
+    if (n_blocks > SIZE_MAX / codec->bytes_per_block ||
+        (size_t)n_blocks * codec->bytes_per_block > payload_bytes) {
+        return -1;
+    }
+    return codec->decode(payload, elem_offset, n_elems, out);
 }
 
 // R-level wrapper, so Rfmalloc's own tests can exercise Rfmalloc_tensor_decode
@@ -542,11 +549,18 @@ int Rfmalloc_tensor_decode(SEXP tensor, R_xlen_t elem_offset, R_xlen_t n_elems,
 // int range); returns the decoded range as a plain numeric vector.
 SEXP rfm_tensor_decode_range_impl(SEXP tensor, SEXP offset_sexp, SEXP n_sexp)
 {
-    R_xlen_t elem_offset = (R_xlen_t)Rf_asReal(offset_sexp);
-    R_xlen_t n_elems = (R_xlen_t)Rf_asReal(n_sexp);
-    if (n_elems < 0) {
-        Rf_error("n must be non-negative");
+    const double offset_d = Rf_asReal(offset_sexp);
+    const double n_d = Rf_asReal(n_sexp);
+    if (!R_FINITE(offset_d) || offset_d < 0 ||
+        offset_d != std::floor(offset_d) || offset_d > (double)R_XLEN_T_MAX) {
+        Rf_error("offset must be a supported non-negative whole number");
     }
+    if (!R_FINITE(n_d) || n_d < 0 || n_d != std::floor(n_d) ||
+        n_d > (double)R_XLEN_T_MAX) {
+        Rf_error("n must be a supported non-negative whole number");
+    }
+    const R_xlen_t elem_offset = (R_xlen_t)offset_d;
+    const R_xlen_t n_elems = (R_xlen_t)n_d;
     SEXP out = PROTECT(Rf_allocVector(REALSXP, n_elems));
     int rc = Rfmalloc_tensor_decode(tensor, elem_offset, n_elems, REAL(out));
     if (rc != 0) {
@@ -709,6 +723,13 @@ static void register_c_callables(void)
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_register_matmul_backend", (DL_FUNC)Rfmalloc_register_matmul_backend);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_register_matmul_backend_ex", (DL_FUNC)Rfmalloc_register_matmul_backend_ex);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_tensor_decode", (DL_FUNC)Rfmalloc_tensor_decode);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_buffer_open", (DL_FUNC)Rfmalloc_buffer_open);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_buffer_write", (DL_FUNC)Rfmalloc_buffer_write);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_buffer_finish", (DL_FUNC)Rfmalloc_buffer_finish);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_buffer_abort", (DL_FUNC)Rfmalloc_buffer_abort);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_storage_view", (DL_FUNC)Rfmalloc_storage_view);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_storage_data", (DL_FUNC)Rfmalloc_storage_data);
+    R_RegisterCCallable("Rfmalloc", "Rfmalloc_storage_advise", (DL_FUNC)Rfmalloc_storage_advise);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_ld_ncol", (DL_FUNC)Rfmalloc_ld_ncol);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_ld_bits", (DL_FUNC)Rfmalloc_ld_bits);
     R_RegisterCCallable("Rfmalloc", "Rfmalloc_ld_pair", (DL_FUNC)Rfmalloc_ld_pair);
@@ -768,6 +789,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"rfm_inplace_op_impl", (DL_FUNC)&rfm_inplace_op_impl, 3},
     {"rfm_tensor_alp_encode_impl", (DL_FUNC)&rfm_tensor_alp_encode_impl, 2},
     {"rfm_tensor_sparse_encode_impl", (DL_FUNC)&rfm_tensor_sparse_encode_impl, 2},
+    {"rfm_tensor_payload_nbytes_impl", (DL_FUNC)&rfm_tensor_payload_nbytes_impl, 1},
+    {"rfm_storage_advise_impl", (DL_FUNC)&rfm_storage_advise_impl, 4},
     {"rfm_set_matmul_backend_impl", (DL_FUNC)&rfm_set_matmul_backend_impl, 1},
     {"rfm_matmul_backend_impl", (DL_FUNC)&rfm_matmul_backend_impl, 0},
     {"rfm_matmul_backends_impl", (DL_FUNC)&rfm_matmul_backends_impl, 0},
@@ -780,6 +803,8 @@ void R_init_Rfmalloc(DllInfo *dll)
 {
     fmalloc_runtime_tag = Rf_install("Rfmalloc.runtime");
     fmalloc_vector_tag = Rf_install("Rfmalloc.vector");
+    fmalloc_storage_span_tag = Rf_install("Rfmalloc.storage_span");
+    fmalloc_storage_runtime_symbol = Rf_install("rfm_runtime");
     register_fmalloc_altrep_classes(dll);
     tensor_register_builtin_codecs();
     tensor_register_alp_codec();

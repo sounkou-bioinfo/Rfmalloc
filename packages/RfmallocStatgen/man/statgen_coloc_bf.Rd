@@ -12,7 +12,8 @@ statgen_coloc_bf(
   p12 = 1e-05,
   backend = c("cpu", "blas", "vulkan"),
   trim = FALSE,
-  overlap_min = 0.5
+  overlap_min = 0.5,
+  block_size = NULL
 )
 }
 \arguments{
@@ -36,6 +37,11 @@ pairs below \code{overlap_min}. This is the analogue of coloc's
 overlap get an unreliable H4 and are flagged.}
 
 \item{overlap_min}{overlap threshold for \code{trim}.}
+
+\item{block_size}{Number of SNP columns transformed and multiplied at once.
+\code{NULL} chooses a block whose two exponentiated input panels occupy at most
+roughly 64 MiB. The dense signal-pair result is intrinsic, but no complete
+signal-by-SNP exponential matrix is materialized.}
 }
 \value{
 a data.frame, one row per signal pair, with columns \code{signal1},
@@ -46,9 +52,10 @@ a data.frame, one row per signal pair, with columns \code{signal1},
 A matrix reinterpretation of coloc's \code{coloc.bf_bf}: instead of testing
 one signal of trait 1 against one signal of trait 2 with vector operations
 (and looping), the shared-causal (H4) evidence for \emph{every} pair of signals is
-a single matrix multiply. The consecutive per-pair calculation and this
-matrix form are algebraically identical (see Details); the payoff is that the
-one hot kernel is a GEMM, so it rides any backend Rggml offers - CPU,
+a matrix product accumulated over bounded SNP panels. The consecutive
+per-pair calculation and this matrix form are algebraically identical (see
+Details); the payoff is that the hot kernel is a GEMM, so it rides any
+backend Rggml offers - CPU,
 OpenBLAS, or a Vulkan GPU (including via dzn) - and, over Rfmalloc's
 out-of-core panel-GEMM, signal sets larger than device/host memory. This is
 the same idea as gpu-coloc (Torch), minus the CUDA/Metal-only lock-in.

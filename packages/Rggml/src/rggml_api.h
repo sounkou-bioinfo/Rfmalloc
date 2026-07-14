@@ -69,6 +69,55 @@ int Rggml_compute_mul_mat(struct ggml_context *ctx, ggml_backend_t backend,
 size_t Rggml_quantize(enum ggml_type type, const float *src, void *dst,
                       int64_t nrows, int64_t n_per_row);
 int Rggml_dequantize(enum ggml_type type, const void *src, float *dst, int64_t n);
+int Rggml_can_dequantize(enum ggml_type type);
+int Rggml_dequantize_double(enum ggml_type type, const void *src, double *dst,
+                            int64_t n);
+
+struct Rggml_gguf_context;
+struct Rggml_gguf_writer;
+struct Rggml_gguf_kv {
+    const char *key;
+    int type;
+    int is_array;
+    size_t n;
+    const void *data;
+};
+struct Rggml_gguf_tensor {
+    const char *name;
+    const char *type_name;
+    enum ggml_type type;
+    int n_dims;
+    int64_t ne[GGML_MAX_DIMS];
+    int64_t n_elements;
+    size_t nbytes;
+    size_t offset;
+};
+
+struct Rggml_gguf_context *Rggml_gguf_open(const char *path);
+void Rggml_gguf_close(struct Rggml_gguf_context *ctx);
+uint32_t Rggml_gguf_version(const struct Rggml_gguf_context *ctx);
+size_t Rggml_gguf_data_offset(const struct Rggml_gguf_context *ctx);
+int64_t Rggml_gguf_n_kv(const struct Rggml_gguf_context *ctx);
+int Rggml_gguf_kv(const struct Rggml_gguf_context *ctx, int64_t id,
+                  struct Rggml_gguf_kv *out);
+const char *Rggml_gguf_kv_string(const struct Rggml_gguf_context *ctx,
+                                 int64_t id, size_t index);
+int64_t Rggml_gguf_n_tensors(const struct Rggml_gguf_context *ctx);
+int64_t Rggml_gguf_find_tensor(const struct Rggml_gguf_context *ctx,
+                               const char *name);
+int Rggml_gguf_tensor(const struct Rggml_gguf_context *ctx, int64_t id,
+                      struct Rggml_gguf_tensor *out);
+
+struct Rggml_gguf_writer *Rggml_gguf_writer_open(void);
+void Rggml_gguf_writer_close(struct Rggml_gguf_writer *ctx);
+int Rggml_gguf_writer_set_string(struct Rggml_gguf_writer *ctx,
+                                 const char *key, const char *value);
+int Rggml_gguf_writer_set_f64(struct Rggml_gguf_writer *ctx, const char *key,
+                              double value);
+int Rggml_gguf_writer_add_f32(struct Rggml_gguf_writer *ctx, const char *name,
+                              int n_dims, const int64_t *ne,
+                              const double *data);
+int Rggml_gguf_writer_write(struct Rggml_gguf_writer *ctx, const char *path);
 
 /* graph ops (API version 5) */
 struct ggml_tensor *Rggml_get_rows(struct ggml_context *ctx, struct ggml_tensor *a,

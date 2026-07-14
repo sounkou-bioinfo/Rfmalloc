@@ -77,8 +77,8 @@ message("Testing that the fmalloc haplotype store is a faithful source for kalis
     bytes_bitpacked <- length(unclass(hap))
     bytes_integer <- L * N * 4L
     bytes_double <- L * N * 8L
-    expect_true(bytes_integer / bytes_bitpacked > 30)  # ~32x an integer matrix
-    expect_true(bytes_double / bytes_bitpacked > 60)   # ~64x a double matrix
+    expect_true(bytes_integer / bytes_bitpacked > 7)
+    expect_true(bytes_double / bytes_bitpacked > 14)
 
     message(sprintf(
         "  kalis Forward/Backward identical: fmalloc store vs. direct matrix (L=%d, N=%d)",

@@ -329,7 +329,7 @@ cat > "$MAKEVARS_FILE" << 'EOF'
 # libggml.a itself contains C++ object code (std::filesystem, exceptions,
 # etc. from ggml-backend*.cpp).
 
-PKG_CPPFLAGS = -I../inst/include @RGGML_VULKAN_DEF@ @RGGML_BUILD_DEFS@
+PKG_CPPFLAGS = -I../inst/include -I../inst/ggml @RGGML_VULKAN_DEF@ @RGGML_BUILD_DEFS@
 # $(BLAS_LIBS) $(FLIBS) resolve the Fortran sgemm_ that our cblas shim
 # (inst/ggml/rggml_cblas.c) forwards GGML's BLAS backend to. -lggml precedes
 # them so its unresolved sgemm_ pulls from R's BLAS. @VULKAN_LIBS@ is empty

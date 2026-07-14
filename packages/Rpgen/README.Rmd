@@ -18,72 +18,121 @@ library(Rpgen)
 [![R-CMD-check](https://github.com/sounkou-bioinfo/Rfmalloc/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/sounkou-bioinfo/Rfmalloc/actions/workflows/R-CMD-check.yaml)
 <!-- badges: end -->
 
-Rpgen is a native PLINK 2 `.pgen` reader for R, and the genomics I/O arm of the
-[Rfmalloc](https://github.com/sounkou-bioinfo/Rfmalloc) stack. It vendors
-PLINK 2's own `pgenlib` and exposes it through a **C-callable API** so that other
-packages can read genotypes, dosages, phase and multiallelic records straight
-from a `.pgen` in C, then pack them into Rfmalloc's file-backed genotype codecs
-(`bed` at 2 bits/genotype, `dosage` at 1 byte, `haplotypes` at 1 bit) without a
-dense double copy.
+Rpgen is the genomic record source for the Rfmalloc stack. It uses PLINK 2's
+own pgenlib and import code to read PGEN, PLINK 1 BED, PED/MAP, TPED/TFAM,
+VCF/BCF, BGEN, Oxford GEN, HAPS/legend, EIGENSTRAT, and legacy PLINK 1 dosage
+data into file-backed compute layouts.
 
-## Why it exists
+The central operation is `rpgen_ingest()`:
 
-The CRAN package [`pgenlibr`](https://cran.r-project.org/package=pgenlibr) also
-vendors `pgenlib`, but it exposes only an R-level interface: it installs no
-headers, declares no `LinkingTo`, and registers no `R_RegisterCCallable` entry
-points. Nothing else can call its readers from C. Rpgen vendors the same library
-and registers a C-callable surface (`Rpgen_open_info`, `Rpgen_read_hardcalls`,
-`Rpgen_read_dosages`), which is the whole point: the Rfmalloc side reads `.pgen`
-in C and writes into memory-mapped storage, with no round trip through an R
-matrix.
+```{r ingest, message = FALSE}
+library(Rfmalloc)
+
+pgen <- system.file("extdata", "chr21_phase3_start.pgen", package = "Rpgen")
+backing <- tempfile(fileext = ".bin")
+rt <- open_fmalloc(backing, mode = "scratch", size_gb = 1)
+
+dose <- rpgen_ingest(
+  pgen,
+  representation = "dosage",
+  runtime = rt
+)
+
+cat(sprintf(
+  "%d samples x %d variants, %d payload bytes\n",
+  nrow(dose), ncol(dose), length(unclass(dose))
+))
+```
+
+```{r ingest_cleanup, include = FALSE}
+cleanup_fmalloc(rt)
+unlink(backing)
+```
+
+## The abstraction
+
+A format reader emits bounded panels of semantic records. Rfmalloc owns the
+destination allocation and layout:
+
+| Representation | Meaning | Storage |
+|---|---|---|
+| `"hardcall"` | `0`, `1`, `2`, or missing non-reference count | 2 bits per sample and variant |
+| `"dosage"` | fractional non-reference count | 1-byte fixed point |
+| `"haplotype"` | two phased ref/non-ref bits per sample | locus-major, 1 bit per call |
+| `"f64"` | full-precision dosage | file-backed doubles |
+
+This is the useful split. A source declares whether it produced integers,
+doubles, or packed phase bits. The destination decides whether those records
+remain full precision or become a compute codec. Readers do not know codec
+headers, alignment, or allocation details.
+
+PGEN and BED keep one pgenlib reader open and transfer bounded variant panels
+directly into that destination. They never construct a complete genotype
+matrix. Haplotype reads use `PgrGetP()` and preserve phase. A missing genotype
+or unphased heterozygote is an error because the one-bit HMM layout cannot
+represent either without a separate mask.
+
+## Format closure at the record sink
+
+| Source | Companion arguments | Current route |
+|---|---|---|
+| PGEN | optional `pvar` | persistent pgenlib reader |
+| PLINK 1 BED | optional `bim`, `fam` | persistent pgenlib reader |
+| PLINK 1 PED/MAP | `map` | importer, bounded transpose scratch, record sink |
+| PLINK 1 TPED/TFAM | `tfam` | importer to record sink |
+| VCF/BCF | none | importer to record sink |
+| BGEN | optional `sample` | importer to record sink |
+| Oxford GEN | `sample` | importer to record sink |
+| HAPS/legend | `legend`, `sample`, `chr` | bounded count, phased importer to record sink |
+| EIGENSTRAT | `ind`, `snp` | importer to record sink |
+| PLINK 1 dosage | `fam`, `map` | importer to record sink |
+
+PLINK 2 already exposes each decoded variant immediately before
+`STPgenWriter` encodes it. During `rpgen_ingest()`, Rpgen redirects every
+writer append shape to Rfmalloc's record context, including multiallelic,
+phase, dosage, and sparse records. No genotype PGEN is written or read back.
+The importers may write temporary `.pvar`/`.psam` metadata companions, which
+are removed on exit. PED/MAP also retains PLINK 2's sample-major transpose
+scratch because changing that physical order is an actual algorithmic
+transpose, not a package-boundary copy. HAPS needs a bounded preliminary line
+count because its upstream writer receives an upper bound instead of the exact
+variant count.
+
+The standalone `rpgen_import_*()` functions do not activate this hook. They
+continue to produce ordinary PGEN files for interoperability.
+
+The dense `rpgen_read_hardcalls()` and `rpgen_read_dosages()` functions remain
+available for small data, inspection, and reference comparisons. They are not
+used by the bounded ingestion path.
+
+## Phased HAPS
+
+`rpgen_ingest(..., representation = "haplotype")` stores variants as aligned,
+contiguous locus rows over donor haplotypes. This is the access direction used
+by Li and Stephens HMM kernels such as kalis Forward/Backward:
+
+```{r haps, eval = FALSE}
+hap <- rpgen_ingest(
+  "cohort.haps",
+  format = "haps",
+  representation = "haplotype",
+  legend = "cohort.legend",
+  sample = "cohort.sample",
+  chr = "1",
+  runtime = rt
+)
+```
 
 ## Provenance and license
 
-`pgenlib` is **LGPL-3**, so Rpgen is **GPL-3** (LGPL-3 combines up to GPLv3, not
-the GPL (>= 2) used elsewhere in the stack). The vendored tree is **generated**,
-not hand-maintained: `tools/vendor-pgenlib/vendorpgen.R` reproduces it from a
-pinned CRAN `pgenlibr` source tarball (the same "own our path" recipe the stack
-uses for GGML), and CI guards it against drift
-(`vendored-pgenlib-matches-recipe`). See `inst/COPYRIGHTS` for the full LGPL /
-MIT / BSD attribution of `pgenlib`, `zstd`, `libdeflate` and `simde`.
+The vendored pgenlib tree is generated by
+`tools/vendor-pgenlib/vendorpgen.R`. The PLINK 2 importer closure is generated
+by `tools/vendor-plink2-import/vendorplink2import.R`. Both recipes are pinned
+and checked for drift in CI. See `inst/COPYRIGHTS` and the two `PROVENANCE.md`
+files for source pins, local patches, and licenses.
 
-## Usage
-
-`rpgen_info()` opens a `.pgen` and reports its sample and variant counts,
-straight from the header. These examples run against the small
-`chr21_phase3_start.pgen` fixture that ships with the package:
-
-```{r info}
-pgen <- system.file("extdata", "chr21_phase3_start.pgen", package = "Rpgen")
-rpgen_info(pgen)
-```
-
-The counts, and every genotype and dosage read below, are cross-checked against
-`pgenlibr` reading the same file in the package's own tests (bit-exact, no
-tolerance), so the native reader is pinned to the reference implementation.
-
-`rpgen_dosage()` and `rpgen_bed()` read the genotypes in C and pack them
-straight into Rfmalloc's genotype codecs, so the whole path from a `.pgen` on
-disk to principal components never materializes a dense double genotype matrix:
-
-```{r pca, message = FALSE}
-library(Rfmalloc)
-rt <- open_fmalloc(tempfile(fileext = ".bin"), mode = "scratch", size_gb = 1)
-
-dose <- rpgen_dosage(pgen, runtime = rt)   # 1 byte/dosage, read from .pgen in C
-c(payload_bytes = length(unclass(dose)),
-  vs_double     = prod(dim(dose)) * 8 / length(unclass(dose)))
-
-# Standardization (per-variant centre and scale, missing -> mean) is baked into
-# the codec's decode, so PCA runs over the compressed tensor with center = FALSE.
-std <- fmalloc_dosage_standardize(dose, runtime = rt)
-pca <- fmalloc_pca(std, k = 5, center = FALSE)
-round(pca$sdev, 2)
-```
-
-```{r pca_cleanup, include = FALSE}
-cleanup_fmalloc(rt)
-```
+Rpgen is GPL-3 because it combines with pgenlib's LGPL-3 code. The vendored
+zstd, libdeflate, SIMDe, and SFMT components retain their own licenses.
 
 ## Installation
 
@@ -94,11 +143,11 @@ install.packages("Rpgen",
   repos = c("https://sounkou-bioinfo.r-universe.dev", getOption("repos")))
 ```
 
-or a GitHub subdir ref:
+or from the monorepo subdirectory:
 
 ```{r eval = FALSE}
 pak::pak("sounkou-bioinfo/Rfmalloc/packages/Rpgen")
 ```
 
-Rpgen depends on `Rfmalloc`. It builds on Linux, macOS and Windows (Rtools) and
-is checked on ARM (Apple Silicon and Linux aarch64) in CI.
+Rpgen depends on Rfmalloc and builds on Linux, macOS, and Windows. CI also
+checks Apple Silicon and Linux aarch64.

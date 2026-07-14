@@ -1,10 +1,10 @@
 Package: Rpgen
-Title: Vendored 'PLINK 2' pgenlib with a C-Callable Genotype Reader API
+Title: PLINK 2 Genotype Ingestion into File-Backed Storage
 Version: 0.1.0
 Authors@R: c(
     person(given = "Sounkou Mahamane", family = "Toure", email = "sounkoutoure@gmail.com", role = c("aut", "cre")),
     person(given = "Christopher", family = "Chang", role = "cph", comment = "Author of the vendored pgenlib library and plink2 program"),
-    person(given = "Shaun", family = "Purcell", role = "cph", comment = "Co-author of the vendored plink2 program (VcfToPgen import closure)"),
+    person(given = "Shaun", family = "Purcell", role = "cph", comment = "Co-author of the vendored plink2 format-import closure"),
     person(given = "Eric", family = "Biggers", role = "cph", comment = "Author of included libdeflate library"),
     person(given = "Yann Collet", family = "", role = "cph", comment = "Author of included Zstd library"),
     person(given = "Meta Platforms, Inc.", role = "cph", comment = "Zstd library"),
@@ -12,25 +12,21 @@ Authors@R: c(
     person(given = "Mutsuo", family = "Saito", role = "cph", comment = "Co-author of included SFMT library"),
     person(given = "Makoto", family = "Matsumoto", role = "cph", comment = "Co-author of included SFMT library")
     )
-Description: Vendors the read subset of 'PLINK 2's pgenlib library
-    (<https://github.com/chrchang/plink-ng>), the same subset the CRAN
-    package 'pgenlibr' vendors and builds, as a static library and exposes
-    it through 'R_RegisterCCallable' C-callable entry points. Also vendors
-    plink2's own import closure ('VcfToPgen', 'BcfToPgen', 'OxBgenToPgen',
-    'OxGenToPgen', 'OxHapslegendToPgen', 'Plink1DosageToPgen') so a VCF,
-    BCF, BGEN, Oxford .gen, Oxford .haps/.legend, or legacy PLINK 1
-    --import-dosage file can be converted to a '.pgen' and read back through
-    this package's own reader, without a separate 'htslib'-based parser.
-    This is a carrier package: it has no high-level R modeling API of its
-    own beyond a milestone smoke test that opens a '.pgen' file and reports
-    its sample and variant counts. Other R packages link to it ('LinkingTo')
-    to read 'PLINK 2' genotype files natively from their own C or C++ code,
-    which 'pgenlibr' does not expose, since it only offers an R-level
-    interface.
+Description: Uses the 'PLINK 2' pgenlib library and its native importers
+    (<https://github.com/chrchang/plink-ng>) to ingest PGEN, PLINK 1 BED,
+    PED/MAP, TPED/TFAM, VCF/BCF, BGEN, Oxford GEN, HAPS/legend, EIGENSTRAT,
+    and legacy dosage sources into bounded, file-backed 'Rfmalloc' layouts.
+    Hardcalls, dosages, and phase are transferred as typed record panels,
+    allowing the destination to choose a packed codec or full-precision
+    storage without constructing a complete R matrix. The vendored native
+    readers are also exposed through 'R_RegisterCCallable' for sibling
+    packages.
 License: GPL-3
 Encoding: UTF-8
 Depends:
     R (>= 4.4.0),
+    Rfmalloc
+LinkingTo:
     Rfmalloc
 Suggests:
     tinytest

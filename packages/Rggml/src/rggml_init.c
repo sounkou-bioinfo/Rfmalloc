@@ -71,6 +71,25 @@ static void register_c_callables(DllInfo *dll)
 
     R_RegisterCCallable("Rggml", "Rggml_quantize",              (DL_FUNC) Rggml_quantize);
     R_RegisterCCallable("Rggml", "Rggml_dequantize",            (DL_FUNC) Rggml_dequantize);
+    R_RegisterCCallable("Rggml", "Rggml_can_dequantize",        (DL_FUNC) Rggml_can_dequantize);
+    R_RegisterCCallable("Rggml", "Rggml_dequantize_double",     (DL_FUNC) Rggml_dequantize_double);
+
+    R_RegisterCCallable("Rggml", "Rggml_gguf_open",             (DL_FUNC) Rggml_gguf_open);
+    R_RegisterCCallable("Rggml", "Rggml_gguf_close",            (DL_FUNC) Rggml_gguf_close);
+    R_RegisterCCallable("Rggml", "Rggml_gguf_version",          (DL_FUNC) Rggml_gguf_version);
+    R_RegisterCCallable("Rggml", "Rggml_gguf_data_offset",      (DL_FUNC) Rggml_gguf_data_offset);
+    R_RegisterCCallable("Rggml", "Rggml_gguf_n_kv",             (DL_FUNC) Rggml_gguf_n_kv);
+    R_RegisterCCallable("Rggml", "Rggml_gguf_kv",               (DL_FUNC) Rggml_gguf_kv);
+    R_RegisterCCallable("Rggml", "Rggml_gguf_kv_string",        (DL_FUNC) Rggml_gguf_kv_string);
+    R_RegisterCCallable("Rggml", "Rggml_gguf_n_tensors",        (DL_FUNC) Rggml_gguf_n_tensors);
+    R_RegisterCCallable("Rggml", "Rggml_gguf_find_tensor",      (DL_FUNC) Rggml_gguf_find_tensor);
+    R_RegisterCCallable("Rggml", "Rggml_gguf_tensor",           (DL_FUNC) Rggml_gguf_tensor);
+    R_RegisterCCallable("Rggml", "Rggml_gguf_writer_open",      (DL_FUNC) Rggml_gguf_writer_open);
+    R_RegisterCCallable("Rggml", "Rggml_gguf_writer_close",     (DL_FUNC) Rggml_gguf_writer_close);
+    R_RegisterCCallable("Rggml", "Rggml_gguf_writer_set_string", (DL_FUNC) Rggml_gguf_writer_set_string);
+    R_RegisterCCallable("Rggml", "Rggml_gguf_writer_set_f64",   (DL_FUNC) Rggml_gguf_writer_set_f64);
+    R_RegisterCCallable("Rggml", "Rggml_gguf_writer_add_f32",   (DL_FUNC) Rggml_gguf_writer_add_f32);
+    R_RegisterCCallable("Rggml", "Rggml_gguf_writer_write",     (DL_FUNC) Rggml_gguf_writer_write);
 
     R_RegisterCCallable("Rggml", "Rggml_get_rows",              (DL_FUNC) Rggml_get_rows);
     R_RegisterCCallable("Rggml", "Rggml_rms_norm",              (DL_FUNC) Rggml_rms_norm);

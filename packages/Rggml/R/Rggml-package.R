@@ -1,11 +1,12 @@
 #' Rggml: Vendored 'GGML' Tensor Library with C-Callable Compute API
 #'
-#' Rggml is a carrier package: it vendors the CPU backend of the 'GGML'
-#' tensor library (\url{https://github.com/ggml-org/ggml}) as a static
-#' library, installs its headers, and exposes 'GGML' tensor-context and
-#' matrix-multiply compute through \code{R_RegisterCCallable()} entry
-#' points. It has no high-level R modeling API of its own beyond
-#' \code{\link{ggml_version}}.
+#' Rggml is a low-level carrier package for the 'GGML' tensor library
+#' (\url{https://github.com/ggml-org/ggml}). Its generated static library
+#' contains the core, official 'GGUF' implementation, CPU and 'BLAS' backends,
+#' and the opt-in 'Vulkan' backend. Sibling packages consume these through
+#' \code{R_RegisterCCallable()} rather than re-vendoring 'GGML'. Model
+#' composition belongs in Rllm and the R-facing 'GGUF' storage layer belongs
+#' in Rgguf.
 #'
 #' @section For downstream package authors:
 #' Add \code{Rggml} to \code{LinkingTo} (and \code{Imports}, so the
@@ -19,11 +20,11 @@
 #' wrapped function has an \verb{<Name>_ptr()} accessor that resolves the
 #' symbol via \code{R_GetCCallable()} the first time it is needed.
 #'
-#' @section CPU only:
-#' Only the CPU backend is built, using GGML's architecture-generic
-#' (non-SIMD) reference kernels for maximum portability across CRAN build
-#' machines. See \code{README.md} for what a future 'Vulkan' backend would
-#' require.
+#' @section Compute backends:
+#' The CPU and 'BLAS' backends are always built. On x86, selected quantized
+#' kernels are staged with ISA flags by \code{configure} and selected by
+#' runtime dispatch. On aarch64, 'GGML' 'NEON' kernels are the baseline. The
+#' 'Vulkan' backend is opt-in at installation with \code{--with-vulkan}.
 #'
 #' @keywords internal
 #' @useDynLib Rggml, .registration = TRUE

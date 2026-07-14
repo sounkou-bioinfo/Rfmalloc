@@ -39,6 +39,7 @@
 #include <R_ext/Print.h>   /* Rprintf, REprintf */
 
 #include "rpgen_plink2_glue.h" /* rpgen_plink2_exit(), rpgen_plink2_abort() */
+#include "rpgen_direct_sink.h" /* optional STPgenWriter terminal hook */
 
 #ifdef __cplusplus
 extern "C" {

@@ -16,14 +16,11 @@ underlying parser context, with a finalizer that closes it.
 \description{
 Opens a 'GGUF' model file and returns a lightweight context handle used by
 \code{\link[=gguf_metadata]{gguf_metadata()}}, \code{\link[=gguf_tensors]{gguf_tensors()}}, \code{\link[=gguf_tensor]{gguf_tensor()}}, and \code{\link[=gguf_import]{gguf_import()}}.
-The file is memory-mapped by the vendored 'gguflib' parser and unmapped
+Metadata and the tensor directory are parsed by Rggml's official GGUF
+implementation. Tensor bytes are mapped read-only and unmapped
 automatically when the returned object is garbage collected, or earlier if
 you call \code{gguf_import()}/friends with a plain file path (which open and
 close their own short-lived context internally).
-}
-\details{
-The vendored parser memory-maps the file read/write (\code{mmap(..., PROT_READ | PROT_WRITE, MAP_SHARED, ...)}), so \code{path} must point to a \emph{writable}
-file even if you only intend to read tensors from it.
 }
 \examples{
 tmp <- tempfile(fileext = ".gguf")

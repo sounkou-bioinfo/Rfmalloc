@@ -101,6 +101,35 @@ extern "C" SEXP C_statgen_pca_ooc(SEXP tensor, SEXP ns, SEXP ms, SEXP ks,
   return build_result(r);
 }
 
+// Decode a bounded variant-column panel into an ordinary numeric matrix. The
+// caller owns the panel lifetime; the complete genotype tensor is never
+// exposed as a double matrix. This adapter lets the R implementation use BLAS
+// on each panel while the C-callable codec remains the single decode path.
+extern "C" SEXP C_statgen_decode_panel(SEXP tensor, SEXP ns, SEXP starts,
+                                       SEXP counts) {
+  const int n = Rf_asInteger(ns);
+  const int start = Rf_asInteger(starts);
+  const int count = Rf_asInteger(counts);
+  if (n < 1 || start < 0 || count < 1) {
+    Rf_error("invalid genotype panel dimensions");
+  }
+
+  const R_xlen_t elem_offset = (R_xlen_t)start * (R_xlen_t)n;
+  const R_xlen_t n_elems = (R_xlen_t)count * (R_xlen_t)n;
+  if (n_elems / n != count) {
+    Rf_error("genotype panel is too large");
+  }
+
+  SEXP out = PROTECT(Rf_allocMatrix(REALSXP, n, count));
+  if (Rfmalloc_tensor_decode(tensor, elem_offset, n_elems, REAL(out)) != 0) {
+    UNPROTECT(1);
+    Rf_error("failed to decode genotype columns [%d, %d)", start,
+             start + count);
+  }
+  UNPROTECT(1);
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // statgen_snp_cor: stream a genotype tensor one variant-column at a time via
 // Rfmalloc_tensor_decode, compute the windowed Pearson correlation between
@@ -563,6 +592,7 @@ extern "C" SEXP C_statgen_ldpred2_auto(SEXP corr, SEXP beta_hats, SEXP n_effs,
 static const R_CallMethodDef CallEntries[] = {
     {"C_statgen_pca_incore", (DL_FUNC)&C_statgen_pca_incore, 7},
     {"C_statgen_pca_ooc", (DL_FUNC)&C_statgen_pca_ooc, 9},
+    {"C_statgen_decode_panel", (DL_FUNC)&C_statgen_decode_panel, 4},
     {"C_statgen_snp_cor", (DL_FUNC)&C_statgen_snp_cor, 7},
     {"C_statgen_ldpred2_inf", (DL_FUNC)&C_statgen_ldpred2_inf, 5},
     {"C_statgen_ldpred2_grid", (DL_FUNC)&C_statgen_ldpred2_grid, 8},

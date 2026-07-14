@@ -1,171 +1,105 @@
-/*
- * rgguf_metadata.c - expose GGUF key-value metadata as an R list.
- *
- * Scalar values map to the closest native R type; arrays of a supported
- * scalar type map to an R vector of that type. Anything gguflib itself
- * cannot represent cleanly (an out-of-range value type, or a nested array -
- * which the GGUF spec allows but no real-world GGUF file actually uses for
- * metadata) is reported as a plain NULL list element rather than an error,
- * per the package's "never fail metadata scanning over one odd key" design.
- */
-#include <string.h>
+/* Expose metadata already parsed and validated by GGML's official reader. */
+#include <stdint.h>
 
 #include "rgguf.h"
 
-typedef struct {
-    SEXP result;        /* allocated R vector, or NULL until first value seen */
-    R_xlen_t idx;        /* next slot to fill */
-    int is_array;        /* currently inside an array value? */
-    int unsupported;     /* saw a type we can't represent, or nested arrays */
-} rgguf_kv_collector;
-
-/* Map a gguf_value_type to the R vector SEXPTYPE used to store it (scalar or
- * as an array element type). Returns -1 for types we do not represent.
- * (SEXPTYPE is unsigned, so the sentinel is returned as a plain int.) */
-static int rgguf_sexptype_for_value_type(uint32_t type)
+static SEXPTYPE rgguf_value_sexptype(int type)
 {
     switch (type) {
-    case GGUF_VALUE_TYPE_UINT8:
-    case GGUF_VALUE_TYPE_INT8:
-    case GGUF_VALUE_TYPE_UINT16:
-    case GGUF_VALUE_TYPE_INT16:
-    case GGUF_VALUE_TYPE_INT32:
+    case RGGUF_VALUE_UINT8:
+    case RGGUF_VALUE_INT8:
+    case RGGUF_VALUE_UINT16:
+    case RGGUF_VALUE_INT16:
+    case RGGUF_VALUE_INT32:
         return INTSXP;
-    case GGUF_VALUE_TYPE_UINT32:
-    case GGUF_VALUE_TYPE_FLOAT32:
-    case GGUF_VALUE_TYPE_UINT64:
-    case GGUF_VALUE_TYPE_INT64:
-    case GGUF_VALUE_TYPE_FLOAT64:
+    case RGGUF_VALUE_UINT32:
+    case RGGUF_VALUE_FLOAT32:
+    case RGGUF_VALUE_UINT64:
+    case RGGUF_VALUE_INT64:
+    case RGGUF_VALUE_FLOAT64:
         return REALSXP;
-    case GGUF_VALUE_TYPE_BOOL:
+    case RGGUF_VALUE_BOOL:
         return LGLSXP;
-    case GGUF_VALUE_TYPE_STRING:
+    case RGGUF_VALUE_STRING:
         return STRSXP;
     default:
-        return -1;
+        return NILSXP;
     }
 }
 
-static void rgguf_store_scalar(SEXP vec, R_xlen_t idx, uint32_t type, union gguf_value *val)
+static void rgguf_copy_values(SEXP out, const struct Rggml_gguf_kv *kv,
+                               int64_t id, rgguf_ctx *ctx)
 {
-    switch (type) {
-    case GGUF_VALUE_TYPE_UINT8:
-        INTEGER(vec)[idx] = val->uint8;
+    size_t i;
+    switch (kv->type) {
+    case RGGUF_VALUE_UINT8:
+        for (i = 0; i < kv->n; ++i) INTEGER(out)[i] = ((const uint8_t *)kv->data)[i];
         break;
-    case GGUF_VALUE_TYPE_INT8:
-        INTEGER(vec)[idx] = val->int8;
+    case RGGUF_VALUE_INT8:
+        for (i = 0; i < kv->n; ++i) INTEGER(out)[i] = ((const int8_t *)kv->data)[i];
         break;
-    case GGUF_VALUE_TYPE_UINT16:
-        INTEGER(vec)[idx] = val->uint16;
+    case RGGUF_VALUE_UINT16:
+        for (i = 0; i < kv->n; ++i) INTEGER(out)[i] = ((const uint16_t *)kv->data)[i];
         break;
-    case GGUF_VALUE_TYPE_INT16:
-        INTEGER(vec)[idx] = val->int16;
+    case RGGUF_VALUE_INT16:
+        for (i = 0; i < kv->n; ++i) INTEGER(out)[i] = ((const int16_t *)kv->data)[i];
         break;
-    case GGUF_VALUE_TYPE_INT32:
-        INTEGER(vec)[idx] = val->int32;
+    case RGGUF_VALUE_UINT32:
+        for (i = 0; i < kv->n; ++i) REAL(out)[i] = ((const uint32_t *)kv->data)[i];
         break;
-    case GGUF_VALUE_TYPE_UINT32:
-        REAL(vec)[idx] = (double) val->uint32;
+    case RGGUF_VALUE_INT32:
+        for (i = 0; i < kv->n; ++i) INTEGER(out)[i] = ((const int32_t *)kv->data)[i];
         break;
-    case GGUF_VALUE_TYPE_FLOAT32:
-        REAL(vec)[idx] = (double) val->float32;
+    case RGGUF_VALUE_FLOAT32:
+        for (i = 0; i < kv->n; ++i) REAL(out)[i] = ((const float *)kv->data)[i];
         break;
-    case GGUF_VALUE_TYPE_UINT64:
-        REAL(vec)[idx] = (double) val->uint64;
+    case RGGUF_VALUE_BOOL:
+        for (i = 0; i < kv->n; ++i) LOGICAL(out)[i] = ((const uint8_t *)kv->data)[i] ? 1 : 0;
         break;
-    case GGUF_VALUE_TYPE_INT64:
-        REAL(vec)[idx] = (double) val->int64;
-        break;
-    case GGUF_VALUE_TYPE_FLOAT64:
-        REAL(vec)[idx] = val->float64;
-        break;
-    case GGUF_VALUE_TYPE_BOOL:
-        LOGICAL(vec)[idx] = (val->boolval == 0 || val->boolval == 1)
-            ? (int) val->boolval : NA_LOGICAL;
-        break;
-    case GGUF_VALUE_TYPE_STRING:
-        SET_STRING_ELT(vec, idx, Rf_mkCharLenCE(
-            val->string.string, (int) val->string.len, CE_UTF8));
-        break;
-    default:
-        break; /* unreachable: caller checks rgguf_sexptype_for_value_type() first */
-    }
-}
-
-static void rgguf_kv_callback(void *privdata, uint32_t type, union gguf_value *val,
-                              uint64_t in_array, uint64_t array_len)
-{
-    rgguf_kv_collector *col = privdata;
-    (void) in_array;
-
-    if (type == GGUF_VALUE_TYPE_ARRAY_START) {
-        if (col->is_array || col->result != NULL) {
-            /* Nested array: not used by any real GGUF file. Bail out. */
-            col->unsupported = 1;
-            return;
+    case RGGUF_VALUE_STRING:
+        for (i = 0; i < kv->n; ++i) {
+            const char *s = Rggml_gguf_kv_string_ptr()(ctx->meta, id, i);
+            SET_STRING_ELT(out, i, s ? Rf_mkCharCE(s, CE_UTF8) : NA_STRING);
         }
-        int elt_type = rgguf_sexptype_for_value_type(val->array.type);
-        if (elt_type < 0) {
-            col->unsupported = 1;
-            return;
-        }
-        col->is_array = 1;
-        col->result = Rf_allocVector((SEXPTYPE) elt_type, (R_xlen_t) array_len);
-        R_PreserveObject(col->result);
-        col->idx = 0;
-        return;
+        break;
+    case RGGUF_VALUE_UINT64:
+        for (i = 0; i < kv->n; ++i) REAL(out)[i] = (double)((const uint64_t *)kv->data)[i];
+        break;
+    case RGGUF_VALUE_INT64:
+        for (i = 0; i < kv->n; ++i) REAL(out)[i] = (double)((const int64_t *)kv->data)[i];
+        break;
+    case RGGUF_VALUE_FLOAT64:
+        for (i = 0; i < kv->n; ++i) REAL(out)[i] = ((const double *)kv->data)[i];
+        break;
     }
-    if (type == GGUF_VALUE_TYPE_ARRAY_END) {
-        return;
-    }
-    if (col->unsupported) {
-        return;
-    }
-
-    if (!col->is_array && col->result == NULL) {
-        int scalar_type = rgguf_sexptype_for_value_type(type);
-        if (scalar_type < 0) {
-            col->unsupported = 1;
-            return;
-        }
-        col->result = Rf_allocVector((SEXPTYPE) scalar_type, 1);
-        R_PreserveObject(col->result);
-        col->idx = 0;
-    }
-    if (col->idx >= Rf_xlength(col->result)) {
-        return; /* defensive: should not happen given array_len bookkeeping */
-    }
-    rgguf_store_scalar(col->result, col->idx, type, val);
-    col->idx++;
 }
 
 SEXP RC_gguf_metadata(SEXP ctx_sexp)
 {
-    gguf_ctx *ctx = rgguf_get_ctx(ctx_sexp);
-    gguf_rewind(ctx);
+    rgguf_ctx *ctx = rgguf_get_ctx(ctx_sexp);
+    const int64_t n64 = Rggml_gguf_n_kv_ptr()(ctx->meta);
+    if (n64 < 0 || (uint64_t)n64 > (uint64_t)R_XLEN_T_MAX)
+        Rf_error("GGUF metadata table is too large for R");
+    const R_xlen_t n = (R_xlen_t)n64;
 
-    R_xlen_t n = (R_xlen_t) ctx->header->metadata_kv_count;
     SEXP names = PROTECT(Rf_allocVector(STRSXP, n));
     SEXP values = PROTECT(Rf_allocVector(VECSXP, n));
-
-    gguf_key key;
-    R_xlen_t i = 0;
-    while (gguf_get_key(ctx, &key)) {
-        SET_STRING_ELT(names, i, Rf_mkCharLenCE(key.name, (int) key.namelen, CE_UTF8));
-
-        rgguf_kv_collector col;
-        memset(&col, 0, sizeof(col));
-        gguf_do_with_value(ctx, key.type, key.val, &col, 0, 0, rgguf_kv_callback);
-
-        if (col.result != NULL) {
-            if (!col.unsupported) {
-                SET_VECTOR_ELT(values, i, col.result);
-            }
-            R_ReleaseObject(col.result);
-        }
-        i++;
+    for (R_xlen_t i = 0; i < n; ++i) {
+        struct Rggml_gguf_kv kv;
+        if (Rggml_gguf_kv_ptr()(ctx->meta, i, &kv) != 0)
+            Rf_error("failed to read GGUF metadata entry %lld", (long long)i);
+        if (kv.n > (size_t)R_XLEN_T_MAX)
+            Rf_error("GGUF metadata entry '%s' is too large for R", kv.key);
+        if (kv.type != RGGUF_VALUE_STRING && kv.n && !kv.data)
+            Rf_error("GGUF metadata entry '%s' has no value data", kv.key);
+        SET_STRING_ELT(names, i, Rf_mkCharCE(kv.key, CE_UTF8));
+        const SEXPTYPE type = rgguf_value_sexptype(kv.type);
+        if (type == NILSXP) continue;
+        SEXP value = PROTECT(Rf_allocVector(type, (R_xlen_t)kv.n));
+        rgguf_copy_values(value, &kv, i, ctx);
+        SET_VECTOR_ELT(values, i, value);
+        UNPROTECT(1);
     }
-
     Rf_setAttrib(values, R_NamesSymbol, names);
     UNPROTECT(2);
     return values;

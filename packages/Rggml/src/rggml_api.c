@@ -298,10 +298,92 @@ int Rggml_dequantize(enum ggml_type type, const void *src, float *dst, int64_t n
      * backend once (Rggml_backend_cpu_init) so the fp16 lookup table used to
      * read block scales is populated. Returns 0 on success. */
     if (!src || !dst || n < 1) return -1;
+    if (type < 0 || type >= GGML_TYPE_COUNT) return -2;
     const struct ggml_type_traits *traits = ggml_get_type_traits(type);
     if (!traits || !traits->to_float) return -2;
     if (n % ggml_blck_size(type) != 0) return -3;
     traits->to_float(src, dst, n);
+    return 0;
+}
+
+int Rggml_can_dequantize(enum ggml_type type)
+{
+    if (type < 0 || type >= GGML_TYPE_COUNT) return 0;
+    switch (type) {
+    case GGML_TYPE_F32:
+    case GGML_TYPE_F64:
+    case GGML_TYPE_I8:
+    case GGML_TYPE_I16:
+    case GGML_TYPE_I32:
+    case GGML_TYPE_I64:
+        return 1;
+    default: {
+        const struct ggml_type_traits *traits = ggml_get_type_traits(type);
+        return traits && traits->to_float;
+    }
+    }
+}
+
+int Rggml_dequantize_double(enum ggml_type type, const void *src, double *dst,
+                            int64_t n)
+{
+    if (!src || !dst || n < 1) return -1;
+    if (type < 0 || type >= GGML_TYPE_COUNT) return -2;
+    switch (type) {
+    case GGML_TYPE_F32: {
+        const float *p = (const float *)src;
+        for (int64_t i = 0; i < n; ++i) dst[i] = p[i];
+        return 0;
+    }
+    case GGML_TYPE_F64:
+        memcpy(dst, src, (size_t)n * sizeof(*dst));
+        return 0;
+    case GGML_TYPE_I8: {
+        const int8_t *p = (const int8_t *)src;
+        for (int64_t i = 0; i < n; ++i) dst[i] = p[i];
+        return 0;
+    }
+    case GGML_TYPE_I16: {
+        const int16_t *p = (const int16_t *)src;
+        for (int64_t i = 0; i < n; ++i) dst[i] = p[i];
+        return 0;
+    }
+    case GGML_TYPE_I32: {
+        const int32_t *p = (const int32_t *)src;
+        for (int64_t i = 0; i < n; ++i) dst[i] = p[i];
+        return 0;
+    }
+    case GGML_TYPE_I64: {
+        const int64_t *p = (const int64_t *)src;
+        for (int64_t i = 0; i < n; ++i) dst[i] = (double)p[i];
+        return 0;
+    }
+    default:
+        break;
+    }
+
+    const struct ggml_type_traits *traits = ggml_get_type_traits(type);
+    const int64_t block = ggml_blck_size(type);
+    const size_t block_bytes = ggml_type_size(type);
+    if (!traits || !traits->to_float || block < 1 || block_bytes == 0 ||
+        n % block != 0) return -2;
+
+    int64_t cap = 16384;
+    if (cap < block) cap = block;
+    cap -= cap % block;
+    float *scratch = (float *)malloc((size_t)cap * sizeof(*scratch));
+    if (!scratch) return -3;
+
+    const unsigned char *p = (const unsigned char *)src;
+    for (int64_t done = 0; done < n; ) {
+        int64_t count = n - done;
+        if (count > cap) count = cap;
+        traits->to_float(p + (size_t)(done / block) * block_bytes,
+                         scratch, count);
+        for (int64_t i = 0; i < count; ++i) dst[done + i] = scratch[i];
+        done += count;
+    }
+    free(scratch);
     return 0;
 }
 

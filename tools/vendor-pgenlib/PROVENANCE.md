@@ -1,13 +1,13 @@
 # Vendored pgenlib - provenance & update policy
 
-The vendored subset under `packages/Rpgen/{configure,configure.ac,cleanup,
-src/Makevars*,src/pvar.cpp,src/pvar.h,tools/}` is **generated**, not
-hand-maintained. It is produced entirely by
+The base subset under `packages/Rpgen/{configure,configure.ac,cleanup,
+src/Makevars*,tools/}` is **generated**, not hand-maintained. It is produced by
 [`vendorpgen.R`](vendorpgen.R) from one pinned input:
 
 ```
-packages/Rpgen vendored subset  =  (SHA-pinned pgenlibr 0.6.2 CRAN tarball)
-                                  + (one edited line: OBJECTS= in Makevars.in/.win)
+packages/Rpgen pgenlib base  =  (SHA-pinned pgenlibr 0.6.2 CRAN tarball)
+                               - (pgenlibr's Rcpp-facing source files)
+                               + (Rpgen Makevars and cleanup integration)
 ```
 
 Re-run and verify at any time:
@@ -37,13 +37,11 @@ binding). The source of record is an immutable CRAN artifact, pinned here.
   version is available via `pkg-config`. That build - CRAN-accepted,
   exercised across CRAN's whole build-machine matrix - is Rpgen's
   reference, not a rewrite of it.
-- 466 of the 468 files under `tools/include/` are byte-identical to stock
-  pgenlibr 0.6.2 (the whole subtree - `tools/include/include/` for pgenlib
-  itself, plus the bundled `zstd/`, `libdeflate/`, `simde/`); the other 2
-  files (`src/Makevars.in`, `src/Makevars.win`) carry the one local edit
-  below.
+- All 468 files in pgenlibr's `tools/include/` manifest are byte-identical to
+  stock pgenlibr 0.6.2. The separate `vendor-plink2-import` recipe adds the
+  writer and program-level format-import closure on top of this base.
 
-## The one local edit
+## Local integration
 
 `src/Makevars.in` and `src/Makevars.win` each set
 
@@ -56,52 +54,49 @@ naming pgenlibr's own R-level Rcpp bindings (`src/pgenlibr.cpp`,
 none of pgenlibr's Rcpp bindings - it does not depend on Rcpp at all - and
 has its own hand-authored `src/rpgen.cpp` instead (not vendored, not
 touched by this script; see `packages/Rpgen/inst/COPYRIGHTS`). `vendorpgen.R`
-therefore rewrites that one line to
+therefore rewrites that line to
 
 ```make
-OBJECTS = rpgen.o
+OBJECTS = rpgen.o rpgen_import.o rpgen_direct_sink.o rpgen_null_stream.o rpgen_plink2_glue.o
 ```
 
-Applied as a direct line substitution inside `vendorpgen.R` (see the
-`src_files_patched` loop) rather than as a `patches/*.patch` file the way
-`tools/vendor-ggml/` does it: a single deterministic key=value rewrite does
-not need a diff format, and keeping it inline keeps the one edit and its
-rationale in the same place, next to the pin.
+The recipe's generated Makevars also adds `pgenlib_write.cc`, the PLINK 2
+program sources, and SFMT to `libPLINK2.a`, applies the CLI/direct-sink flags
+only to vendored objects, and removes all generated archives and objects from
+the clean target. The R-console, exit/abort, and direct-sink objects are part
+of this recipe, so `vendorpgen.R check` drift-checks the complete Makevars.
 
-`src/pvar.cpp` and `src/pvar.h` are still vendored byte-identical (for
-provenance, and as a future milestone's starting point for variant
-metadata), just not compiled: they `#include <Rcpp.h>` and use
-`Rcpp::String`/`Rcpp::stop()` throughout, which only matters if something
-puts them in `OBJECTS`. Since `OBJECTS` is set explicitly, R's build never
-falls back to compiling every `.cpp` it finds in `src/`, so their presence
-is inert until a later milestone opts them in (and adds Rcpp to
-`LinkingTo`/`Imports` at that point).
+pgenlibr's cleanup script only removes build products directly under `src/`.
+Rpgen compiles the vendored sources in place under `tools/include/`, so the
+recipe adds a bounded `find` which removes their `.o` files as well. This keeps
+incremental development from silently linking stale generated objects.
 
-Everything else - `PKG_CPPFLAGS`, `PKG_LIBS`, the `ZSTD_SOURCES`/
-`LIBDEFLATE_SOURCES`/`LIBPLINK2_SOURCES` lists, the `libPLINK2.a` build
-rule, `configure`/`configure.ac`'s system-vs-bundled zstd/libdeflate/simde
-detection - is untouched, because Rpgen's `tools/include/` directory
-layout is structurally identical to pgenlibr's own (`../tools/include`
-relative to `src/`), so no path in the Makevars templates or the autoconf
-script needed to change.
+Rpgen does not ship pgenlibr's `pvar.cpp`, `pvar.h`, `pgenlibr.cpp`, or
+`RcppExports.cpp`. They are Rcpp-facing bindings, not pgenlib itself, and
+including them would create an undeclared Rcpp dependency and break Windows
+builds that compile every source file present.
 
 ## What's vendored vs. what's Rpgen's own
 
 ```
 packages/Rpgen/
-  configure, configure.ac, cleanup     <- vendored, verbatim (autoconf: picks
+  configure, configure.ac              <- vendored, verbatim (autoconf: picks
                                            system vs. bundled zstd/libdeflate/simde)
+  cleanup                              <- generated base plus external-object cleanup
   src/
-    Makevars.in, Makevars.win          <- vendored, OBJECTS= edited (see above)
+    Makevars.in, Makevars.win          <- generated base plus Rpgen shim wiring
     Makevars.ucrt                      <- vendored, verbatim (`include Makevars.win`)
-    pvar.cpp, pvar.h                   <- vendored, verbatim, NOT compiled (see above)
-    rpgen.cpp                          <- Rpgen's own; the whole point of the package
+    rpgen.cpp                          <- Rpgen's own persistent readers
+    rpgen_import.cpp                   <- Rpgen's own format-import drivers
+    rpgen_cli_shim.h,
+    rpgen_null_stream.c,
+    rpgen_plink2_glue.{c,h}            <- Rpgen's own R-runtime adaptation
   tools/
     zstd_version.cpp                   <- vendored, verbatim (configure's
     libdeflate_version.cpp                compiler probes for a system install
     simde_version.cpp                     new enough to skip the bundled copy)
     include/                           <- vendored, verbatim, entire subtree
-      include/*.cc,*.h                    (pgenlib/plink2 core, read path only)
+      include/*.cc,*.h                    (pgenlib core, read and writer paths)
       zstd/**                             (bundled Zstd 1.5.5, BSD)
       libdeflate/**                       (bundled libdeflate, MIT)
       simde/**                            (bundled SIMDe, MIT)

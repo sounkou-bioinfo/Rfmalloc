@@ -6,35 +6,24 @@
  * separate package from pgenlibr - pgenlibr exposes an R-level (Rcpp) API
  * only, no C-callable one, so nothing else can link against its pgenlib
  * build. Rpgen vendors the same pgenlib read subset (see PROVENANCE.md) and
- * registers a small C API with R_RegisterCCallable() so sibling packages
- * (Rfmalloc et al.) can eventually read .pgen genotypes natively.
- *
- * Milestone 1 scope: open a .pgen file far enough to learn its sample and
- * variant counts, then close it again. This exercises the exact same
- * PgfiInitPhase1 / PgfiInitPhase2 / PgrInit sequence a real reader needs
- * (see rpgen_open_info() below, modeled closely on pgenlibr's own
- * RPgenReader::Load()/Close() in src/pgenlibr.cpp of the vendored tarball),
- * without yet keeping a live reader handle around between R calls.
- *
- * Milestone 2 scope: read genotypes. rpgen_read_hardcalls()/
- * rpgen_read_dosages() below extend rpgen_open_info()'s setup all the way to
- * a working plink2::PgrGet()/PgrGetD() loop over every variant, for every
- * sample (no subsetting), producing a dense samples x variants matrix per
- * call. Still no persistent handle across R calls - each call opens the file,
- * reads its requested variant range, and closes it again, matching milestone
- * 1's style. See the RpgenFullReader comment below for the buffer layout,
- * modeled on pgenlibr's RPgenReader::Load()/ReadIntList()/ReadList().
+ * registers a small C API with R_RegisterCCallable() so sibling packages can
+ * read genotypes natively. The Rfmalloc path keeps a reader open across
+ * bounded variant panels and transfers semantic records into a destination
+ * context. Dense readers remain as inspection and reference helpers.
  */
 
 #include <cerrno>
 #include <climits>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include <R.h>
 #include <Rinternals.h>
 #include <R_ext/Rdynload.h>
+
+#include <Rfmalloc.h>
 
 #include "include/pgenlib_ffi_support.h"  // Dosage16ToDoubles, GenoarrLookup*
 #include "include/pgenlib_read.h"
@@ -51,47 +40,15 @@
 #  undef TRUE
 #endif
 
-// Internal version constant for the C-callable API registered below. Not
-// shared with the installed inst/include/Rpgen.h: downstream consumers read
-// the version at runtime through Rpgen_api_version(), the same pattern
-// Rggml's RGGML_API_VERSION uses (see packages/Rggml/src/rggml_api.h).
-//
-// Bumped to 2 in milestone 2: adds Rpgen_read_hardcalls()/
-// Rpgen_read_dosages() alongside milestone 1's Rpgen_open_info().
-//
-// Bumped to 3 in milestone 3: adds Rpgen_read_bed_hardcalls(), a PLINK 1
-// .bed reader. PgfiInitPhase1() already opens a PLINK 1 .bed file in
-// exactly the same code path as a .pgen (see rpgen_full_reader_open()'s
-// comment below) - the one real difference is that a .bed carries no header
-// of its own, so raw_sample_ct/raw_variant_ct must be supplied by the
-// caller (counted from the companion .fam/.bim) instead of being read back
-// from the file.
-//
-// Bumped to 4 in milestone 4a: adds Rpgen_import_vcf(), which converts a VCF
-// to a .pgen by calling plink2's own VcfToPgen() importer (vendored
-// separately by tools/vendor-plink2-import/, see its PROVENANCE.md) rather
-// than a from-scratch htslib-based reader - one codebase for VCF now, and
-// BCF/BGEN/Oxford later, since VcfToPgen() lives beside BcfToPgen()/
-// OxBgenToPgen()/etc. in the same vendored closure. Implemented in
-// src/rpgen_import.cpp, not this file; declared here only for the shared
-// CallEntries/register_c_callables tables below.
-//
-// Bumped to 5 in milestone 4b: adds Rpgen_import_bcf()/Rpgen_import_bgen()/
-// Rpgen_import_gen()/Rpgen_import_haps()/Rpgen_import_plink1_dosage() -
-// closing over the rest of the same vendored closure's import entry points
-// (BcfToPgen()/OxBgenToPgen()/OxGenToPgen()/OxHapslegendToPgen()/
-// Plink1DosageToPgen()) that milestone 4a's comment above already
-// anticipated. Also implemented in src/rpgen_import.cpp; same reason for
-// being declared here only.
+// Existing internal query retained for current in-repo callers. New work in
+// this monorepo does not add compatibility shims or bump it mechanically.
 #define RPGEN_API_VERSION 5
 
 namespace {
 
 // Open fname just far enough to read PgenFileInfo's header counts, then
 // close everything again. Mirrors pgenlibr's RPgenReader::Load() up through
-// PgrInit() (we stop there - no genotype-read buffers are allocated, since
-// milestone 1 has no genotype reader yet) and its Close(), including that
-// function's exact cleanup order.
+// PgrInit() and its Close(), including that function's cleanup order.
 //
 // Single-exit cleanup via goto: every resource acquired below (the
 // allele_idx_offsets refcounted block, pgfi_alloc, pgr_alloc, the open
@@ -153,8 +110,8 @@ int rpgen_open_info(const char *fname, uint32_t *n_sample_out,
     // header_ctrl & 0x30: file stores per-variant allele counts, i.e. some
     // variant is multiallelic. PgfiInitPhase2Ex() requires
     // info.allele_idx_offsets to already be allocated in that case (it
-    // errors out otherwise); we don't care about the actual counts for
-    // milestone 1, only that Phase2 succeeds. No pvar is supplied, so we
+    // errors out otherwise); this count-only path needs Phase2 to succeed but
+    // does not consume the actual counts. No pvar is supplied, so we
     // allocate our own scratch block exactly as pgenlibr's Load() does
     // when it has no pvar object to source one from.
     if (header_ctrl & 0x30) {
@@ -228,7 +185,7 @@ cleanup:
   return rc;
 }
 
-// -- milestone 2: genotype reading ------------------------------------------
+// -- genotype reading -------------------------------------------------------
 //
 // Lookup tables PgrGet()/PgrGetD() results are decoded through. Byte-for-byte
 // the same tables pgenlibr.cpp defines for RPgenReader::ReadIntHardcalls()/
@@ -248,12 +205,11 @@ static const double kGenoRDoublePairs[32] ALIGNV16 =
 // rpgen_open_info() above) plus the extra buffers plink2::PgrGet()/PgrGetD()
 // themselves need - a sample_include bitvec (and its interleaved twin), its
 // cumulative popcounts, a genovec scratch buffer, and (when with_dosage) a
-// dosage_present bitvec + dosage_main array. Modeled on pgenlibr's
-// RPgenReader::Load(), pared down to only what PgrGet()/PgrGetD() consume:
+// dosage_present bitvec + dosage_main array, or phasepresent + phaseinfo for a
+// PgrGetP() read. Modeled on pgenlibr's RPgenReader::Load(), pared down to the
+// buffers the selected read consumes:
 // no raregeno/difflist buffers (sparse reads), no multiallelic patch01/10
-// buffers or phasepresent/phaseinfo (ReadAlleles-style allele-specific or
-// phased reads) - rpgen_read_hardcalls()/rpgen_read_dosages() need none of
-// those.
+// buffers or multiallelic patch buffers.
 //
 // sample_include is always filled to mark every sample present (there is no
 // sample-subsetting API yet), via the same SetBit()/FillInterleavedMaskVec()/
@@ -278,6 +234,8 @@ struct RpgenFullReader {
   uintptr_t *genovec;
   uintptr_t *dosage_present;  // nullptr unless opened with_dosage
   uint16_t *dosage_main;      // nullptr unless opened with_dosage
+  uintptr_t *phasepresent;    // nullptr unless opened with_phase
+  uintptr_t *phaseinfo;       // nullptr unless opened with_phase
 
   uint32_t n_sample;
   uint32_t n_variant;
@@ -296,6 +254,8 @@ void rpgen_full_reader_preinit(RpgenFullReader *r) {
   r->genovec = nullptr;
   r->dosage_present = nullptr;
   r->dosage_main = nullptr;
+  r->phasepresent = nullptr;
+  r->phaseinfo = nullptr;
   r->n_sample = 0;
   r->n_variant = 0;
 }
@@ -345,7 +305,8 @@ int rpgen_full_reader_open(const char *fname, bool with_dosage,
                             RpgenFullReader *r, char *errbuf,
                             size_t errbuf_len,
                             uint32_t cur_sample_ct = UINT32_MAX,
-                            uint32_t cur_variant_ct = UINT32_MAX) {
+                            uint32_t cur_variant_ct = UINT32_MAX,
+                            bool with_phase = false) {
   if (errbuf_len > 0) {
     errbuf[0] = '\0';
   }
@@ -424,9 +385,12 @@ int rpgen_full_reader_open(const char *fname, bool with_dosage,
                                      2 * plink2::kInt32PerVec) *
                            plink2::kBytesPerVec
                     : 0;
+    const uintptr_t phase_byte_ct =
+        with_phase ? sample_subset_byte_ct : 0;
     const uintptr_t extra_byte_ct =
         2 * sample_subset_byte_ct + cumulative_popcounts_byte_ct +
-        genovec_byte_ct + dosage_present_byte_ct + dosage_main_byte_ct;
+        genovec_byte_ct + dosage_present_byte_ct + dosage_main_byte_ct +
+        2 * phase_byte_ct;
 
     if (plink2::cachealigned_malloc(pgr_alloc_main_byte_ct + extra_byte_ct,
                                      &r->pgr_alloc)) {
@@ -463,6 +427,12 @@ int rpgen_full_reader_open(const char *fname, bool with_dosage,
       r->dosage_main = reinterpret_cast<uint16_t *>(iter);
       iter += dosage_main_byte_ct;
     }
+    if (with_phase) {
+      r->phasepresent = reinterpret_cast<uintptr_t *>(iter);
+      iter += phase_byte_ct;
+      r->phaseinfo = reinterpret_cast<uintptr_t *>(iter);
+      iter += phase_byte_ct;
+    }
 
     // Mark every sample included (see the RpgenFullReader comment above for
     // why this always takes the explicit-subset path).
@@ -495,6 +465,129 @@ cleanup:
   return rc;
 }
 
+static int rpgen_full_reader_hardcalls(RpgenFullReader *r,
+                                        uint32_t variant_start,
+                                        uint32_t variant_ct, int32_t *out,
+                                        char *errbuf, size_t errbuf_len) {
+  if (!r || !out ||
+      static_cast<uint64_t>(variant_start) + variant_ct > r->n_variant) {
+    snprintf(errbuf, errbuf_len,
+             "variant range [%u, %u) out of bounds (raw_variant_ct = %u)",
+             variant_start, variant_start + variant_ct,
+             r ? r->n_variant : 0);
+    return -1;
+  }
+
+  for (uint32_t i = 0; i != variant_ct; ++i) {
+    const uint32_t vidx = variant_start + i;
+    const plink2::PglErr reterr = plink2::PgrGet(
+        r->subset_include_vec, r->subset_index, r->n_sample, vidx,
+        &r->state, r->genovec);
+    if (reterr != plink2::kPglRetSuccess) {
+      snprintf(errbuf, errbuf_len, "PgrGet() error %d at variant %u",
+               static_cast<int>(reterr), vidx);
+      return -1;
+    }
+    plink2::GenoarrLookup256x4bx4(
+        r->genovec, kGenoRInt32Quads, r->n_sample,
+        &out[static_cast<size_t>(i) * r->n_sample]);
+  }
+  return 0;
+}
+
+static int rpgen_full_reader_dosages(RpgenFullReader *r,
+                                      uint32_t variant_start,
+                                      uint32_t variant_ct, double *out,
+                                      char *errbuf, size_t errbuf_len) {
+  if (!r || !out || !r->dosage_present || !r->dosage_main ||
+      static_cast<uint64_t>(variant_start) + variant_ct > r->n_variant) {
+    snprintf(errbuf, errbuf_len,
+             "variant range [%u, %u) out of bounds (raw_variant_ct = %u)",
+             variant_start, variant_start + variant_ct,
+             r ? r->n_variant : 0);
+    return -1;
+  }
+
+  for (uint32_t i = 0; i != variant_ct; ++i) {
+    const uint32_t vidx = variant_start + i;
+    uint32_t dosage_ct;
+    const plink2::PglErr reterr = plink2::PgrGetD(
+        r->subset_include_vec, r->subset_index, r->n_sample, vidx,
+        &r->state, r->genovec, r->dosage_present, r->dosage_main,
+        &dosage_ct);
+    if (reterr != plink2::kPglRetSuccess) {
+      snprintf(errbuf, errbuf_len, "PgrGetD() error %d at variant %u",
+               static_cast<int>(reterr), vidx);
+      return -1;
+    }
+    plink2::Dosage16ToDoubles(
+        kGenoRDoublePairs, r->genovec, r->dosage_present, r->dosage_main,
+        r->n_sample, dosage_ct,
+        &out[static_cast<size_t>(i) * r->n_sample]);
+  }
+  return 0;
+}
+
+// Read fully phased, nonmissing ref/nonref haplotypes into packed locus rows.
+// Bit 2*s is sample s's first haplotype and bit 2*s+1 is its second. This is
+// already the layout consumed by Rfmalloc's locus-major haplotype sink.
+static int rpgen_full_reader_haplotypes(RpgenFullReader *r,
+                                        uint32_t variant_start,
+                                        uint32_t variant_ct, uint8_t *out,
+                                        size_t out_stride, char *errbuf,
+                                        size_t errbuf_len) {
+  if (!r || !out || !r->phasepresent || !r->phaseinfo ||
+      static_cast<uint64_t>(variant_start) + variant_ct > r->n_variant) {
+    snprintf(errbuf, errbuf_len, "invalid phased-haplotype read range");
+    return -1;
+  }
+  const size_t row_bytes = ((size_t)r->n_sample * 2 + 7) / 8;
+  if (out_stride < row_bytes) {
+    snprintf(errbuf, errbuf_len, "phased-haplotype row buffer is too short");
+    return -1;
+  }
+
+  for (uint32_t i = 0; i != variant_ct; ++i) {
+    const uint32_t vidx = variant_start + i;
+    uint32_t phasepresent_ct;
+    const plink2::PglErr reterr = plink2::PgrGetP(
+        r->subset_include_vec, r->subset_index, r->n_sample, vidx,
+        &r->state, r->genovec, r->phasepresent, r->phaseinfo,
+        &phasepresent_ct);
+    if (reterr != plink2::kPglRetSuccess) {
+      snprintf(errbuf, errbuf_len, "PgrGetP() error %d at variant %u",
+               static_cast<int>(reterr), vidx);
+      return -1;
+    }
+
+    uint8_t *row = out + (size_t)i * out_stride;
+    memset(row, 0, row_bytes);
+    for (uint32_t s = 0; s != r->n_sample; ++s) {
+      const uint32_t code = (r->genovec[s / plink2::kBitsPerWordD2] >>
+                             (2 * (s % plink2::kBitsPerWordD2))) & 3;
+      if (code == 3) {
+        snprintf(errbuf, errbuf_len,
+                 "missing genotype at variant %u, sample %u", vidx, s);
+        return -1;
+      }
+      const size_t h0 = (size_t)s * 2;
+      if (code == 2) {
+        row[h0 >> 3] |= (uint8_t)(1u << (h0 & 7));
+        row[(h0 + 1) >> 3] |= (uint8_t)(1u << ((h0 + 1) & 7));
+      } else if (code == 1) {
+        if (!plink2::IsSet(r->phasepresent, s)) {
+          snprintf(errbuf, errbuf_len,
+                   "unphased heterozygote at variant %u, sample %u", vidx, s);
+          return -1;
+        }
+        const size_t alt_hap = h0 + (plink2::IsSet(r->phaseinfo, s) ? 0 : 1);
+        row[alt_hap >> 3] |= (uint8_t)(1u << (alt_hap & 7));
+      }
+    }
+  }
+  return 0;
+}
+
 // Reads variants [variant_start, variant_start + variant_ct) into `out`, a
 // caller-allocated int32_t[reader.n_sample * variant_ct] buffer in
 // column-major (variant-major) order - out[v * n_sample + s] is sample s's
@@ -512,14 +605,6 @@ int rpgen_read_hardcalls_range(const char *fname, uint32_t variant_start,
     return -1;
   }
 
-  int rc = 0;
-  if (static_cast<uint64_t>(variant_start) + variant_ct > r.n_variant) {
-    snprintf(errbuf, errbuf_len,
-             "variant range [%u, %u) out of bounds (raw_variant_ct = %u)",
-             variant_start, variant_start + variant_ct, r.n_variant);
-    rc = -1;
-  }
-
   // Plain PgrGet() (as opposed to the allele-specific PgrGet1()) returns
   // genovec coded {hom-ref, has-one-non-ref-allele, has-two-non-ref-alleles,
   // missing} even for multiallelic variants - the same collapsed-ALT
@@ -528,21 +613,8 @@ int rpgen_read_hardcalls_range(const char *fname, uint32_t variant_start,
   // .pvar's allele bookkeeping either: allele identity (which ALT is which)
   // only matters for allele-specific reads (PgrGet1()/PgrGet1D(),
   // ReadAlleles()), not for this collapsed count. No .pvar dependency here.
-  for (uint32_t i = 0; rc == 0 && i != variant_ct; ++i) {
-    const uint32_t vidx = variant_start + i;
-    const plink2::PglErr reterr =
-        plink2::PgrGet(r.subset_include_vec, r.subset_index, r.n_sample,
-                       vidx, &r.state, r.genovec);
-    if (reterr != plink2::kPglRetSuccess) {
-      snprintf(errbuf, errbuf_len, "PgrGet() error %d at variant %u",
-               static_cast<int>(reterr), vidx);
-      rc = -1;
-      break;
-    }
-    plink2::GenoarrLookup256x4bx4(
-        r.genovec, kGenoRInt32Quads, r.n_sample,
-        &out[static_cast<size_t>(i) * r.n_sample]);
-  }
+  const int rc = rpgen_full_reader_hardcalls(
+      &r, variant_start, variant_ct, out, errbuf, errbuf_len);
 
   if (rc == 0) {
     *n_sample_out = r.n_sample;
@@ -569,30 +641,8 @@ int rpgen_read_dosages_range(const char *fname, uint32_t variant_start,
     return -1;
   }
 
-  int rc = 0;
-  if (static_cast<uint64_t>(variant_start) + variant_ct > r.n_variant) {
-    snprintf(errbuf, errbuf_len,
-             "variant range [%u, %u) out of bounds (raw_variant_ct = %u)",
-             variant_start, variant_start + variant_ct, r.n_variant);
-    rc = -1;
-  }
-
-  for (uint32_t i = 0; rc == 0 && i != variant_ct; ++i) {
-    const uint32_t vidx = variant_start + i;
-    uint32_t dosage_ct;
-    const plink2::PglErr reterr = plink2::PgrGetD(
-        r.subset_include_vec, r.subset_index, r.n_sample, vidx, &r.state,
-        r.genovec, r.dosage_present, r.dosage_main, &dosage_ct);
-    if (reterr != plink2::kPglRetSuccess) {
-      snprintf(errbuf, errbuf_len, "PgrGetD() error %d at variant %u",
-               static_cast<int>(reterr), vidx);
-      rc = -1;
-      break;
-    }
-    plink2::Dosage16ToDoubles(kGenoRDoublePairs, r.genovec, r.dosage_present,
-                               r.dosage_main, r.n_sample, dosage_ct,
-                               &out[static_cast<size_t>(i) * r.n_sample]);
-  }
+  const int rc = rpgen_full_reader_dosages(
+      &r, variant_start, variant_ct, out, errbuf, errbuf_len);
 
   if (rc == 0) {
     *n_sample_out = r.n_sample;
@@ -602,7 +652,7 @@ int rpgen_read_dosages_range(const char *fname, uint32_t variant_start,
   return rc;
 }
 
-// -- milestone 3: PLINK 1 .bed reading --------------------------------------
+// -- PLINK 1 .bed reading ---------------------------------------------------
 //
 // A PLINK 1 .bed carries only 3 magic/mode bytes, no counts (see
 // PgfiInitPhase1()'s "plink 1 binary" branch in pgenlib_read.cc): the sample
@@ -685,21 +735,8 @@ int rpgen_read_bed_hardcalls(const char *bed_fname, uint32_t raw_sample_ct,
     return -1;
   }
 
-  int rc = 0;
-  for (uint32_t vidx = 0; rc == 0 && vidx != r.n_variant; ++vidx) {
-    const plink2::PglErr reterr =
-        plink2::PgrGet(r.subset_include_vec, r.subset_index, r.n_sample,
-                       vidx, &r.state, r.genovec);
-    if (reterr != plink2::kPglRetSuccess) {
-      snprintf(errbuf, errbuf_len, "PgrGet() error %d at variant %u",
-               static_cast<int>(reterr), vidx);
-      rc = -1;
-      break;
-    }
-    plink2::GenoarrLookup256x4bx4(
-        r.genovec, kGenoRInt32Quads, r.n_sample,
-        &out[static_cast<size_t>(vidx) * r.n_sample]);
-  }
+  const int rc = rpgen_full_reader_hardcalls(
+      &r, 0, r.n_variant, out, errbuf, errbuf_len);
 
   rpgen_full_reader_release(&r);
   return rc;
@@ -792,7 +829,7 @@ SEXP RC_rpgen_info(SEXP path_sexp) {
 // Shared argument validation for RC_rpgen_read_hardcalls()/
 // RC_rpgen_read_dosages(): `path` must be a single non-NA string; `pvar` must
 // be NULL or a single string. `pvar` is accepted for API parity with the
-// milestone 2 spec (and a future allele-specific reader) but not read yet -
+// shape of a future allele-specific reader but not read yet -
 // see rpgen_read_hardcalls_range()'s comment on why a plain PgrGet()/
 // PgrGetD() collapsed-ALT read does not need a .pvar's allele bookkeeping.
 static const char *rpgen_check_path_and_pvar(SEXP path_sexp, SEXP pvar_sexp) {
@@ -891,6 +928,136 @@ static const char *rpgen_check_single_string(SEXP path_sexp,
   return CHAR(STRING_ELT(path_sexp, 0));
 }
 
+static uint32_t rpgen_check_count(SEXP x, const char *argname) {
+  const double value = Rf_asReal(x);
+  if (!R_FINITE(value) || value < 1.0 || value > UINT32_MAX ||
+      value != static_cast<double>(static_cast<uint32_t>(value))) {
+    Rf_error("%s must be a positive whole number no larger than 2^32 - 1",
+             argname);
+  }
+  return static_cast<uint32_t>(value);
+}
+
+static void rpgen_interrupt_check(void *) { R_CheckUserInterrupt(); }
+
+// Stream one open pgenlib reader into Rfmalloc's record-panel context. The
+// source declares the transfer representation; Rfmalloc owns packing,
+// alignment, and persistent layout.
+SEXP RC_rpgen_stream_fmalloc(SEXP path_sexp, SEXP n_sample_sexp,
+                             SEXP n_variant_sexp, SEXP kind_sexp,
+                             SEXP runtime_sexp, SEXP block_size_sexp) {
+  const char *path = rpgen_check_single_string(path_sexp, "path");
+  const uint32_t n_sample = rpgen_check_count(n_sample_sexp, "n_sample");
+  const uint32_t n_variant = rpgen_check_count(n_variant_sexp, "n_variant");
+  const int kind = Rf_asInteger(kind_sexp);
+  const uint32_t block_size = rpgen_check_count(block_size_sexp, "block_size");
+  if (kind < 0 || kind > 3) {
+    Rf_error("kind must select hardcalls, dosages, phased haplotypes, or f64");
+  }
+
+  const char *storage = kind == 0 ? "bed" :
+                        kind == 1 ? "dosage" :
+                        kind == 2 ? "haplotype" : "f64";
+  const R_xlen_t n_item = kind == 2 ? (R_xlen_t)n_sample * 2 : n_sample;
+  Rfmalloc_buffer_open_fun buffer_open = Rfmalloc_buffer_open_ptr();
+  Rfmalloc_buffer_write_fun buffer_write = Rfmalloc_buffer_write_ptr();
+  Rfmalloc_buffer_finish_fun buffer_finish = Rfmalloc_buffer_finish_ptr();
+  Rfmalloc_buffer_abort_fun buffer_abort = Rfmalloc_buffer_abort_ptr();
+  Rfmalloc_buffer_context *sink =
+      buffer_open(runtime_sexp, storage, n_item, n_variant);
+  if (!sink) {
+    Rf_error("failed to create Rfmalloc '%s' buffer", storage);
+  }
+
+  RpgenFullReader reader;
+  char errbuf[512];
+  if (rpgen_full_reader_open(path, kind == 1 || kind == 3, &reader,
+                             errbuf, sizeof(errbuf),
+                             n_sample, n_variant, kind == 2) != 0) {
+    buffer_abort(sink);
+    Rf_error("failed to open \"%s\": %s", path, errbuf);
+  }
+
+  const uint32_t panel_ncol = block_size < n_variant ? block_size : n_variant;
+  const size_t record_stride = kind == 0
+      ? (size_t)n_sample * sizeof(int32_t)
+      : kind == 1 || kind == 3
+          ? (size_t)n_sample * sizeof(double)
+          : ((size_t)n_sample * 2 + 7) / 8;
+  if (record_stride > SIZE_MAX / panel_ncol) {
+    rpgen_full_reader_release(&reader);
+    buffer_abort(sink);
+    Rf_error("requested genotype panel is too large");
+  }
+  void *panel = std::malloc(record_stride * panel_ncol);
+  if (!panel) {
+    rpgen_full_reader_release(&reader);
+    buffer_abort(sink);
+    Rf_error("failed to allocate genotype panel");
+  }
+
+  int rc = 0;
+  bool interrupted = false;
+  for (uint32_t first = 0; first < n_variant; first += panel_ncol) {
+    const uint32_t count =
+        panel_ncol < n_variant - first ? panel_ncol : n_variant - first;
+    if (kind == 0) {
+      rc = rpgen_full_reader_hardcalls(
+          &reader, first, count, static_cast<int32_t *>(panel), errbuf,
+          sizeof(errbuf));
+      if (rc == 0) {
+        rc = buffer_write(sink, first, count, RFMALLOC_BUFFER_I32, panel,
+                          record_stride);
+      }
+    } else if (kind == 1 || kind == 3) {
+      rc = rpgen_full_reader_dosages(
+          &reader, first, count, static_cast<double *>(panel), errbuf,
+          sizeof(errbuf));
+      if (rc == 0) {
+        rc = buffer_write(sink, first, count, RFMALLOC_BUFFER_F64, panel,
+                          record_stride);
+      }
+    } else {
+      rc = rpgen_full_reader_haplotypes(
+          &reader, first, count, static_cast<uint8_t *>(panel), record_stride,
+          errbuf, sizeof(errbuf));
+      if (rc == 0) {
+        rc = buffer_write(sink, first, count, RFMALLOC_BUFFER_PACKED_BITS,
+                          panel, record_stride);
+      }
+    }
+    if (rc != 0) {
+      break;
+    }
+    if (R_ToplevelExec(rpgen_interrupt_check, nullptr) == FALSE) {
+      interrupted = true;
+      break;
+    }
+  }
+
+  std::free(panel);
+  rpgen_full_reader_release(&reader);
+  if (interrupted) {
+    buffer_abort(sink);
+    Rf_error("genotype import interrupted");
+  }
+  if (rc != 0) {
+    buffer_abort(sink);
+    if (errbuf[0]) {
+      Rf_error("failed while reading \"%s\": %s", path, errbuf);
+    }
+    Rf_error("Rfmalloc rejected a genotype panel from \"%s\"", path);
+  }
+
+  SEXP payload = PROTECT(buffer_finish(sink));
+  if (payload == R_NilValue) {
+    UNPROTECT(1);
+    Rf_error("failed to finish Rfmalloc '%s' buffer", storage);
+  }
+  UNPROTECT(1);
+  return payload;
+}
+
 SEXP RC_rpgen_read_bed_hardcalls(SEXP bed_sexp, SEXP bim_sexp,
                                   SEXP fam_sexp) {
   const char *bed_path = rpgen_check_single_string(bed_sexp, "bed");
@@ -927,7 +1094,7 @@ SEXP RC_rpgen_read_bed_hardcalls(SEXP bed_sexp, SEXP bim_sexp,
   return result;
 }
 
-// Implemented in src/rpgen_import.cpp (milestone 4a/4b); declared here only
+// Implemented in src/rpgen_import.cpp; declared here only
 // so they can be listed in this file's shared CallEntries/register_c_callables
 // tables, the single registration point for all of Rpgen's entry points.
 int Rpgen_import_vcf(const char *vcf_path, const char *out_pgen_path,
@@ -956,12 +1123,31 @@ int Rpgen_import_plink1_dosage(const char *dosage_path, const char *fam_path,
                                 size_t errbuf_len);
 SEXP RC_rpgen_import_plink1_dosage(SEXP dosage_sexp, SEXP fam_sexp,
                                     SEXP map_sexp, SEXP out_sexp);
+int Rpgen_import_ped(const char *ped_path, const char *map_path,
+                      const char *out_pgen_path, char *errbuf,
+                      size_t errbuf_len);
+SEXP RC_rpgen_import_ped(SEXP ped_sexp, SEXP map_sexp, SEXP out_sexp);
+int Rpgen_import_tped(const char *tped_path, const char *tfam_path,
+                       const char *out_pgen_path, char *errbuf,
+                       size_t errbuf_len);
+SEXP RC_rpgen_import_tped(SEXP tped_sexp, SEXP tfam_sexp, SEXP out_sexp);
+int Rpgen_import_eigenstrat(const char *geno_path, const char *ind_path,
+                             const char *snp_path,
+                             const char *out_pgen_path, char *errbuf,
+                             size_t errbuf_len);
+SEXP RC_rpgen_import_eigenstrat(SEXP geno_sexp, SEXP ind_sexp,
+                                 SEXP snp_sexp, SEXP out_sexp);
+SEXP RC_rpgen_direct_sink_begin(SEXP kind_sexp, SEXP runtime_sexp,
+                                SEXP variant_ct_hint_sexp);
+SEXP RC_rpgen_direct_sink_finish(void);
+SEXP RC_rpgen_direct_sink_abort(void);
 
 static const R_CallMethodDef CallEntries[] = {
     {"RC_rpgen_info", (DL_FUNC)&RC_rpgen_info, 1},
     {"RC_rpgen_read_hardcalls", (DL_FUNC)&RC_rpgen_read_hardcalls, 2},
     {"RC_rpgen_read_dosages", (DL_FUNC)&RC_rpgen_read_dosages, 2},
     {"RC_rpgen_read_bed_hardcalls", (DL_FUNC)&RC_rpgen_read_bed_hardcalls, 3},
+    {"RC_rpgen_stream_fmalloc", (DL_FUNC)&RC_rpgen_stream_fmalloc, 6},
     {"RC_rpgen_import_vcf", (DL_FUNC)&RC_rpgen_import_vcf, 2},
     {"RC_rpgen_import_bcf", (DL_FUNC)&RC_rpgen_import_bcf, 2},
     {"RC_rpgen_import_gen", (DL_FUNC)&RC_rpgen_import_gen, 3},
@@ -969,6 +1155,12 @@ static const R_CallMethodDef CallEntries[] = {
     {"RC_rpgen_import_haps", (DL_FUNC)&RC_rpgen_import_haps, 5},
     {"RC_rpgen_import_plink1_dosage",
      (DL_FUNC)&RC_rpgen_import_plink1_dosage, 4},
+    {"RC_rpgen_import_ped", (DL_FUNC)&RC_rpgen_import_ped, 3},
+    {"RC_rpgen_import_tped", (DL_FUNC)&RC_rpgen_import_tped, 3},
+    {"RC_rpgen_import_eigenstrat", (DL_FUNC)&RC_rpgen_import_eigenstrat, 4},
+    {"RC_rpgen_direct_sink_begin", (DL_FUNC)&RC_rpgen_direct_sink_begin, 3},
+    {"RC_rpgen_direct_sink_finish", (DL_FUNC)&RC_rpgen_direct_sink_finish, 0},
+    {"RC_rpgen_direct_sink_abort", (DL_FUNC)&RC_rpgen_direct_sink_abort, 0},
     {NULL, NULL, 0}};
 
 static void register_c_callables(DllInfo *dll) {
@@ -990,6 +1182,12 @@ static void register_c_callables(DllInfo *dll) {
                        (DL_FUNC)Rpgen_import_haps);
   R_RegisterCCallable("Rpgen", "Rpgen_import_plink1_dosage",
                        (DL_FUNC)Rpgen_import_plink1_dosage);
+  R_RegisterCCallable("Rpgen", "Rpgen_import_ped",
+                       (DL_FUNC)Rpgen_import_ped);
+  R_RegisterCCallable("Rpgen", "Rpgen_import_tped",
+                       (DL_FUNC)Rpgen_import_tped);
+  R_RegisterCCallable("Rpgen", "Rpgen_import_eigenstrat",
+                       (DL_FUNC)Rpgen_import_eigenstrat);
   (void)dll;
 }
 

@@ -155,31 +155,23 @@ static void tensor_register_bed_codec(void)
     Rfmalloc_register_tensor_codec("bed", 4, 1, tensor_decode_bed);
 }
 
-//==============================================================================
-// Encode an integer dosage matrix (0/1/2/NA) into a "bed" payload, so tests and
-// callers can build genotype tensors without a real .bed on disk. Importing an
-// actual .bed is a byte copy of its body behind this header (see fmalloc_bed()).
-//==============================================================================
-extern "C" SEXP rfm_tensor_bed_encode_impl(SEXP x, SEXP runtime_xptr)
+// Allocate an empty raw bed payload. Layout construction belongs here, not in
+// an importer: callers only supply shape and column panels.
+extern "C" SEXP Rfmalloc_bed_create(SEXP runtime_xptr, R_xlen_t nrow,
+                                     R_xlen_t ncol)
 {
     fm_runtime *runtime = runtime_from_xptr(runtime_xptr);
     if (!runtime || !runtime->info) {
         Rf_error("fmalloc runtime is closed");
     }
-    if (TYPEOF(x) != INTSXP) {
-        Rf_error("x must be an integer matrix of dosages (0, 1, 2, NA)");
-    }
-    SEXP xdim = Rf_getAttrib(x, R_DimSymbol);
-    if (xdim == R_NilValue || TYPEOF(xdim) != INTSXP || XLENGTH(xdim) != 2) {
-        Rf_error("x must be a matrix");
-    }
-    const R_xlen_t nrow = (R_xlen_t)INTEGER(xdim)[0];
-    const R_xlen_t ncol = (R_xlen_t)INTEGER(xdim)[1];
     if (nrow <= 0 || ncol <= 0) {
-        Rf_error("x must have at least one row and one column");
+        Rf_error("bed dimensions must be positive");
     }
 
     const R_xlen_t cb = rfm_bed_col_bytes(nrow);
+    if (ncol > (std::numeric_limits<R_xlen_t>::max() - RFM_BED_HDR_BYTES) / cb) {
+        Rf_error("bed payload is too large");
+    }
     const R_xlen_t body = ncol * cb;
     fm_vector *vec = allocate_fm_vector(runtime, RAWSXP, RFM_BED_HDR_BYTES + body,
                                         true, false);
@@ -195,9 +187,43 @@ extern "C" SEXP rfm_tensor_bed_encode_impl(SEXP x, SEXP runtime_xptr)
 
     uint8_t *base = p + RFM_BED_HDR_BYTES;
     memset(base, 0, (size_t)body);
-    const int *src = INTEGER(x);
+    vec->maybe_dirty = true;
+    UNPROTECT(1);
+    return ans;
+}
+
+// Pack a column-major int32 panel into an existing bed payload. Returns an
+// error code instead of longjmping so a stateful source reader can close cleanly.
+extern "C" int Rfmalloc_bed_write(SEXP payload, R_xlen_t first_col,
+                                   R_xlen_t ncol, const int32_t *src)
+{
+    if (first_col < 0 || ncol < 0 || (ncol && !src)) {
+        return -1;
+    }
+    fm_vector *vec = maybe_vector_from_altrep(payload);
+    if (!vec || vec->type != RAWSXP || !vec->runtime || !vec->runtime->info ||
+        (size_t)vec->len < RFM_BED_HDR_BYTES) {
+        return -1;
+    }
+    uint8_t *p = static_cast<uint8_t *>(vector_data_or_dummy(vec));
+    rfm_bed_header hdr;
+    memcpy(&hdr, p, sizeof(hdr));
+    if (memcmp(hdr.magic, rfm_bed_magic7, sizeof(rfm_bed_magic7)) != 0 ||
+        hdr.magic[7] != RFM_BED_RAW || hdr.nrow == 0 || hdr.ncol == 0 ||
+        (uint64_t)first_col > hdr.ncol || (uint64_t)ncol > hdr.ncol - first_col) {
+        return -1;
+    }
+    const R_xlen_t nrow = (R_xlen_t)hdr.nrow;
+    const R_xlen_t cb = rfm_bed_col_bytes(nrow);
+    if (hdr.ncol > (uint64_t)(std::numeric_limits<size_t>::max() -
+                              RFM_BED_HDR_BYTES) / (uint64_t)cb ||
+        (size_t)vec->len < RFM_BED_HDR_BYTES + (size_t)hdr.ncol * (size_t)cb) {
+        return -1;
+    }
+    uint8_t *base = p + RFM_BED_HDR_BYTES;
     for (R_xlen_t c = 0; c < ncol; c++) {
-        uint8_t *col = base + c * cb;
+        uint8_t *col = base + (first_col + c) * cb;
+        memset(col, 0, (size_t)cb);
         for (R_xlen_t i = 0; i < nrow; i++) {
             const int g = src[i + c * nrow];
             uint8_t code;
@@ -210,14 +236,35 @@ extern "C" SEXP rfm_tensor_bed_encode_impl(SEXP x, SEXP runtime_xptr)
             } else if (g == 0) {
                 code = 3;
             } else {
-                UNPROTECT(1);
-                Rf_error("dosage must be 0, 1, 2 or NA, got %d", g);
+                return -1;
             }
             col[i >> 2] |= (uint8_t)(code << (2 * (i & 3)));
         }
-        R_CheckUserInterrupt();
     }
     vec->maybe_dirty = true;
+    return 0;
+}
+
+//==============================================================================
+// Encode an integer dosage matrix (0/1/2/NA) into a "bed" payload, so tests and
+// callers can build genotype tensors without a real .bed on disk.
+//==============================================================================
+extern "C" SEXP rfm_tensor_bed_encode_impl(SEXP x, SEXP runtime_xptr)
+{
+    if (TYPEOF(x) != INTSXP) {
+        Rf_error("x must be an integer matrix of dosages (0, 1, 2, NA)");
+    }
+    SEXP xdim = Rf_getAttrib(x, R_DimSymbol);
+    if (xdim == R_NilValue || TYPEOF(xdim) != INTSXP || XLENGTH(xdim) != 2) {
+        Rf_error("x must be a matrix");
+    }
+    const R_xlen_t nrow = (R_xlen_t)INTEGER(xdim)[0];
+    const R_xlen_t ncol = (R_xlen_t)INTEGER(xdim)[1];
+    SEXP ans = PROTECT(Rfmalloc_bed_create(runtime_xptr, nrow, ncol));
+    if (Rfmalloc_bed_write(ans, 0, ncol, INTEGER(x)) != 0) {
+        UNPROTECT(1);
+        Rf_error("x contains a dosage other than 0, 1, 2 or NA");
+    }
     UNPROTECT(1);
     return ans;
 }

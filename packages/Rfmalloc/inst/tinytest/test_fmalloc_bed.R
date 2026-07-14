@@ -32,7 +32,7 @@ message("Testing the PLINK 1 .bed genotype codec (2 bits/genotype)...")
 
     message("  Test 2: dosages outside 0/1/2/NA are rejected, not silently packed")
     bad <- matrix(c(0L, 3L, 1L, 2L), 2L, 2L)
-    expect_error(fmalloc_bed(bad, runtime = rt), "dosage must be")
+    expect_error(fmalloc_bed(bad, runtime = rt), "0, 1, 2 or NA")
     expect_error(fmalloc_bed(matrix(1.5, 2, 2), runtime = rt), "integer matrix")
 })()
 

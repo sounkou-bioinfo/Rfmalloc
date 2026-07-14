@@ -2,7 +2,7 @@
 # these targets orchestrate the stack in dependency order and run the
 # cross-package pieces (integration tests, fixtures, the root README).
 #
-#   make install               # install all four packages, dependency order
+#   make install               # install all six packages, dependency order
 #   make test                  # install + every suite against the co-installed stack
 #   make check                 # R CMD check --no-manual for each package
 #   make check PKGS=Rgguf      # ... or a subset

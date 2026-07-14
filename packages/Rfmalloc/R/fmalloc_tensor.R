@@ -73,18 +73,19 @@ fmalloc_tensor_codecs <- function() {
 create_fmalloc_tensor <- function(payload, dtype, dim) {
     codec <- .fmalloc_tensor_codec_info(dtype)
 
-    if (!is_fmalloc_vector(payload) || !is.raw(payload)) {
-        stop("payload must be an fmalloc raw vector")
+    payload_bytes <- .Call("rfm_tensor_payload_nbytes_impl", payload)
+    if (is.null(payload_bytes)) {
+        stop("payload must be an fmalloc raw vector or borrowed storage view")
     }
     dims <- .fmalloc_validate_dimensions(dim, "dim")
 
     n_elems <- prod(as.double(dims))
     n_blocks <- ceiling(n_elems / codec$items_per_block)
     needed <- n_blocks * as.double(codec$bytes_per_block)
-    if (length(payload) < needed) {
+    if (payload_bytes < needed) {
         stop(sprintf(
-            "payload has %d bytes but %.0f '%s' elements need %.0f",
-            length(payload), n_elems, dtype, needed
+            "payload has %.0f bytes but %.0f '%s' elements need %.0f",
+            payload_bytes, n_elems, dtype, needed
         ))
     }
 
@@ -130,6 +131,53 @@ fmalloc_tensor_dtype <- function(x) {
     attr(x, "rfm_dtype")
 }
 
+#' Give the pager an access hint for typed storage
+#'
+#' Applies a best-effort access hint to an fmalloc tensor payload or borrowed
+#' storage view. `"sequential"` asks the pager to read ahead, `"willneed"`
+#' asks it to prefetch, and `"dontneed"` releases fully covered pages after a
+#' phase has consumed them. Unsupported platforms treat the hint as a no-op.
+#' The function never changes the tensor bytes.
+#'
+#' This is deliberately a storage primitive rather than an LLM policy. A graph
+#' scheduler, HMM, or out-of-core matrix algorithm can express its own access
+#' phases over the same mapped spans.
+#'
+#' @param x An `fmalloc_tensor` or its raw fmalloc payload.
+#' @param advice One of `"sequential"`, `"willneed"`, or `"dontneed"`.
+#' @param offset Byte offset into the payload.
+#' @param nbytes Number of bytes to advise. `NULL` covers the rest of the
+#'   payload.
+#' @return `x`, invisibly.
+#' @export
+fmalloc_storage_advise <- function(
+    x,
+    advice = c("sequential", "willneed", "dontneed"),
+    offset = 0,
+    nbytes = NULL
+) {
+    advice <- match.arg(advice)
+    total <- .Call("rfm_tensor_payload_nbytes_impl", x)
+    if (is.null(total)) {
+        stop("x must be an fmalloc raw payload or borrowed storage view")
+    }
+    offset <- as.double(offset)
+    if (length(offset) != 1L || !is.finite(offset) || offset < 0 ||
+        offset != floor(offset) || offset > total) {
+        stop("offset must be a whole byte offset inside the payload")
+    }
+    if (is.null(nbytes)) {
+        nbytes <- total - offset
+    }
+    nbytes <- as.double(nbytes)
+    if (length(nbytes) != 1L || !is.finite(nbytes) || nbytes < 0 ||
+        nbytes != floor(nbytes) || nbytes > total - offset) {
+        stop("nbytes must be a whole byte count inside the payload")
+    }
+    code <- match(advice, c("sequential", "dontneed", "willneed")) - 1L
+    invisible(.Call("rfm_storage_advise_impl", x, offset, nbytes, code))
+}
+
 #' @rdname fmalloc_tensor
 #' @export
 fmalloc_tensor_materialize <- function(x) {
@@ -153,10 +201,11 @@ dim.fmalloc_tensor <- function(x) {
 #' @export
 print.fmalloc_tensor <- function(x, ...) {
     dims <- attr(x, "rfm_dims")
+    payload_bytes <- .Call("rfm_tensor_payload_nbytes_impl", x)
     cat(sprintf(
-        "<fmalloc_tensor %s [%s], %d payload bytes>\n",
+        "<fmalloc_tensor %s [%s], %.0f payload bytes>\n",
         attr(x, "rfm_dtype"), paste(dims, collapse = " x "),
-        length(unclass(x))
+        payload_bytes
     ))
     invisible(x)
 }
@@ -230,7 +279,7 @@ print.fmalloc_tensor <- function(x, ...) {
     # Out-of-core: when the compressed payload reaches the OOC threshold,
     # release each panel's source pages after decoding so a tensor whose
     # payload exceeds RAM streams from disk (fixed-geometry codecs only).
-    payload_gb <- length(unclass(tensor)) / 2^30
+    payload_gb <- .Call("rfm_tensor_payload_nbytes_impl", tensor) / 2^30
     ooc <- payload_gb >= .fmalloc_ooc_threshold_gb()
 
     ans <- .Call(

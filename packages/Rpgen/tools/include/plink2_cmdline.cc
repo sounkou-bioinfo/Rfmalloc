@@ -72,6 +72,18 @@ uint32_t g_stderr_written_to = 0;
 // (logprintf(), logerrprintf(), logprintfww(), ...) is a HEADER_INLINE
 // wrapper in plink2_cmdline.h that bottoms out in one of these five, so
 // patching only these five covers the whole vendored tree.
+static void RpgenLogputs(const char* str) {
+#ifdef RPGEN_DIRECT_SINK
+  if (::rpgen_direct_sink_active() && strstr(str, ".pgen") &&
+      strstr(str, "written")) {
+    Rprintf("\nPLINK 2 import complete: genotype records transferred directly "
+            "to Rfmalloc.\n");
+    return;
+  }
+#endif
+  Rprintf("%s", str);
+}
+
 void logputs_silent(const char* str) {
   // No log file is ever open (g_logfile stays nullptr for Rpgen's whole
   // process lifetime), so there is nothing to mirror silently.
@@ -79,7 +91,7 @@ void logputs_silent(const char* str) {
 }
 
 void logputs(const char* str) {
-  Rprintf("%s", str);
+  RpgenLogputs(str);
 }
 
 void logerrputs(const char* str) {
@@ -88,7 +100,7 @@ void logerrputs(const char* str) {
 }
 
 void logputsb() {
-  Rprintf("%s", g_logbuf);
+  RpgenLogputs(g_logbuf);
 }
 
 void logerrputsb() {

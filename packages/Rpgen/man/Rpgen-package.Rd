@@ -4,16 +4,14 @@
 \name{Rpgen-package}
 \alias{Rpgen}
 \alias{Rpgen-package}
-\title{Rpgen: Vendored 'PLINK 2' pgenlib with a C-Callable Genotype Reader API}
+\title{Rpgen: PLINK 2 genotype ingestion into file-backed storage}
 \description{
-Rpgen is a carrier package: it vendors the read subset of 'PLINK 2's
-pgenlib library (\url{https://github.com/chrchang/plink-ng}), the same
-subset the CRAN package 'pgenlibr' vendors and builds as
-\code{libPLINK2.a}, and exposes it through
-\code{R_RegisterCCallable()} entry points. It has no high-level R
-modeling API of its own beyond \code{\link{rpgen_info}}, a milestone
-smoke test that opens a \code{.pgen} file and reports its sample and
-variant counts.
+Rpgen uses 'PLINK 2's pgenlib and native importers
+(\url{https://github.com/chrchang/plink-ng}) to read its genotype format
+family, including its legacy and interchange formats, into bounded,
+file-backed 'Rfmalloc' layouts. The main R entry point is
+\code{\link{rpgen_ingest}}. The native readers are also exposed through
+\code{R_RegisterCCallable()} for sibling packages.
 }
 \section{Why not just use pgenlibr}{
 
@@ -31,12 +29,12 @@ namespace is guaranteed loaded first) in your package's
 and resolve the C-callables you need with \code{R_GetCCallable()}.
 }
 
-\section{Rfmalloc}{
+\section{Record transfer}{
 
-Rpgen \code{Depends} on \code{Rfmalloc} (the out-of-core array substrate
-this whole monorepo composes around) in anticipation of a later
-milestone that reads \code{.pgen} genotypes straight into an
-\code{Rfmalloc}-backed matrix. Milestone 1 does not exercise it yet.
+PGEN and BED keep one pgenlib reader open and transfer bounded variant
+panels into an opaque 'Rfmalloc' buffer context. The source declares
+hardcalls, dosages, or phase bits; 'Rfmalloc' owns allocation, packing,
+alignment, and the persistent layout.
 }
 
 \seealso{
@@ -54,7 +52,7 @@ Useful links:
 Other contributors:
 \itemize{
   \item Christopher Chang (Author of the vendored pgenlib library and plink2 program) [copyright holder]
-  \item Shaun Purcell (Co-author of the vendored plink2 program (VcfToPgen import closure)) [copyright holder]
+  \item Shaun Purcell (Co-author of the vendored plink2 format-import closure) [copyright holder]
   \item Eric Biggers (Author of included libdeflate library) [copyright holder]
   \item Yann Collet (Author of included Zstd library) [copyright holder]
   \item Meta Platforms, Inc. (Zstd library) [copyright holder]

@@ -2,7 +2,7 @@
 #define RGGML_API_PUBLIC_H
 
 /*
- * Rggml.h - C-callable compute API for the Rggml carrier package, version 1.
+ * Rggml.h - C-callable compute API for the Rggml carrier package.
  *
  * Rggml vendors the CPU backend of the GGML tensor library
  * (https://github.com/ggml-org/ggml) as a static library and exposes a
@@ -120,6 +120,60 @@ typedef size_t (*Rggml_quantize_fun)(enum ggml_type type, const float *src, void
  * scales is populated. Returns 0 on success. */
 typedef int (*Rggml_dequantize_fun)(enum ggml_type type, const void *src,
                                     float *dst, int64_t n);
+typedef int (*Rggml_can_dequantize_fun)(enum ggml_type type);
+typedef int (*Rggml_dequantize_double_fun)(enum ggml_type type,
+                                           const void *src, double *dst,
+                                           int64_t n);
+
+/* Official GGUF reader/writer owned by Rggml. Borrowed strings and data
+ * pointers remain valid until their opaque context is closed. */
+struct Rggml_gguf_context;
+struct Rggml_gguf_writer;
+struct Rggml_gguf_kv {
+    const char *key;
+    int type;
+    int is_array;
+    size_t n;
+    const void *data;
+};
+struct Rggml_gguf_tensor {
+    const char *name;
+    const char *type_name;
+    enum ggml_type type;
+    int n_dims;
+    int64_t ne[GGML_MAX_DIMS];
+    int64_t n_elements;
+    size_t nbytes;
+    size_t offset;
+};
+
+typedef struct Rggml_gguf_context *(*Rggml_gguf_open_fun)(const char *path);
+typedef void (*Rggml_gguf_close_fun)(struct Rggml_gguf_context *ctx);
+typedef uint32_t (*Rggml_gguf_version_fun)(const struct Rggml_gguf_context *ctx);
+typedef size_t (*Rggml_gguf_data_offset_fun)(const struct Rggml_gguf_context *ctx);
+typedef int64_t (*Rggml_gguf_n_kv_fun)(const struct Rggml_gguf_context *ctx);
+typedef int (*Rggml_gguf_kv_fun)(const struct Rggml_gguf_context *ctx,
+                                 int64_t id, struct Rggml_gguf_kv *out);
+typedef const char *(*Rggml_gguf_kv_string_fun)(
+    const struct Rggml_gguf_context *ctx, int64_t id, size_t index);
+typedef int64_t (*Rggml_gguf_n_tensors_fun)(const struct Rggml_gguf_context *ctx);
+typedef int64_t (*Rggml_gguf_find_tensor_fun)(
+    const struct Rggml_gguf_context *ctx, const char *name);
+typedef int (*Rggml_gguf_tensor_fun)(const struct Rggml_gguf_context *ctx,
+                                     int64_t id,
+                                     struct Rggml_gguf_tensor *out);
+
+typedef struct Rggml_gguf_writer *(*Rggml_gguf_writer_open_fun)(void);
+typedef void (*Rggml_gguf_writer_close_fun)(struct Rggml_gguf_writer *ctx);
+typedef int (*Rggml_gguf_writer_set_string_fun)(
+    struct Rggml_gguf_writer *ctx, const char *key, const char *value);
+typedef int (*Rggml_gguf_writer_set_f64_fun)(struct Rggml_gguf_writer *ctx,
+                                             const char *key, double value);
+typedef int (*Rggml_gguf_writer_add_f32_fun)(
+    struct Rggml_gguf_writer *ctx, const char *name, int n_dims,
+    const int64_t *ne, const double *data);
+typedef int (*Rggml_gguf_writer_write_fun)(struct Rggml_gguf_writer *ctx,
+                                           const char *path);
 
 /* -- graph ops (API version 5) ------------------------------------------------ */
 /*
@@ -488,6 +542,94 @@ static inline Rggml_nelements_fun Rggml_nelements_ptr(void)
 static inline Rggml_type_name_fun Rggml_type_name_ptr(void)
 {
     return (Rggml_type_name_fun) R_GetCCallable("Rggml", "Rggml_type_name");
+}
+
+static inline Rggml_dequantize_double_fun Rggml_dequantize_double_ptr(void)
+{
+    return (Rggml_dequantize_double_fun)
+        R_GetCCallable("Rggml", "Rggml_dequantize_double");
+}
+
+static inline Rggml_can_dequantize_fun Rggml_can_dequantize_ptr(void)
+{
+    return (Rggml_can_dequantize_fun)
+        R_GetCCallable("Rggml", "Rggml_can_dequantize");
+}
+
+static inline Rggml_gguf_open_fun Rggml_gguf_open_ptr(void)
+{
+    return (Rggml_gguf_open_fun) R_GetCCallable("Rggml", "Rggml_gguf_open");
+}
+static inline Rggml_gguf_close_fun Rggml_gguf_close_ptr(void)
+{
+    return (Rggml_gguf_close_fun) R_GetCCallable("Rggml", "Rggml_gguf_close");
+}
+static inline Rggml_gguf_version_fun Rggml_gguf_version_ptr(void)
+{
+    return (Rggml_gguf_version_fun) R_GetCCallable("Rggml", "Rggml_gguf_version");
+}
+static inline Rggml_gguf_data_offset_fun Rggml_gguf_data_offset_ptr(void)
+{
+    return (Rggml_gguf_data_offset_fun)
+        R_GetCCallable("Rggml", "Rggml_gguf_data_offset");
+}
+static inline Rggml_gguf_n_kv_fun Rggml_gguf_n_kv_ptr(void)
+{
+    return (Rggml_gguf_n_kv_fun) R_GetCCallable("Rggml", "Rggml_gguf_n_kv");
+}
+static inline Rggml_gguf_kv_fun Rggml_gguf_kv_ptr(void)
+{
+    return (Rggml_gguf_kv_fun) R_GetCCallable("Rggml", "Rggml_gguf_kv");
+}
+static inline Rggml_gguf_kv_string_fun Rggml_gguf_kv_string_ptr(void)
+{
+    return (Rggml_gguf_kv_string_fun)
+        R_GetCCallable("Rggml", "Rggml_gguf_kv_string");
+}
+static inline Rggml_gguf_n_tensors_fun Rggml_gguf_n_tensors_ptr(void)
+{
+    return (Rggml_gguf_n_tensors_fun)
+        R_GetCCallable("Rggml", "Rggml_gguf_n_tensors");
+}
+static inline Rggml_gguf_find_tensor_fun Rggml_gguf_find_tensor_ptr(void)
+{
+    return (Rggml_gguf_find_tensor_fun)
+        R_GetCCallable("Rggml", "Rggml_gguf_find_tensor");
+}
+static inline Rggml_gguf_tensor_fun Rggml_gguf_tensor_ptr(void)
+{
+    return (Rggml_gguf_tensor_fun)
+        R_GetCCallable("Rggml", "Rggml_gguf_tensor");
+}
+static inline Rggml_gguf_writer_open_fun Rggml_gguf_writer_open_ptr(void)
+{
+    return (Rggml_gguf_writer_open_fun)
+        R_GetCCallable("Rggml", "Rggml_gguf_writer_open");
+}
+static inline Rggml_gguf_writer_close_fun Rggml_gguf_writer_close_ptr(void)
+{
+    return (Rggml_gguf_writer_close_fun)
+        R_GetCCallable("Rggml", "Rggml_gguf_writer_close");
+}
+static inline Rggml_gguf_writer_set_string_fun Rggml_gguf_writer_set_string_ptr(void)
+{
+    return (Rggml_gguf_writer_set_string_fun)
+        R_GetCCallable("Rggml", "Rggml_gguf_writer_set_string");
+}
+static inline Rggml_gguf_writer_set_f64_fun Rggml_gguf_writer_set_f64_ptr(void)
+{
+    return (Rggml_gguf_writer_set_f64_fun)
+        R_GetCCallable("Rggml", "Rggml_gguf_writer_set_f64");
+}
+static inline Rggml_gguf_writer_add_f32_fun Rggml_gguf_writer_add_f32_ptr(void)
+{
+    return (Rggml_gguf_writer_add_f32_fun)
+        R_GetCCallable("Rggml", "Rggml_gguf_writer_add_f32");
+}
+static inline Rggml_gguf_writer_write_fun Rggml_gguf_writer_write_ptr(void)
+{
+    return (Rggml_gguf_writer_write_fun)
+        R_GetCCallable("Rggml", "Rggml_gguf_writer_write");
 }
 
 #ifdef __cplusplus

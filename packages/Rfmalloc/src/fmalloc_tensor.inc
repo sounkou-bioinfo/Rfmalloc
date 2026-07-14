@@ -154,16 +154,28 @@ static void tensor_source_from_args(SEXP payload, SEXP codec_name, SEXP dims_sex
                                     rfm_tensor_source *src)
 {
     fm_vector *vec = maybe_vector_from_altrep(payload);
-    if (!vec || vec->type != RAWSXP) {
-        Rf_error("tensor payload must be an fmalloc raw vector");
-    }
-    if (!vec->runtime || !vec->runtime->info) {
-        Rf_error("fmalloc runtime is closed");
+    size_t payload_bytes;
+    if (vec) {
+        if (vec->type != RAWSXP || !vec->runtime || !vec->runtime->info) {
+            Rf_error("tensor payload must be readable raw storage");
+        }
+        src->payload = vector_data_or_dummy(vec);
+        src->runtime = vec->runtime;
+        payload_bytes = vec->bytes;
+    } else {
+        SEXP runtime_xptr;
+        if (Rfmalloc_storage_data(payload, &src->payload, &payload_bytes,
+                                  &runtime_xptr) != 0 ||
+            runtime_xptr == R_NilValue) {
+            Rf_error("tensor payload must be fmalloc storage or a borrowed view");
+        }
+        src->runtime = runtime_from_xptr(runtime_xptr);
+        if (!src->runtime || !src->runtime->info) {
+            Rf_error("fmalloc runtime is closed");
+        }
     }
 
     src->codec = tensor_codec_from_sexp(codec_name);
-    src->payload = vector_data_or_dummy(vec);
-    src->runtime = vec->runtime;
 
     if (TYPEOF(dims_sexp) != INTSXP || XLENGTH(dims_sexp) < 1) {
         Rf_error("tensor dims must be a non-empty integer vector");
@@ -187,22 +199,26 @@ static void tensor_source_from_args(SEXP payload, SEXP codec_name, SEXP dims_sex
     src->nrow = (R_xlen_t)INTEGER(dims_sexp)[0];
     src->ncol = src->ndim >= 2 ? (R_xlen_t)INTEGER(dims_sexp)[1] : 1;
 
-    R_xlen_t n_elems = total;
-    uint32_t ipb = src->codec->items_per_block;
-    R_xlen_t n_blocks = (n_elems + ipb - 1) / ipb;
-    R_xlen_t needed = n_blocks * (R_xlen_t)src->codec->bytes_per_block;
-    if (vec->len < needed) {
+    const R_xlen_t n_elems = total;
+    const uint32_t ipb = src->codec->items_per_block;
+    const uint64_t n_blocks = (uint64_t)(n_elems / ipb) +
+        (n_elems % ipb != 0);
+    if (n_blocks > SIZE_MAX / src->codec->bytes_per_block) {
+        Rf_error("tensor payload size exceeds the address space");
+    }
+    const size_t needed = (size_t)n_blocks * src->codec->bytes_per_block;
+    if (needed > payload_bytes) {
         Rf_error("tensor payload too short: need %lld bytes for %lld '%s' elements, have %lld",
                  (long long)needed, (long long)n_elems, src->codec->name,
-                 (long long)vec->len);
+                 (long long)payload_bytes);
     }
 
-    src->payload_bytes = (size_t)vec->len;
+    src->payload_bytes = payload_bytes;
     // A codec has fixed geometry (block b lives at byte b*bytes_per_block, so a
     // panel's compressed byte range is computable and evictable) exactly when
     // the payload is the predicted size. Self-indexing codecs like "alp" carry
     // an offset table and store more, so this is false for them.
-    src->fixed_geometry = ((size_t)needed == (size_t)vec->len);
+    src->fixed_geometry = (needed == payload_bytes);
 }
 
 // Release the compressed source pages backing a decoded element range, so a

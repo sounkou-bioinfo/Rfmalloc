@@ -1,0 +1,13 @@
+RfmallocStatgen includes a pinned subset of PCAone's randomized-SVD core.
+
+Upstream: https://github.com/Zilong-Li/PCAone
+Commit: e36ba7612e0aa2142e01add3dd35dbdbf90acc7e
+Copyright: 2022-2024 Zilong Li and PCAone contributors
+License: GPL-3
+
+The vendored files live under src/pcaone. The reproducible recipe and pinned
+source archive are under tools/vendor-pcaone. Common.hpp omits PCAone's unused
+zstd include. Logger.hpp initializes the screen flag and routes optional output
+through R's console. Utils.hpp and Utils.cpp retain only the helper closure used
+by the randomized-SVD path. These adaptations remain under GPL-3; no upstream
+code is relicensed.

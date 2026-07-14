@@ -5,7 +5,8 @@
 # pgenlibr's autoconf-based build. This is how the project OWNS its path to
 # pgenlib: the vendored tree is not a mystery copy, it is
 #
-#     (SHA-pinned pgenlibr CRAN tarball) + (one local edit: OBJECTS=)
+#     (SHA-pinned pgenlibr CRAN tarball) - (Rcpp wrappers)
+#                              + (Makevars and cleanup integration)
 #
 # recorded beside this script and verifiable by re-running it.
 #
@@ -13,8 +14,9 @@
 #           is a CRAN-accepted package that already vendors exactly the
 #           pgenlib *read* subset + zstd + libdeflate + simde and builds
 #           libPLINK2.a from them; that build is our reference. We take its
-#           configure/configure.ac/Makevars* and its whole tools/include/
-#           tree verbatim. We do NOT take pgenlibr's pvar.cpp/pvar.h: they are
+#           configure/configure.ac/cleanup/Makevars* and its whole
+#           tools/include/ tree as the base. We do NOT take pgenlibr's
+#           pvar.cpp/pvar.h: they are
 #           its Rcpp R-facing wrapper, and Rpgen is not an Rcpp package (it uses
 #           the C FFI in include/pvar_ffi_support.*). R's Windows build compiles
 #           every src/*.cpp regardless of OBJECTS, so shipping them broke the
@@ -22,14 +24,14 @@
 #   edit  : Makevars.in and Makevars.win each set one line,
 #           "OBJECTS = pvar.o pgenlibr.o RcppExports.o", to the R-level Rcpp
 #           bindings pgenlibr compiles. Rpgen has no Rcpp bindings - it has
-#           its own src/rpgen.cpp and src/rpgen_import.cpp (hand-authored,
-#           not vendored, not touched by this script) - so that line becomes
-#           "OBJECTS = rpgen.o rpgen_import.o" (rpgen_import.cpp is
-#           milestone 4a's VCF import driver, see
+#           its own hand-authored native files, not touched by this script, so
+#           that line names rpgen.cpp, rpgen_import.cpp, the direct record
+#           sink, and the two CLI cleanup shims. rpgen_import.cpp drives the
+#           native format-import closure; see
 #           tools/vendor-plink2-import/PROVENANCE.md).
 #           Applied inline below rather than as a patches/*.patch file: it is
 #           a single deterministic line replacement, not a source edit.
-#   edit 2: milestone 4a also adds plink2's VcfToPgen() import closure
+#   edit 2: Rpgen also adds PLINK 2's genotype format-import closure
 #           (tools/vendor-plink2-import/vendorplink2import.R vendors the
 #           source files themselves into tools/include/) to the same
 #           libPLINK2.a static library this script's Makevars.in/Makevars.win
@@ -38,7 +40,13 @@
 #           LIBPLINK2_C_SOURCES/LIBPLINK2_CO pair (SFMT.c is plain C) joins
 #           the libPLINK2.a build rule. Applied inline below, right after the
 #           OBJECTS= edit, for the same reason: deterministic, and it belongs
-#           next to the file list it's wiring in.
+#           next to the file list it's wiring in. The same edit installs the
+#           target-specific CLI/direct-sink flags used only for vendored
+#           objects. A re-vendor therefore reproduces the complete build,
+#           rather than silently dropping hand-maintained Makevars fragments.
+#   edit 3: pgenlibr's cleanup script removes only objects directly under
+#           src/. Rpgen also compiles the vendored tree in tools/include/, so
+#           the generated cleanup script removes those external objects too.
 #
 # Usage (from anywhere):
 #   Rscript tools/vendor-pgenlib/vendorpgen.R download   # fetch + SHA-verify the tarball into cache/
@@ -73,8 +81,9 @@ pkg_dst <- file.path(repo, "packages", "Rpgen")
 cache   <- file.path(here, "cache")
 
 # Files copied byte-identical from the pgenlibr tarball (package root and
-# src/); Makevars.in/Makevars.win get the one OBJECTS= edit described above.
-root_files <- c("configure", "configure.ac", "cleanup")
+# src/), except for the explicitly generated Makevars and cleanup edits above.
+root_files_verbatim <- c("configure", "configure.ac")
+root_files_patched <- "cleanup"
 src_files_verbatim <- c("Makevars.ucrt")
 src_files_patched   <- c("Makevars.in", "Makevars.win")
 tools_files <- c("zstd_version.cpp", "libdeflate_version.cpp", "simde_version.cpp")
@@ -131,18 +140,27 @@ dir.create(file.path(out, "src"), showWarnings = FALSE, recursive = TRUE)
 dir.create(file.path(out, "tools", "include"), showWarnings = FALSE, recursive = TRUE)
 
 message("copy package-root autoconf files (verbatim)")
-for (f in root_files) {
+for (f in root_files_verbatim) {
   stopifnot(file.copy(file.path(src, f), file.path(out, f), overwrite = TRUE))
   Sys.chmod(file.path(out, f), "0755")
 }
+
+message("copy cleanup script (vendored-object cleanup added)")
+cleanup_lines <- readLines(file.path(src, root_files_patched))
+cleanup_lines <- c(
+  cleanup_lines,
+  "find tools/include -type f -name '*.o' -exec rm -f {} \\;"
+)
+writeLines(cleanup_lines, file.path(out, root_files_patched))
+Sys.chmod(file.path(out, root_files_patched), "0755")
 
 message("copy src/ files (verbatim)")
 for (f in src_files_verbatim) {
   stopifnot(file.copy(file.path(src, "src", f), file.path(out, "src", f), overwrite = TRUE))
 }
 
-# milestone 4a "edit 2" (see this script's header comment): wires plink2's
-# VcfToPgen() import closure (vendored separately by
+# "edit 2" (see this script's header comment): wires PLINK 2's genotype
+# format-import closure (vendored separately by
 # tools/vendor-plink2-import/vendorplink2import.R into tools/include/) into
 # the same libPLINK2.a build these Makevars templates already produce.
 # file_label picks the (slightly different) explanatory comment each file
@@ -172,14 +190,14 @@ patch_libplink2_sources <- function(lines, file_label) {
   lines[idx] <- paste(lines[idx], extra_program_files)
 
   comment <- if (identical(file_label, "Makevars.in")) {
-    c("# pgenlib read subset (vendorpgen.R) plus the plink2 VcfToPgen() import",
-      "# closure (vendorplink2import.R, milestone 4a): pgenlib_write.cc is the",
+    c("# pgenlib read subset (vendorpgen.R) plus the PLINK 2 format-import",
+      "# closure (vendorplink2import.R): pgenlib_write.cc is the",
       "# .pgen writer, the rest of the new entries are plink2's *program*-level",
       "# files (no \"include/\" path prefix - they live one directory up from the",
       "# library subset, see tools/vendor-plink2-import/PROVENANCE.md).")
   } else {
-    c("# pgenlib read subset (vendorpgen.R) plus the plink2 VcfToPgen() import",
-      "# closure (vendorplink2import.R, milestone 4a) - see src/Makevars.in's",
+    c("# pgenlib read subset (vendorpgen.R) plus the PLINK 2 format-import",
+      "# closure (vendorplink2import.R) - see src/Makevars.in's",
       "# comment on this same variable for the file-layout rationale.")
   }
   lines <- append(lines, comment, after = idx - 1)
@@ -222,7 +240,11 @@ patch_libplink2_sources <- function(lines, file_label) {
   if (length(idx_clean) != 1) {
     stop(file_label, ": expected exactly one clean rm -f line mentioning LIBPLINK2, found ", length(idx_clean))
   }
-  lines[idx_clean] <- sub("\\$\\(LIBPLINK2\\)", "$(LIBPLINK2) $(LIBPLINK2_CO)", lines[idx_clean])
+  lines[idx_clean] <- sub(
+    "\\$\\(LIBPLINK2\\)",
+    "libPLINK2.a libPGZSTD.a libPGDEFLATE.a $(LIBPLINK2) $(LIBPLINK2_CO)",
+    lines[idx_clean]
+  )
 
   # Normalize any run of 2+ blank lines down to 1 (never semantically
   # meaningful in a Makefile): the insertions above add a blank line before
@@ -235,18 +257,42 @@ patch_libplink2_sources <- function(lines, file_label) {
   lines[keep]
 }
 
-message("copy src/Makevars.in, src/Makevars.win (OBJECTS= edited for rpgen.cpp/rpgen_import.cpp;")
-message("  LIBPLINK2_SOURCES extended with the milestone 4a VcfToPgen() closure)")
+# Keep Rpgen's hand-authored objects and the flags applying only to vendored
+# PLINK 2 objects in the recipe. Re-vendoring must reproduce a buildable
+# package, not a partial Makevars that requires manual repair afterward.
+patch_rpgen_build <- function(lines, file_label) {
+  idx_cpp <- grep("^PKG_CPPFLAGS = ", lines)
+  if (length(idx_cpp) != 1) {
+    stop(file_label, ": expected exactly one 'PKG_CPPFLAGS = ' line, found ",
+         length(idx_cpp))
+  }
+  lines[idx_cpp] <- sub("^PKG_CPPFLAGS = ", "PKG_CPPFLAGS_BASE = ",
+                        lines[idx_cpp])
+  lines <- append(lines, "PKG_CPPFLAGS = $(PKG_CPPFLAGS_BASE)",
+                  after = idx_cpp)
+
+  idx_obj <- grep("^OBJECTS = ", lines)
+  if (length(idx_obj) != 1) {
+    stop(file_label, ": expected exactly one 'OBJECTS = ' line, found ",
+         length(idx_obj))
+  }
+  lines[idx_obj] <- paste(
+    "OBJECTS = rpgen.o rpgen_import.o rpgen_direct_sink.o",
+    "rpgen_null_stream.o rpgen_plink2_glue.o"
+  )
+
+  c(lines, "",
+    "# Only vendored objects receive the CLI shim and direct-writer hook.",
+    "# Plain '=' avoids a GNU Make extension and a recursive variable.",
+    "$(LIBPLINK2) $(LIBPLINK2_CO): PKG_CPPFLAGS = $(PKG_CPPFLAGS_BASE) -DRPGEN_DIRECT_SINK -I. -include rpgen_cli_shim.h")
+}
+
+message("copy src/Makevars.in, src/Makevars.win (Rpgen objects and vendored flags applied;")
+message("  LIBPLINK2_SOURCES extended with the PLINK 2 format-import closure)")
 for (f in src_files_patched) {
   lines <- readLines(file.path(src, "src", f))
-  idx <- grep("^OBJECTS = ", lines)
-  if (length(idx) != 1) {
-    stop(f, ": expected exactly one 'OBJECTS = ' line, found ", length(idx))
-  }
-  old <- lines[idx]
-  lines[idx] <- "OBJECTS = rpgen.o rpgen_import.o"
-  message("  ", f, ": ", trimws(old), " -> ", lines[idx])
   lines <- patch_libplink2_sources(lines, f)
+  lines <- patch_rpgen_build(lines, f)
   writeLines(lines, file.path(out, "src", f))
 }
 
@@ -282,24 +328,20 @@ if (mode == "check") {
     a <- file.path(out, rel); b <- file.path(pkg_dst, rel)
     if (!file.exists(b) || !identical(sha256(a), sha256(b))) mism <<- c(mism, rel)
   }
-  for (f in root_files) check_file(f)
+  for (f in root_files_verbatim) check_file(f)
+  for (f in root_files_patched) check_file(f)
   for (f in src_files_verbatim) check_file(file.path("src", f))
-  # Makevars.in/Makevars.win (src_files_patched) are NOT drift-checked: they
-  # carry hand-maintained CLI-shim wiring on top of what this recipe generates
-  # (the milestone 4a plink2 import routes its console I/O through a force-
-  # included shim, see tools/vendor-plink2-import/PROVENANCE.md), so they are our
-  # build config, not vendored source. This guard protects the vendored
-  # tools/include tree; `vendor` still regenerates Makevars as a starting point,
-  # but the shim override must then be reapplied per PROVENANCE.
+  for (f in src_files_patched) check_file(file.path("src", f))
   for (f in tools_files) check_file(file.path("tools", f))
   for (f in inc_manifest) check_file(file.path("tools", "include", f))
   for (f in extdata_files) check_file(file.path("inst", "extdata", f))
 
   if (length(mism) == 0) {
     message("OK: committed vendored tree == vendorpgen.R output (",
-            3 + length(src_files_verbatim) +
+            length(root_files_verbatim) + length(root_files_patched) +
+              length(src_files_verbatim) +
               length(tools_files) + length(inc_manifest) + length(extdata_files),
-            " files; Makevars.in/.win hand-maintained, not checked)")
+            " files including generated Makevars integration)")
   } else {
     stop("MISMATCH - committed tree no longer equals the recipe:\n  ",
          paste(mism, collapse = "\n  "))

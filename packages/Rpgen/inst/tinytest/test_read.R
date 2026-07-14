@@ -1,4 +1,4 @@
-## rpgen_read_hardcalls()/rpgen_read_dosages(): milestone 2's correctness
+## rpgen_read_hardcalls()/rpgen_read_dosages() correctness
 ## contract. Verify our own C reader (PgfiInitPhase1/PgfiInitPhase2/PgrInit,
 ## then a PgrGet()/PgrGetD() loop over every variant) agrees with pgenlibr's
 ## independent implementation of the same read, exercised through its R-level
@@ -93,7 +93,7 @@ if (requireNamespace("pgenlibr", quietly = TRUE)) {
         ## ReadHardcalls()/Read() report the allele-2-specific count while
         ## rpgen_read_hardcalls()/rpgen_read_dosages() report the
         ## ALT-collapsed count, so the two are expected to differ there;
-        ## that is the documented scope of this milestone's reader (see its
+        ## that is the documented scope of the collapsed-ALT reader (see its
         ## roxygen Details), not a bug.
         biallelic_idx <- which(vapply(seq_len(min(n_variant, 50L)), function(v) {
             pgenlibr::GetAlleleCt(oracle, v) == 2L

@@ -1,7 +1,7 @@
 library(tinytest)
 library(Rfmalloc)
 
-message("Testing the phased-haplotype store (1 bit/call, a sibling of the tensor codec ABI)...")
+message("Testing the locus-major phased-haplotype store...")
 
 (function() {
     message("  Test 1: exact round-trip, including a byte-boundary-crossing variant count")
@@ -13,8 +13,7 @@ message("Testing the phased-haplotype store (1 bit/call, a sibling of the tensor
     }, add = TRUE)
 
     set.seed(11L)
-    # L %% 8 != 0, so the last byte of every haplotype's column carries padding
-    # bits: the case a flat element-to-byte mapping would get wrong.
+    # N %% 8 != 0, so every locus row has tail bits and SIMD padding.
     L <- 501L
     N <- 37L
     h <- matrix(sample(0:1, L * N, replace = TRUE), L, N)
@@ -32,9 +31,9 @@ message("Testing the phased-haplotype store (1 bit/call, a sibling of the tensor
     expect_identical(dim(back), dim(h))
     expect_identical(back[], h)
 
-    # 1 bit per call, plus a 24-byte header. Never 4 bytes (integer) or 8 (double).
+    # One data bit per call plus one 64-byte-aligned record per locus.
     bits <- 8 * length(unclass(hap)) / (L * N)
-    expect_true(bits > 1 && bits < 1.05)
+    expect_true(bits > 1 && bits < 14)
 })()
 
 (function() {
@@ -75,8 +74,8 @@ message("Testing the phased-haplotype store (1 bit/call, a sibling of the tensor
     bytes_bitpacked <- length(unclass(hap))
     bytes_integer <- L * N * 4L
     bytes_double <- L * N * 8L
-    expect_true(bytes_integer / bytes_bitpacked > 30)  # ~32x an integer matrix
-    expect_true(bytes_double / bytes_bitpacked > 60)   # ~64x a double matrix
-    # At this size the 24-byte header is negligible: density is ~1 bit/call.
-    expect_true(8 * bytes_bitpacked / (L * N) < 1.01)
+    expect_true(bytes_integer / bytes_bitpacked > 24)
+    expect_true(bytes_double / bytes_bitpacked > 48)
+    # N = 400 needs 50 data bytes and one 64-byte SIMD row per locus.
+    expect_true(8 * bytes_bitpacked / (L * N) < 1.3)
 })()

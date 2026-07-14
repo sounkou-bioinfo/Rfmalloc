@@ -11,3 +11,6 @@ Makevars       text eol=lf
 Makevars.in    text eol=lf
 Makevars.win   text eol=lf
 Makevars.ucrt  text eol=lf
+
+# Unified diffs encode an empty context line as one leading space.
+tools/vendor-*/patches/*.patch whitespace=-blank-at-eol

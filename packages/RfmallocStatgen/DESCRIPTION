@@ -2,25 +2,24 @@ Package: RfmallocStatgen
 Title: Statistical Genetics on Rfmalloc Genotype Tensors
 Version: 0.1.0
 Authors@R: c(
-    person(given = "Sounkou Mahamane", family = "Toure", email = "sounkoutoure@gmail.com", role = c("aut", "cre"))
+    person(given = "Sounkou Mahamane", family = "Toure", email = "sounkoutoure@gmail.com", role = c("aut", "cre")),
+    person(given = "Zilong", family = "Li", role = "cph", comment = "PCAone randomized-SVD core")
     )
-Author: Sounkou Mahamane Toure [aut, cre]
+Author: Sounkou Mahamane Toure [aut, cre], Zilong Li [cph] (PCAone randomized-SVD core)
 Maintainer: Sounkou Mahamane Toure <sounkoutoure@gmail.com>
 Description: Runs genome-scale statistical genetics methods over Rfmalloc's
     file-backed, compressed genotype tensors ('bed' at 2 bits per genotype,
     'dosage' at 1 byte per genotype), closing over the analysis stack
     popularized by 'bigsnpr' and 'bigstatsr' on denser storage with native
     readers, and adding haplotype methods that a genotype-only stack cannot
-    express. Every method is implemented from the published algorithms and
-    validated against 'bigsnpr' and 'bigstatsr' as a numerical oracle in the
-    test suite: the methods are reimplemented clean room, never vendored.
-    The first shipped methods are a fused, whole-genome univariate linear
-    regression GWAS scan over an fmalloc genotype tensor, a randomized
-    principal-component analysis built on the 'PCAone' randomized SVD (Li
-    2023), vendored verbatim (GPL-3) behind a pinned drift-guard recipe, and
-    an all-pairs colocalisation of two traits' signals ('coloc.bf_bf' cast as
-    a single matrix multiply) that runs on any backend 'Rggml' offers,
-    including a GPU.
+    express. Methods are implemented from published algorithms and validated
+    against 'bigsnpr' and 'bigstatsr' as numerical oracles. The exception is
+    the randomized-SVD workhorse, which is pinned from GPL-3 'PCAone' (Li
+    2023) with a deterministic dependency trim and R-console adaptation.
+    The current surface includes streamed univariate regression and principal
+    components, banded linkage disequilibrium, LDpred2, and an all-pairs
+    colocalisation expressed as a single matrix multiply over any registered
+    compute backend.
 License: GPL-3
 Encoding: UTF-8
 Depends:

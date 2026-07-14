@@ -6,9 +6,8 @@
 #' would use - no argv parsing happens; every default matches what plink2.cc
 #' itself computes for that combination (see `src/rpgen_import.cpp`'s
 #' comments for exactly which). The design choice this embodies: reuse
-#' plink2's own import code rather than a from-scratch `htslib`-based VCF
-#' reader, because the identical vendored closure also covers BCF/BGEN/
-#' Oxford for a later milestone.
+#' plink2's own import code rather than maintain a second parser for each
+#' format. The identical closure covers BCF, BGEN, and Oxford inputs.
 #'
 #' The produced `.pgen` (plus its companion `.pvar`/`.psam`, written next to
 #' it with the same base name) can be read back with any of Rpgen's existing
@@ -88,13 +87,9 @@ rpgen_import_bed <- function(vcf, out = tempfile(fileext = ".pgen"), keep = FALS
     rpgen_bed(pgen, runtime = runtime)
 }
 
-## Milestone 4b: the rest of plink2's import matrix. Each function below is
-## the same shape as rpgen_import_vcf() above - a thin wrapper around a
-## .Call into src/rpgen_import.cpp, which in turn calls one more entry point
-## of the same vendored plink2_import.cc closure VcfToPgen() already came
-## from. See that file's top comment for the shared defaults/design notes,
-## and each function's own C driver comment (src/rpgen_import.cpp) for the
-## format-specific ones.
+## Each function below is a thin wrapper around one entry point in the same
+## vendored plink2_import.cc closure. See src/rpgen_import.cpp for shared
+## defaults and the format-specific driver notes.
 
 #' Convert a BCF to a .pgen using plink2's own importer
 #'
@@ -211,13 +206,10 @@ rpgen_import_bgen <- function(bgen, sample = NULL, out = tempfile(fileext = ".pg
 #' plain `plink2 --haps <haps> --legend <legend> <chr> --sample <sample>
 #' --make-pgen` would use.
 #'
-#' A `.haps`/`.legend` pair encodes *phased* haplotypes, and the produced
-#' `.pgen` faithfully carries that phase - but Rpgen's current readers
-#' ([rpgen_read_hardcalls()], [rpgen_read_dosages()]) only read the
-#' collapsed, unphased hardcall/dosage view; reading phase back is a future
-#' milestone. The genotypes themselves (0/1/2 copies of the alternate
-#' allele) still round-trip correctly through the existing readers - only
-#' which haplotype carries which allele is not yet recoverable.
+#' A `.haps`/`.legend` pair encodes phased haplotypes and the produced `.pgen`
+#' carries that phase. [rpgen_haplotypes()] and [rpgen_ingest()] recover it
+#' through pgenlib's `PgrGetP()` path. The hardcall and dosage readers expose
+#' the corresponding phase-collapsed non-reference count.
 #'
 #' `chr` is required: the classic IMPUTE2 `.legend` format (`id position a0
 #' a1`, no chromosome column) does not carry its own chromosome, so plink2
@@ -279,4 +271,76 @@ rpgen_import_plink1_dosage <- function(dosage, fam, map, out = tempfile(fileext 
         stop("out must end in \".pgen\": \"", out, "\"")
     }
     invisible(.Call("RC_rpgen_import_plink1_dosage", dosage, fam, map, out))
+}
+
+#' Convert a PLINK 1 PED/MAP pair to a .pgen
+#'
+#' Calls PLINK 2's own `PedmapToPgen()` importer with the defaults of a plain
+#' `plink2 --pedmap <prefix> --make-pgen` conversion. The resulting `.pgen`,
+#' `.pvar`, and `.psam` files are ordinary PLINK 2 files and can be consumed
+#' by every Rpgen reader.
+#'
+#' @param ped Path to the sample-major `.ped` file.
+#' @param map Path to the companion `.map` file.
+#' @param out Path to the `.pgen` to produce; must end in `.pgen`.
+#' @return `out`, invisibly on success; an R error is raised on failure.
+#' @seealso [rpgen_import_tped()], [rpgen_ingest()]
+#' @export
+rpgen_import_ped <- function(ped, map, out = tempfile(fileext = ".pgen")) {
+    ped <- path.expand(as.character(ped))
+    map <- path.expand(as.character(map))
+    out <- path.expand(as.character(out))
+    if (!grepl("\\.pgen$", out)) {
+        stop("out must end in \".pgen\": \"", out, "\"")
+    }
+    invisible(.Call("RC_rpgen_import_ped", ped, map, out))
+}
+
+#' Convert a PLINK 1 TPED/TFAM pair to a .pgen
+#'
+#' Calls PLINK 2's own `TpedToPgen()` importer with the defaults of a plain
+#' `plink2 --tfile <prefix> --make-pgen` conversion. The resulting `.pgen`,
+#' `.pvar`, and `.psam` files are ordinary PLINK 2 files and can be consumed
+#' by every Rpgen reader.
+#'
+#' @param tped Path to the variant-major `.tped` file.
+#' @param tfam Path to the companion `.tfam` file.
+#' @param out Path to the `.pgen` to produce; must end in `.pgen`.
+#' @return `out`, invisibly on success; an R error is raised on failure.
+#' @seealso [rpgen_import_ped()], [rpgen_ingest()]
+#' @export
+rpgen_import_tped <- function(tped, tfam, out = tempfile(fileext = ".pgen")) {
+    tped <- path.expand(as.character(tped))
+    tfam <- path.expand(as.character(tfam))
+    out <- path.expand(as.character(out))
+    if (!grepl("\\.pgen$", out)) {
+        stop("out must end in \".pgen\": \"", out, "\"")
+    }
+    invisible(.Call("RC_rpgen_import_tped", tped, tfam, out))
+}
+
+#' Convert EIGENSOFT packed genotype data to a .pgen
+#'
+#' Calls PLINK 2's own `EigfileToPgen()` importer for an EIGENSOFT
+#' PACKEDANCESTRYMAP or TGENO file and its `.ind`/`.snp` companions. The
+#' importer validates the sample and variant hashes stored in the binary
+#' header, matching a plain `plink2 --eigfile <prefix> --make-pgen`
+#' conversion.
+#'
+#' @param geno Path to a PACKEDANCESTRYMAP `.geno` or TGENO binary file.
+#' @param ind Path to the companion `.ind` file.
+#' @param snp Path to the companion `.snp` file.
+#' @param out Path to the `.pgen` to produce; must end in `.pgen`.
+#' @return `out`, invisibly on success; an R error is raised on failure.
+#' @seealso [rpgen_ingest()]
+#' @export
+rpgen_import_eigenstrat <- function(geno, ind, snp, out = tempfile(fileext = ".pgen")) {
+    geno <- path.expand(as.character(geno))
+    ind <- path.expand(as.character(ind))
+    snp <- path.expand(as.character(snp))
+    out <- path.expand(as.character(out))
+    if (!grepl("\\.pgen$", out)) {
+        stop("out must end in \".pgen\": \"", out, "\"")
+    }
+    invisible(.Call("RC_rpgen_import_eigenstrat", geno, ind, snp, out))
 }

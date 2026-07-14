@@ -1,4 +1,4 @@
-## pgen_pca.R - milestone 2's end-to-end demo: a .pgen file becomes principal
+## pgen_pca.R - a .pgen file becomes principal
 ## components without a dense double copy of the genotypes at any point.
 ##
 ## The path:

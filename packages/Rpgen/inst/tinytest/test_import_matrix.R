@@ -1,68 +1,14 @@
-## Milestone 4b: the rest of plink2's import matrix
-## (rpgen_import_bcf/_bgen/_gen/_haps/_plink1_dosage), same correctness
-## contract as milestone 4a's test_import_vcf.R: build a tiny fixture with
-## known genotypes, convert it to a .pgen through Rpgen's driver (which
-## calls straight into plink2's own vendored importer - see
-## src/rpgen_import.cpp), read the produced .pgen back with
-## rpgen_read_hardcalls()/rpgen_read_dosages() (unchanged since milestone 2),
-## and assert the genotypes/dosages match what the fixture encodes.
-##
-## How the fixtures and their "known genotypes" were derived: every fixture
-## in this file (the .gen/.sample text below, the .haps/.legend text, the
-## PLINK 1 --import-dosage text, and the inst/extdata/tiny*.bgen binaries)
-## was generated and cross-checked against a real plink2 v2.0.0-a.6.9 build
-## (installed via `conda create -c bioconda plink2` during development of
-## this milestone, not a build-or-test-time dependency of this package) by
-## round-tripping known genotypes through plink2's own --export/--import
-## machinery and comparing against plink2's own --export A hardcalls. That
-## is also how a real bug was found and worked around: OxHapslegendToPgen()
-## (plink2_import.cc) unconditionally calls InitOxfordSingleChr(NULL, ...)
-## whenever a --legend file is given zero chromosome column, which
-## dereferences a null pointer and crashes instead of erroring - which is
-## why rpgen_import_haps() requires an explicit `chr` argument the task
-## description didn't originally list (see its own R/rpgen_import.R
-## roxygen comment and src/rpgen_import.cpp's rpgen_import_haps() comment).
-##
-## Verification status by format (see this file's sections below):
-##   - .gen / .sample:                 full round-trip (hand-written fixture)
-##   - .haps / .legend / .sample:      full round-trip, hardcall level only
-##                                      (phase is written but not yet read
-##                                      back - see rpgen_import_haps() docs)
-##   - PLINK 1 --import-dosage/.fam/.map: full round-trip, hardcalls AND
-##                                      dosages (includes one fractional,
-##                                      ambiguous-hardcall dosage value)
-##   - BCF:                            full round-trip IF `bcftools` is on
-##                                      PATH at test time (used to convert
-##                                      the milestone-4a VCF fixture to BCF,
-##                                      exactly as the milestone asked for);
-##                                      otherwise this section is skipped
-##                                      with a message, and only the driver's
-##                                      clean-error-on-bad-input path is
-##                                      checked below.
-##   - BGEN (v1.1 and v1.3):           full round-trip against two committed
-##                                      binary fixtures
-##                                      (inst/extdata/tiny.bgen + tiny.sample,
-##                                      inst/extdata/tiny_selfid.bgen with no
-##                                      external .sample - it carries its own
-##                                      sample IDs). These are real BGEN
-##                                      files (not hand-crafted bytes): they
-##                                      were produced once by the plink2
-##                                      oracle above from the same known
-##                                      genotypes as the .gen/.haps fixtures,
-##                                      and are committed as small package
-##                                      data, the same way milestone 4a
-##                                      committed inst/extdata/tiny.vcf. No
-##                                      fixture gap remains for BGEN; a
-##                                      hand-crafted-bytes fallback was not
-##                                      needed.
-##
-## Each self-contained section below runs inside an IIFE, matching
-## test_import_vcf.R's own convention (see its file header comment for why).
+## Round-trip every PLINK 2 importer Rpgen exposes, then drive the same source
+## through rpgen_ingest(). Text fixtures and the committed BGEN/BCF fixtures
+## were generated or cross-checked with PLINK 2 v2.0.0-a.6.9. GEN, HAPS, and
+## both BGEN layouts share one known genotype matrix. HAPS additionally pins
+## exact phase, and legacy dosage pins a fractional value in compressed and
+## full-precision destinations.
 
 library(Rpgen)
 
 if (!exists("rpgen_import_gen", where = asNamespace("Rpgen"), inherits = FALSE)) {
-    exit_file("milestone 4b importers not available in this build of Rpgen")
+    exit_file("PLINK 2 importers not available in this build of Rpgen")
 }
 
 ## Cleans up a .pgen's companion .pvar/.pvar.zst/.psam/.pgi files, same set
@@ -75,13 +21,23 @@ cleanup_pgen <- function(pgen) {
     ))
 }
 
+with_ingest_runtime <- function(code) {
+    tmp <- tempfile(fileext = ".bin")
+    rt <- Rfmalloc::open_fmalloc(tmp, mode = "scratch", size_gb = 0.1)
+    on.exit({
+        Rfmalloc::cleanup_fmalloc(rt)
+        unlink(tmp)
+    }, add = TRUE)
+    code(rt)
+}
+
 ## -- shared base fixture: 3 samples x 4 biallelic SNPs, no missing calls ----
 ##
 ## Used by the .gen, .haps/.legend, and .bgen sections below - all four
 ## derived (via the plink2 oracle described in this file's header comment)
 ## from the *same* underlying genotypes, so they share one expected-hardcall
 ## matrix. Missing-call handling is exercised separately by the BCF section
-## (reusing milestone 4a's tiny.vcf genotypes, which do include one) and by
+## (reusing tiny.vcf's genotypes, which do include one) and by
 ## the PLINK 1 dosage section (a fractional, deliberately ambiguous dosage).
 base_expected_hc <- matrix(
     c(
@@ -92,6 +48,24 @@ base_expected_hc <- matrix(
     ),
     nrow = 3L, ncol = 4L
 )
+
+## PED/TPED do not carry an explicit REF/ALT declaration. PLINK 2 makes the
+## major allele provisional REF, so rs4 avoids a tied allele count. This
+## keeps the expected orientation deterministic while still exercising all
+## three hardcall values.
+legacy_expected_hc <- matrix(
+    c(
+        0L, 1L, 2L,
+        1L, 2L, 0L,
+        0L, 0L, 2L,
+        2L, 0L, 0L
+    ),
+    nrow = 3L, ncol = 4L
+)
+
+legacy_allele_pair <- function(alt_count) {
+    c("A A", "A G", "G G")[[alt_count + 1L]]
+}
 
 ## -- rpgen_import_gen(): Oxford .gen + .sample, full round-trip ------------
 
@@ -145,15 +119,138 @@ base_expected_hc <- matrix(
     expect_equal(hc, base_expected_hc,
         info = "rpgen_import_gen() genotypes match the .gen fixture's known genotype triples"
     )
+    with_ingest_runtime(function(rt) {
+        tn <- rpgen_ingest(
+            gen_path, format = "gen", sample = sample_path, runtime = rt
+        )
+        expect_equal(Rfmalloc::fmalloc_tensor_materialize(tn)[],
+                     base_expected_hc)
+    })
 })()
 
-## -- rpgen_import_haps(): Oxford .haps/.legend/.sample, hardcall level -----
-##
-## .haps/.legend encode phased haplotypes; the produced .pgen carries that
-## phase, but Rpgen's readers only expose the collapsed hardcall/dosage view
-## today (see rpgen_import_haps()'s roxygen Details) - this section verifies
-## genotypes only, per the milestone's own guidance, not which haplotype
-## carries which allele.
+## -- rpgen_import_ped(): PLINK 1 sample-major PED/MAP ----------------------
+
+(function() {
+    message("Testing rpgen_import_ped() -> rpgen_read_hardcalls() round-trip...")
+
+    map_path <- tempfile(fileext = ".map")
+    ped_path <- tempfile(fileext = ".ped")
+    writeLines(sprintf("1 rs%d 0 %d", 1:4, 1000L * (1:4)), map_path)
+    writeLines(vapply(1:3, function(sample_idx) {
+        pairs <- vapply(
+            legacy_expected_hc[sample_idx, ], legacy_allele_pair, ""
+        )
+        paste(
+            "FAM1", paste0("S", sample_idx), "0 0 0 -9",
+            paste(pairs, collapse = " ")
+        )
+    }, ""), ped_path)
+    on.exit(unlink(c(map_path, ped_path)), add = TRUE)
+
+    pgen_path <- tempfile(fileext = ".pgen")
+    import_result <- rpgen_import_ped(ped_path, map_path, pgen_path)
+    on.exit(cleanup_pgen(pgen_path), add = TRUE)
+
+    expect_identical(import_result, pgen_path)
+    expect_equal(rpgen_info(pgen_path)[c("n_sample", "n_variant")],
+                 list(n_sample = 3L, n_variant = 4L))
+    expect_equal(rpgen_read_hardcalls(pgen_path), legacy_expected_hc)
+    with_ingest_runtime(function(rt) {
+        tn <- rpgen_ingest(ped_path, map = map_path, runtime = rt)
+        expect_equal(Rfmalloc::fmalloc_tensor_materialize(tn)[],
+                     legacy_expected_hc)
+    })
+})()
+
+## -- rpgen_import_tped(): PLINK 1 variant-major TPED/TFAM ------------------
+
+(function() {
+    message("Testing rpgen_import_tped() -> rpgen_read_hardcalls() round-trip...")
+
+    tfam_path <- tempfile(fileext = ".tfam")
+    tped_path <- tempfile(fileext = ".tped")
+    writeLines(sprintf("FAM1 S%d 0 0 0 -9", 1:3), tfam_path)
+    writeLines(vapply(1:4, function(variant_idx) {
+        pairs <- vapply(
+            legacy_expected_hc[, variant_idx], legacy_allele_pair, ""
+        )
+        paste(
+            "1", paste0("rs", variant_idx), "0", 1000L * variant_idx,
+            paste(pairs, collapse = " ")
+        )
+    }, ""), tped_path)
+    on.exit(unlink(c(tfam_path, tped_path)), add = TRUE)
+
+    pgen_path <- tempfile(fileext = ".pgen")
+    import_result <- rpgen_import_tped(tped_path, tfam_path, pgen_path)
+    on.exit(cleanup_pgen(pgen_path), add = TRUE)
+
+    expect_identical(import_result, pgen_path)
+    expect_equal(rpgen_read_hardcalls(pgen_path), legacy_expected_hc)
+    with_ingest_runtime(function(rt) {
+        tn <- rpgen_ingest(tped_path, tfam = tfam_path, runtime = rt)
+        expect_equal(Rfmalloc::fmalloc_tensor_materialize(tn)[],
+                     legacy_expected_hc)
+    })
+})()
+
+## -- rpgen_import_eigenstrat(): PACKEDANCESTRYMAP/.ind/.snp ---------------
+
+(function() {
+    message("Testing rpgen_import_eigenstrat() -> rpgen_read_hardcalls() round-trip...")
+
+    ind_path <- tempfile(fileext = ".ind")
+    snp_path <- tempfile(fileext = ".snp")
+    geno_path <- tempfile(fileext = ".geno")
+    writeLines(c(
+        "SAMP1 U Control",
+        "SAMP2 U Case",
+        "SAMP3 U Ignore"
+    ), ind_path)
+    writeLines(
+        sprintf("rs%d 1 0 %d A G", 1:4, 1000L * (1:4)),
+        snp_path
+    )
+
+    ## PACKEDANCESTRYMAP has one 48-byte header followed by one 48-byte
+    ## record per variant for this small sample count. The two hexadecimal
+    ## values are PLINK 2/EIGENSOFT UpdateEighash() results for SAMP1..3 and
+    ## rs1..4. Each genotype is a 2-bit reference-allele count, first sample
+    ## in the high bits; 3 denotes missing. This pins the binary reader, not
+    ## just the text metadata conversion.
+    header_text <- charToRaw("GENO 3 4 a88090eb 12bfbe20")
+    header <- c(
+        header_text, as.raw(0), raw(48L - length(header_text) - 1L)
+    )
+    packed <- as.raw(apply(base_expected_hc, 2, function(alt_count) {
+        sum(bitwShiftL(2L - alt_count, c(6L, 4L, 2L)))
+    }))
+    con <- file(geno_path, open = "wb")
+    writeBin(header, con)
+    for (byte in packed) {
+        writeBin(c(byte, raw(47L)), con)
+    }
+    close(con)
+    on.exit(unlink(c(ind_path, snp_path, geno_path)), add = TRUE)
+
+    pgen_path <- tempfile(fileext = ".pgen")
+    import_result <- rpgen_import_eigenstrat(
+        geno_path, ind_path, snp_path, pgen_path
+    )
+    on.exit(cleanup_pgen(pgen_path), add = TRUE)
+
+    expect_identical(import_result, pgen_path)
+    expect_equal(rpgen_read_hardcalls(pgen_path), base_expected_hc)
+    with_ingest_runtime(function(rt) {
+        tn <- rpgen_ingest(
+            geno_path, ind = ind_path, snp = snp_path, runtime = rt
+        )
+        expect_equal(Rfmalloc::fmalloc_tensor_materialize(tn)[],
+                     base_expected_hc)
+    })
+})()
+
+## -- rpgen_import_haps(): Oxford .haps/.legend/.sample with exact phase ----
 
 (function() {
     message("Testing rpgen_import_haps() -> rpgen_read_hardcalls() round-trip (hardcall level)...")
@@ -224,6 +321,33 @@ base_expected_hc <- matrix(
     expect_equal(hc, base_expected_hc,
         info = "rpgen_import_haps() genotypes (allele counts, phase collapsed) match the .haps/.legend fixture"
     )
+
+    tmp <- tempfile(fileext = ".bin")
+    rt <- Rfmalloc::open_fmalloc(tmp, mode = "scratch", size_gb = 0.1)
+    on.exit({
+        Rfmalloc::cleanup_fmalloc(rt)
+        unlink(tmp)
+    }, add = TRUE)
+    hap <- rpgen_haplotypes(pgen_path, runtime = rt, block_size = 2L)
+    raw_haps <- matrix(
+        as.integer(unlist(strsplit(haps_lines, " ", fixed = TRUE))),
+        nrow = 4L, byrow = TRUE
+    )
+    # The fixture's legend has a0 in the eventual ALT column and a1 in REF.
+    # PgrGetP() returns reference/non-reference bits, so its calls are the
+    # complement of the raw a0/a1 HAPS bit convention here.
+    expected_hap <- 1L - raw_haps
+    expect_true(inherits(hap, "fmalloc_haplotypes"))
+    expect_equal(dim(hap), c(4L, 6L))
+    expect_identical(Rfmalloc::fmalloc_hap_materialize(hap, runtime = rt)[],
+                     expected_hap)
+    hap2 <- rpgen_ingest(
+        haps_path, format = "haps", representation = "haplotype",
+        legend = legend_path, sample = sample_path, chr = "1", runtime = rt,
+        block_size = 2L
+    )
+    expect_identical(Rfmalloc::fmalloc_hap_materialize(hap2, runtime = rt)[],
+                     expected_hap)
 })()
 
 ## -- rpgen_import_plink1_dosage(): legacy PLINK 1 --import-dosage ----------
@@ -309,18 +433,30 @@ base_expected_hc <- matrix(
         tolerance = 1e-3,
         info = "rpgen_import_plink1_dosage() preserves the fractional dosage even though its hardcall is NA"
     )
+    with_ingest_runtime(function(rt) {
+        tn <- rpgen_ingest(
+            dosage_path, format = "plink1_dosage", representation = "dosage",
+            fam = fam_path, map = map_path, runtime = rt
+        )
+        expect_equal(Rfmalloc::fmalloc_tensor_materialize(tn)[],
+                     expected_dosage, tolerance = 1 / 127)
+        full <- rpgen_ingest(
+            dosage_path, format = "plink1_dosage", representation = "f64",
+            fam = fam_path, map = map_path, runtime = rt
+        )
+        expect_true(Rfmalloc::is_fmalloc_vector(full))
+        expect_equal(full[], expected_dosage, tolerance = 1e-3)
+    })
 })()
 
 ## -- rpgen_import_bcf(): BCF, full round-trip against a committed fixture --
 ##
-## inst/extdata/tiny.bcf is a real BCF (bcftools view -Ob of milestone 4a's
-## own tiny.vcf, test_import_vcf.R) committed to the tree, so this runs
+## inst/extdata/tiny.bcf is a real BCF (bcftools view -Ob of tiny.vcf)
+## committed to the tree, so this runs
 ## unconditionally with no bcftools on PATH at test time - BCF is a first-
 ## class import, not a best-effort one. Those genotypes include one missing
 ## call, so this section also exercises missingness through the BCF path,
-## unlike the .gen/.haps/.bgen fixtures above, which deliberately avoid it
-## (Oxford formats' own missing-call encodings are a separate concern from
-## this milestone's scope).
+## unlike the .gen/.haps/.bgen fixtures above, which deliberately avoid it.
 
 (function() {
     message("Testing rpgen_import_bcf() -> rpgen_read_hardcalls() round-trip (committed tiny.bcf)...")
@@ -365,6 +501,12 @@ base_expected_hc <- matrix(
     expect_true(all(hc == expected_hc | (is.na(hc) & is.na(expected_hc))),
         info = "rpgen_import_bcf() genotypes match the same known genotypes as test_import_vcf.R's VCF fixture"
     )
+    with_ingest_runtime(function(rt) {
+        tn <- rpgen_ingest(bcf_path, runtime = rt)
+        got <- Rfmalloc::fmalloc_tensor_materialize(tn)[]
+        expect_true(all(got == expected_hc |
+                        (is.na(got) & is.na(expected_hc))))
+    })
 })()
 
 ## -- rpgen_import_bgen(): BGEN v1.1 (external .sample) and v1.3 (embedded
@@ -404,6 +546,11 @@ base_expected_hc <- matrix(
     expect_equal(hc, base_expected_hc,
         info = "rpgen_import_bgen() (v1.1, external .sample) genotypes match the shared base fixture"
     )
+    with_ingest_runtime(function(rt) {
+        tn <- rpgen_ingest(bgen_path, sample = sample_path, runtime = rt)
+        expect_equal(Rfmalloc::fmalloc_tensor_materialize(tn)[],
+                     base_expected_hc)
+    })
 })()
 
 (function() {
@@ -431,6 +578,11 @@ base_expected_hc <- matrix(
     expect_equal(hc, base_expected_hc,
         info = "rpgen_import_bgen(sample = NULL) genotypes match the shared base fixture, using the BGEN's own embedded sample IDs"
     )
+    with_ingest_runtime(function(rt) {
+        tn <- rpgen_ingest(bgen_path, runtime = rt)
+        expect_equal(Rfmalloc::fmalloc_tensor_materialize(tn)[],
+                     base_expected_hc)
+    })
 })()
 
 ## -- error paths: bad/empty input must fail cleanly, never crash R --------
@@ -463,6 +615,21 @@ expect_error(
     ),
     info = "nonexistent dosage/.fam/.map paths are a clean error, not a crash"
 )
+expect_error(
+    rpgen_import_ped(tempfile(fileext = ".ped"), tempfile(fileext = ".map")),
+    info = "nonexistent .ped/.map paths are a clean error, not a crash"
+)
+expect_error(
+    rpgen_import_tped(tempfile(fileext = ".tped"), tempfile(fileext = ".tfam")),
+    info = "nonexistent .tped/.tfam paths are a clean error, not a crash"
+)
+expect_error(
+    rpgen_import_eigenstrat(
+        tempfile(fileext = ".geno"), tempfile(fileext = ".ind"),
+        tempfile(fileext = ".snp")
+    ),
+    info = "nonexistent EIGENSTRAT paths are a clean error, not a crash"
+)
 
 ## out must end in .pgen, same contract as rpgen_import_vcf()'s.
 expect_error(rpgen_import_bcf(tempfile(fileext = ".bcf"), tempfile()),
@@ -472,3 +639,26 @@ expect_error(rpgen_import_plink1_dosage(
     tempfile(fileext = ".dosage"), tempfile(fileext = ".fam"), tempfile(fileext = ".map"),
     out = tempfile()
 ), info = "out must end in .pgen (plink1_dosage)")
+expect_error(
+    rpgen_import_eigenstrat(
+        tempfile(fileext = ".geno"), tempfile(fileext = ".ind"),
+        tempfile(fileext = ".snp"), out = tempfile()
+    ),
+    info = "out must end in .pgen (eigenstrat)"
+)
+
+## The staged route removes both its public PGEN family and PED/MAP's private
+## sample-major scratch files, including after an importer failure.
+cleanup_probe <- tempfile(fileext = ".pgen")
+cleanup_base <- sub("\\.pgen$", "", cleanup_probe)
+cleanup_paths <- c(
+    cleanup_probe, paste0(cleanup_base, ".pvar"),
+    paste0(cleanup_base, ".pvar.zst"), paste0(cleanup_base, ".psam"),
+    paste0(cleanup_probe, ".pgi"), paste0(cleanup_base, ".bed.smaj"),
+    paste0(cleanup_base, ".fam.tmp")
+)
+invisible(file.create(cleanup_paths))
+Rpgen:::.rpgen_cleanup_pgen(cleanup_probe)
+expect_false(any(file.exists(cleanup_paths)),
+    info = "staged import cleanup removes PGEN companions and PED scratch files"
+)

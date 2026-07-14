@@ -1,111 +1,64 @@
-/*
- * rgguf_codecs.c - register gguflib's quantized dequantizers as Rfmalloc
- * tensor codecs (Rfmalloc C API version 4).
- *
- * A codec decodes a flat, block-aligned element range of a raw payload into
- * doubles. gguflib's per-type dequantizers process whole blocks but stop
- * exactly at the requested weight count, so a partial final block is safe.
- * The float intermediate returned by gguf_tensor_to_float() is bounded by
- * Rfmalloc's decode panel size, not by the tensor size.
- */
-#include <errno.h>
-#include <stdlib.h>
+/* GGML-backed codecs for the common GGUF weight formats. */
+#include <stdint.h>
+#include <string.h>
 
 #include "rgguf.h"
 
 #include <Rfmalloc.h>
 
-/* Block geometries for the registered quantized types, mirroring the
- * gguf_tensor_type_features table internal to the vendored gguflib.c. */
-static int rgguf_codec_geometry(uint32_t type, uint32_t *items, uint32_t *bytes)
+static ggml_backend_t rgguf_cpu;
+
+static int rgguf_decode(enum ggml_type type, const void *payload,
+                         R_xlen_t elem_offset, R_xlen_t n_elems, double *out)
 {
-    switch (type) {
-    case GGUF_TYPE_Q4_0: *items = 32;  *bytes = 18;  return 0;
-    case GGUF_TYPE_Q4_1: *items = 32;  *bytes = 20;  return 0;
-    case GGUF_TYPE_Q8_0: *items = 32;  *bytes = 34;  return 0;
-    case GGUF_TYPE_Q2_K: *items = 256; *bytes = 84;  return 0;
-    case GGUF_TYPE_Q4_K: *items = 256; *bytes = 144; return 0;
-    case GGUF_TYPE_Q6_K: *items = 256; *bytes = 210; return 0;
-    default: return -1;
-    }
+    if (!payload || !out || elem_offset < 0 || n_elems < 0) return -1;
+    if (n_elems == 0) return 0;
+    const int64_t block = Rggml_blck_size_ptr()(type);
+    if (block < 1 || elem_offset % block || n_elems % block) return -1;
+    const size_t block_bytes = Rggml_row_size_ptr()(type, block);
+    const unsigned char *src = (const unsigned char *)payload +
+        (size_t)(elem_offset / block) * block_bytes;
+    return Rggml_dequantize_double_ptr()(type, src, out, n_elems);
 }
 
-static int rgguf_codec_decode(uint32_t type, const void *payload,
-                              R_xlen_t elem_offset, R_xlen_t n_elems,
-                              double *out)
+#define RGGUF_DECODER(name, type) \
+    static int name(const void *p, R_xlen_t o, R_xlen_t n, double *d) \
+    { return rgguf_decode(type, p, o, n, d); }
+RGGUF_DECODER(rgguf_q4_0, GGML_TYPE_Q4_0)
+RGGUF_DECODER(rgguf_q4_1, GGML_TYPE_Q4_1)
+RGGUF_DECODER(rgguf_q5_0, GGML_TYPE_Q5_0)
+RGGUF_DECODER(rgguf_q5_1, GGML_TYPE_Q5_1)
+RGGUF_DECODER(rgguf_q8_0, GGML_TYPE_Q8_0)
+RGGUF_DECODER(rgguf_q2_k, GGML_TYPE_Q2_K)
+RGGUF_DECODER(rgguf_q3_k, GGML_TYPE_Q3_K)
+RGGUF_DECODER(rgguf_q4_k, GGML_TYPE_Q4_K)
+RGGUF_DECODER(rgguf_q5_k, GGML_TYPE_Q5_K)
+RGGUF_DECODER(rgguf_q6_k, GGML_TYPE_Q6_K)
+#undef RGGUF_DECODER
+
+static void rgguf_register_one(const char *name, enum ggml_type type,
+                                Rfmalloc_tensor_decode_fn decode)
 {
-    uint32_t items_per_block, bytes_per_block;
-    if (rgguf_codec_geometry(type, &items_per_block, &bytes_per_block) != 0 ||
-        n_elems < 0 || (elem_offset % (R_xlen_t) items_per_block) != 0) {
-        return -1;
-    }
-    if (n_elems == 0) {
-        return 0;
-    }
-
-    gguf_tensor sub;
-    memset(&sub, 0, sizeof(sub));
-    sub.type = type;
-    sub.num_weights = (uint64_t) n_elems;
-    sub.ndim = 1;
-    sub.dim[0] = (uint64_t) n_elems;
-    sub.weights_data = (uint8_t *) payload +
-        ((uint64_t) elem_offset / items_per_block) * bytes_per_block;
-    sub.bsize = ((sub.num_weights + items_per_block - 1) /
-                 items_per_block) * bytes_per_block;
-
-    float *f = gguf_tensor_to_float(&sub);
-    if (f == NULL) {
-        return -1;
-    }
-    for (R_xlen_t i = 0; i < n_elems; i++) {
-        out[i] = (double) f[i];
-    }
-    free(f);
-    return 0;
-}
-
-static int rgguf_decode_q4_0(const void *payload, R_xlen_t off, R_xlen_t n, double *out)
-{
-    return rgguf_codec_decode(GGUF_TYPE_Q4_0, payload, off, n, out);
-}
-
-static int rgguf_decode_q4_1(const void *payload, R_xlen_t off, R_xlen_t n, double *out)
-{
-    return rgguf_codec_decode(GGUF_TYPE_Q4_1, payload, off, n, out);
-}
-
-static int rgguf_decode_q8_0(const void *payload, R_xlen_t off, R_xlen_t n, double *out)
-{
-    return rgguf_codec_decode(GGUF_TYPE_Q8_0, payload, off, n, out);
-}
-
-static int rgguf_decode_q2_k(const void *payload, R_xlen_t off, R_xlen_t n, double *out)
-{
-    return rgguf_codec_decode(GGUF_TYPE_Q2_K, payload, off, n, out);
-}
-
-static int rgguf_decode_q4_k(const void *payload, R_xlen_t off, R_xlen_t n, double *out)
-{
-    return rgguf_codec_decode(GGUF_TYPE_Q4_K, payload, off, n, out);
-}
-
-static int rgguf_decode_q6_k(const void *payload, R_xlen_t off, R_xlen_t n, double *out)
-{
-    return rgguf_codec_decode(GGUF_TYPE_Q6_K, payload, off, n, out);
+    const int64_t block = Rggml_blck_size_ptr()(type);
+    const size_t bytes = Rggml_row_size_ptr()(type, block);
+    Rfmalloc_register_tensor_codec(name, (unsigned int)block,
+                                   (unsigned int)bytes, decode);
 }
 
 void rgguf_register_fmalloc_codecs(void)
 {
-    if (Rfmalloc_api_version() < 4) {
-        return;
-    }
-    Rfmalloc_register_tensor_codec("q4_0", 32, 18, rgguf_decode_q4_0);
-    Rfmalloc_register_tensor_codec("q4_1", 32, 20, rgguf_decode_q4_1);
-    Rfmalloc_register_tensor_codec("q8_0", 32, 34, rgguf_decode_q8_0);
-    Rfmalloc_register_tensor_codec("q2_k", 256, 84, rgguf_decode_q2_k);
-    Rfmalloc_register_tensor_codec("q4_k", 256, 144, rgguf_decode_q4_k);
-    Rfmalloc_register_tensor_codec("q6_k", 256, 210, rgguf_decode_q6_k);
+    if (!rgguf_cpu) rgguf_cpu = Rggml_backend_cpu_init_ptr()();
+    if (!rgguf_cpu) Rf_error("failed to initialize GGML's CPU decoder");
+    rgguf_register_one("q4_0", GGML_TYPE_Q4_0, rgguf_q4_0);
+    rgguf_register_one("q4_1", GGML_TYPE_Q4_1, rgguf_q4_1);
+    rgguf_register_one("q5_0", GGML_TYPE_Q5_0, rgguf_q5_0);
+    rgguf_register_one("q5_1", GGML_TYPE_Q5_1, rgguf_q5_1);
+    rgguf_register_one("q8_0", GGML_TYPE_Q8_0, rgguf_q8_0);
+    rgguf_register_one("q2_k", GGML_TYPE_Q2_K, rgguf_q2_k);
+    rgguf_register_one("q3_k", GGML_TYPE_Q3_K, rgguf_q3_k);
+    rgguf_register_one("q4_k", GGML_TYPE_Q4_K, rgguf_q4_k);
+    rgguf_register_one("q5_k", GGML_TYPE_Q5_K, rgguf_q5_k);
+    rgguf_register_one("q6_k", GGML_TYPE_Q6_K, rgguf_q6_k);
 }
 
 SEXP RC_gguf_register_codecs(void)
@@ -114,26 +67,21 @@ SEXP RC_gguf_register_codecs(void)
     return R_NilValue;
 }
 
-/* Copy the raw (still-encoded) payload bytes of a tensor into a
- * caller-allocated raw vector, for native fmalloc_tensor imports. */
-SEXP RC_gguf_tensor_fill_raw(SEXP ctx_sexp, SEXP name, SEXP dest)
+SEXP RC_gguf_tensor_fill_raw(SEXP ctx_sexp, SEXP name_sexp, SEXP dest)
 {
-    gguf_ctx *ctx = rgguf_get_ctx(ctx_sexp);
-    if (TYPEOF(name) != STRSXP || XLENGTH(name) != 1) {
-        Rf_error("name must be a single string");
-    }
-    if (TYPEOF(dest) != RAWSXP) {
-        Rf_error("dest must be a raw vector");
-    }
-
-    gguf_tensor tensor;
-    if (!rgguf_find_tensor(ctx, CHAR(STRING_ELT(name, 0)), &tensor)) {
-        Rf_error("no such tensor: '%s'", CHAR(STRING_ELT(name, 0)));
-    }
-    if ((uint64_t) XLENGTH(dest) < tensor.bsize) {
-        Rf_error("dest has %lld bytes but tensor payload needs %llu",
-                 (long long) XLENGTH(dest), (unsigned long long) tensor.bsize);
-    }
-    memcpy(RAW(dest), tensor.weights_data, tensor.bsize);
+    rgguf_ctx *ctx = rgguf_get_ctx(ctx_sexp);
+    if (TYPEOF(name_sexp) != STRSXP || XLENGTH(name_sexp) != 1 ||
+        STRING_ELT(name_sexp, 0) == NA_STRING)
+        Rf_error("name must be a single non-missing string");
+    if (TYPEOF(dest) != RAWSXP) Rf_error("dest must be a raw vector");
+    const char *name = CHAR(STRING_ELT(name_sexp, 0));
+    struct Rggml_gguf_tensor tensor;
+    if (!rgguf_find_tensor(ctx, name, &tensor))
+        Rf_error("no such tensor: '%s'", name);
+    if ((size_t)XLENGTH(dest) < tensor.nbytes)
+        Rf_error("destination is too short for tensor '%s'", name);
+    const void *data = rgguf_tensor_data(ctx, &tensor);
+    if (!data) Rf_error("tensor '%s' points outside the GGUF file", name);
+    memcpy(RAW(dest), data, tensor.nbytes);
     return dest;
 }

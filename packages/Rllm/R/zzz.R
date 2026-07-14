@@ -8,10 +8,6 @@
     loadNamespace("Rggml")
     loadNamespace("Rgguf")
     .Call("RC_rllm_register_backend", PACKAGE = "Rllm")
-    # Register GGML-backed Rfmalloc codecs for the GGUF quantized types
-    # gguflib cannot decode (q5_0/q5_1/q3_k/q5_k) - decoded through GGML's
-    # reference to_float, so consistent-by-construction with the compute path.
-    .Call("RC_rllm_register_codecs", PACKAGE = "Rllm")
     # Select it so Rfmalloc's typed-tensor products use ggml. Rfmalloc-scoped
     # and reversible: rllm_use_ggml(FALSE) restores the BLAS path.
     Rfmalloc::fmalloc_matmul_backend("ggml")

@@ -9,8 +9,9 @@ rllm_gguf_model(path, runtime = NULL, rope_mode = 0L)
 \arguments{
 \item{path}{Path to a GGUF file.}
 
-\item{runtime}{Optional \code{\link[Rfmalloc:open_fmalloc]{Rfmalloc::open_fmalloc()}} runtime for the weight
-payloads; \code{NULL} uses Rfmalloc's default runtime.}
+\item{runtime}{Optional \code{\link[Rfmalloc:open_fmalloc]{Rfmalloc::open_fmalloc()}} runtime attached to the
+borrowed tensor views. It supplies the allocation context for operations
+which produce fmalloc results; the weight bytes remain in the GGUF mapping.}
 
 \item{rope_mode}{RoPE flavour: \code{0} (normal/interleaved, llama) or \code{2}
 (NEOX-style, e.g. qwen2). Defaults to \code{0}.}
@@ -22,12 +23,11 @@ numeric list), \code{tensors} (named list of weight payloads), and
 }
 \description{
 Reads the hyperparameters and weights of a llama-architecture 'GGUF' file
-into an \code{rllm_model} object usable with \code{\link[=rllm_forward]{rllm_forward()}}. 2-d weight
-tensors are imported with \code{Rgguf::gguf_tensor(as = "native")}: their
-payloads keep the GGUF storage density (still \code{q4_k}/\code{f32}/... encoded) in
-\pkg{Rfmalloc}-backed, memory-mapped storage, and the forward pass points
-GGML tensors at them zero-copy. 1-d norm weights are small and are staged
-as packed \code{f32} buffers.
+into an \code{rllm_model} object usable with \code{\link[=rllm_forward]{rllm_forward()}}. Every weight is a
+borrowed view over its exact read-only span in the original GGUF mapping.
+Quantized and floating-point payloads keep their on-disk encoding, and the
+forward pass points GGML tensors at those bytes without copying them into a
+second backing file.
 }
 \details{
 The loader expects the standard llama tensor names (\code{token_embd.weight},

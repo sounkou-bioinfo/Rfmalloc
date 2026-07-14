@@ -2,61 +2,20 @@
 #define RPGEN_API_PUBLIC_H
 
 /*
- * Rpgen.h - C-callable API for the Rpgen carrier package, version 5.
+ * Rpgen.h - low-level C-callables over PLINK 2's pgenlib and importers.
  *
- * Rpgen vendors the read subset of PLINK 2's pgenlib
- * (https://github.com/chrchang/plink-ng) - the same subset the CRAN package
- * 'pgenlibr' vendors and builds as libPLINK2.a - and exposes it through
- * R_RegisterCCallable() entry points. Unlike pgenlibr, which only offers an
- * R-level (Rcpp) interface, Rpgen's whole reason to exist is letting other R
- * packages link to a compiled pgenlib and read .pgen genotypes natively from
- * their own C or C++ code, without re-vendoring pgenlib themselves.
+ * Add Rpgen to LinkingTo and Imports, include this header, and resolve the
+ * typed entry point with R_GetCCallable(). The range readers below are
+ * stateless helpers: each opens a source, fills a caller-owned buffer, and
+ * closes it. Rpgen's Rfmalloc ingestion path instead keeps one reader open
+ * across bounded panels and is intentionally package-internal for now.
  *
- * Usage:
- *   1. List Rpgen under LinkingTo (and Imports, so it is loaded first) in
- *      your package's DESCRIPTION.
- *   2. #include <Rpgen.h> in your C/C++ source.
- *   3. Call R_GetCCallable("Rpgen", "Rpgen_open_info") (or use the
- *      Rpgen_open_info_fun typedef below to keep the call site typed) to
- *      resolve the symbol, then invoke it. R_GetCCallable() aborts the R
- *      session if Rpgen has not been loaded yet, so only call it once
- *      Rpgen is guaranteed attached/loaded (normal LinkingTo + Imports
- *      behavior guarantees this).
- *
- * Milestone 1 provides Rpgen_open_info(): open a .pgen file far enough to
- * read its header counts, then close it again.
- *
- * Milestone 2 adds Rpgen_read_hardcalls()/Rpgen_read_dosages(): read a
- * variant range for every sample into a caller-allocated buffer. Neither
- * milestone keeps a reader handle alive across calls - every call opens the
- * file, does its work, and closes it again.
- *
- * Milestone 3 adds Rpgen_read_bed_hardcalls(): read every variant, for every
- * sample, from a PLINK 1 .bed file - the same underlying PgfiInitPhase1() /
- * PgrGet() path as Rpgen_read_hardcalls(), except a .bed has no header to
- * read raw_sample_ct/raw_variant_ct back from, so the caller must supply
- * both (typically the line counts of the companion .fam/.bim).
- *
- * Milestone 4a adds Rpgen_import_vcf(): convert a VCF straight to a .pgen by
- * calling plink2's own VcfToPgen() importer (a separate vendored closure,
- * tools/vendor-plink2-import/ - see its PROVENANCE.md), then read the result
- * with any of the functions above. Unlike them, this one is not a pure
- * reader: it allocates plink2's own working arena for the duration of the
- * call (see src/rpgen_import.cpp) and is not reentrant - only one call may
- * be in flight at a time in this process.
- *
- * Milestone 4b closes over the rest of the same vendored closure's import
- * entry points: Rpgen_import_bcf() (BcfToPgen(), BCF's binary VCF sibling),
- * Rpgen_import_bgen()/Rpgen_import_gen()/Rpgen_import_haps() (Oxford-format
- * BGEN/.gen/.haps+.legend via OxBgenToPgen()/OxGenToPgen()/
- * OxHapslegendToPgen()), and Rpgen_import_plink1_dosage() (the legacy PLINK
- * 1.x `--import-dosage` text format via Plink1DosageToPgen()). Same
- * reentrancy/arena caveat as Rpgen_import_vcf() applies to all five - see
- * src/rpgen_import.cpp. Rpgen_import_haps() is the one exception to "read the
- * result with any of the functions above": .haps/.legend encodes *phased*
- * haplotypes, and while the produced .pgen faithfully carries that phase,
- * none of the reader functions above read phase back yet (a future
- * milestone) - only the unphased hardcall/dosage view is available today.
+ * The import functions call PLINK 2's own VCF, BCF, BGEN, GEN, HAPS,
+ * PLINK 1 dosage, PED/MAP, TPED/TFAM, and EIGENSTRAT closure. They use
+ * PLINK 2's process-global bigstack and are not reentrant. HAPS output
+ * retains phase; the R-level rpgen_haplotypes() path reads it through
+ * PgrGetP(). The hardcall and dosage callables here expose the
+ * phase-collapsed non-reference count.
  */
 
 #include <stddef.h>
@@ -204,7 +163,7 @@ typedef int (*Rpgen_import_vcf_fun)(const char *vcf_path,
                                     const char *out_pgen_path, char *errbuf,
                                     size_t errbuf_len);
 
-/* -- import the rest of the plink2 matrix to a .pgen (milestone 4b) -------- */
+/* -- import other PLINK 2-supported sources to a .pgen -------------------- */
 
 /*
  * Rpgen_import_bcf(bcf_path, out_pgen_path, errbuf, errbuf_len)
@@ -301,6 +260,49 @@ typedef int (*Rpgen_import_plink1_dosage_fun)(const char *dosage_path,
                                                const char *out_pgen_path,
                                                char *errbuf,
                                                size_t errbuf_len);
+
+/*
+ * Rpgen_import_ped(ped_path, map_path, out_pgen_path, errbuf, errbuf_len)
+ *
+ * Converts a PLINK 1 sample-major .ped/.map pair with plink2's own
+ * PedmapToPgen() importer and plain-command defaults. Both source paths are
+ * required. Same output and arena/reentrancy contract as
+ * Rpgen_import_vcf().
+ */
+typedef int (*Rpgen_import_ped_fun)(const char *ped_path,
+                                    const char *map_path,
+                                    const char *out_pgen_path, char *errbuf,
+                                    size_t errbuf_len);
+
+/*
+ * Rpgen_import_tped(tped_path, tfam_path, out_pgen_path, errbuf, errbuf_len)
+ *
+ * Converts a PLINK 1 variant-major .tped/.tfam pair with plink2's own
+ * TpedToPgen() importer and plain-command defaults. Both source paths are
+ * required. Same output and arena/reentrancy contract as
+ * Rpgen_import_vcf().
+ */
+typedef int (*Rpgen_import_tped_fun)(const char *tped_path,
+                                     const char *tfam_path,
+                                     const char *out_pgen_path, char *errbuf,
+                                     size_t errbuf_len);
+
+/*
+ * Rpgen_import_eigenstrat(geno_path, ind_path, snp_path, out_pgen_path,
+ *                          errbuf, errbuf_len)
+ *
+ * Converts EIGENSOFT PACKEDANCESTRYMAP or TGENO data with its .ind/.snp
+ * companions via plink2's EigfileToPgen() importer. The binary header's
+ * sample and variant hashes are validated. All three source paths are
+ * required. Same output and arena/reentrancy contract as
+ * Rpgen_import_vcf().
+ */
+typedef int (*Rpgen_import_eigenstrat_fun)(const char *geno_path,
+                                           const char *ind_path,
+                                           const char *snp_path,
+                                           const char *out_pgen_path,
+                                           char *errbuf,
+                                           size_t errbuf_len);
 
 #ifdef __cplusplus
 }

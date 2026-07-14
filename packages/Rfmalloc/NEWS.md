@@ -2,6 +2,23 @@
 
 ## 0.1.0 (unreleased)
 
+- Added borrowed read-only storage views. A typed tensor can now refer to bytes
+  already owned by another mapping, keep that owner alive, and enter codec or
+  backend compute without a copy into fmalloc. `fmalloc_storage_advise()` adds
+  best-effort sequential, prefetch, and release intentions over the same span.
+
+- Added one opaque record-panel transfer context for plain doubles, packed
+  hardcalls, fixed-point dosages, and phased haplotypes. Sources now provide
+  typed bounded panels while Rfmalloc owns destination allocation, packing,
+  alignment, and layout. Compressed versus uncompressed storage is therefore a
+  destination choice, not a separate reader API.
+
+- Changed the phased-haplotype payload to locus-major storage: every variant's
+  donor haplotypes occupy one contiguous bit row, with the body and each row
+  aligned to 64 bytes. This matches the access direction of Li and Stephens
+  HMM kernels and kalis Forward/Backward, while materialization still presents
+  the conventional variants-by-haplotypes R matrix.
+
 - C-callable API version 8: added `fmalloc_ld()` and the banded LD-matrix
   accessor API. An `fmalloc_ld` store is a compressed, mmap-backed **banded
   symmetric correlation (LD) matrix**, a SIBLING interface to the matmul tensor
@@ -35,7 +52,7 @@
   `inst/tinytest/test_tensor_decode_range.R`.
 
 - Added `fmalloc_haplotypes()` / `fmalloc_hap_materialize()`: a phased-
-  haplotype fmalloc store at **one bit per call**, a SIBLING interface to the
+  haplotype fmalloc store with a **one-bit-per-call body**, a SIBLING interface to the
   matmul tensor codec ABI rather than an instance of it. Haplotype HMM methods
   (Li and Stephens local-ancestry inference, e.g. the `kalis` package) are not
   linear algebra, so this store never calls `Rfmalloc_register_tensor_codec`
@@ -45,8 +62,9 @@
   matrix can be handed straight to `kalis::CacheHaplotypes()`: kalis's own
   Forward/Backward output is bit-identical whether it caches from the
   fmalloc-materialized matrix or from the original in-memory matrix (see
-  `inst/tinytest/test_fmalloc_hap_kalis.R`). Roughly 32x tighter than an
-  integer `0`/`1` matrix and 64x tighter than a double matrix.
+  `inst/tinytest/test_fmalloc_hap_kalis.R`). The body is asymptotically 32x
+  tighter than an integer `0`/`1` matrix and 64x tighter than doubles, with
+  per-locus alignment padding for direct SIMD access.
 
 - Added the `"dosage"` tensor codec via `fmalloc_dosage()`: fractional genotype
   dosages in `[0, 2]` at **one byte each** (fixed point, `round(d * 127)`, with

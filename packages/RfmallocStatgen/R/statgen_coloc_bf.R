@@ -3,9 +3,10 @@
 #' A matrix reinterpretation of coloc's \code{coloc.bf_bf}: instead of testing
 #' one signal of trait 1 against one signal of trait 2 with vector operations
 #' (and looping), the shared-causal (H4) evidence for *every* pair of signals is
-#' a single matrix multiply. The consecutive per-pair calculation and this
-#' matrix form are algebraically identical (see Details); the payoff is that the
-#' one hot kernel is a GEMM, so it rides any backend Rggml offers - CPU,
+#' a matrix product accumulated over bounded SNP panels. The consecutive
+#' per-pair calculation and this matrix form are algebraically identical (see
+#' Details); the payoff is that the hot kernel is a GEMM, so it rides any
+#' backend Rggml offers - CPU,
 #' OpenBLAS, or a Vulkan GPU (including via dzn) - and, over Rfmalloc's
 #' out-of-core panel-GEMM, signal sets larger than device/host memory. This is
 #' the same idea as gpu-coloc (Torch), minus the CUDA/Metal-only lock-in.
@@ -45,6 +46,10 @@
 #'   \code{trim_by_posterior}: pairs whose strongly-associated SNPs barely
 #'   overlap get an unreliable H4 and are flagged.
 #' @param overlap_min overlap threshold for \code{trim}.
+#' @param block_size Number of SNP columns transformed and multiplied at once.
+#'   `NULL` chooses a block whose two exponentiated input panels occupy at most
+#'   roughly 64 MiB. The dense signal-pair result is intrinsic, but no complete
+#'   signal-by-SNP exponential matrix is materialized.
 #'
 #' @return a data.frame, one row per signal pair, with columns \code{signal1},
 #'   \code{signal2}, \code{nsnps}, \code{PP0}..\code{PP4}, and (when
@@ -52,7 +57,8 @@
 #' @export
 statgen_coloc_bf <- function(bf1, bf2, p1 = 1e-4, p2 = 1e-4, p12 = 1e-5,
                              backend = c("cpu", "blas", "vulkan"),
-                             trim = FALSE, overlap_min = 0.5) {
+                             trim = FALSE, overlap_min = 0.5,
+                             block_size = NULL) {
     backend <- match.arg(backend)
     if (!is.matrix(bf1)) bf1 <- rbind(bf1)
     if (!is.matrix(bf2)) bf2 <- rbind(bf2)
@@ -64,24 +70,27 @@ statgen_coloc_bf <- function(bf1, bf2, p1 = 1e-4, p2 = 1e-4, p12 = 1e-5,
     n <- ncol(bf1)
     S1 <- nrow(bf1)
     S2 <- nrow(bf2)
-
-    ## per-row log-sum-exp of a matrix, stable
-    row_lse <- function(M) {
-        m <- apply(M, 1L, max)
-        m + log(rowSums(exp(M - m)))
+    if (n < 1L || S1 < 1L || S2 < 1L) {
+        stop("bf1 and bf2 must be non-empty matrices")
     }
-    s1 <- row_lse(bf1) # length S1
-    s2 <- row_lse(bf2) # length S2
+    block_size <- .coloc_block_size(block_size, n, S1, S2)
 
-    ## the coupling term c[a,b] = lse_i(bf1[a,i] + bf2[b,i]) via one GEMM
     m1 <- apply(bf1, 1L, max)
     m2 <- apply(bf2, 1L, max)
-    E1 <- exp(bf1 - m1) # S1 x n, entries in (0, 1]
-    E2 <- exp(bf2 - m2) # S2 x n
-    ## want E1 %*% t(E2)  (S1 x S2); crossprod(X, Y) = t(X) %*% Y, so feed
-    ## X = t(E1) (n x S1), Y = t(E2) (n x S2) -> t(t(E1)) %*% t(E2) = E1 %*% t(E2)
-    dot <- .coloc_gemm(t(E1), t(E2), backend)
+    s1 <- .coloc_row_lse(bf1, m1, block_size)
+    s2 <- .coloc_row_lse(bf2, m2, block_size)
+
+    ## Algebraically E1 %*% t(E2), executed as a sum of bounded SNP-panel
+    ## GEMMs so neither complete signal-by-SNP exponential matrix exists.
+    dot <- matrix(0, S1, S2)
+    for (j0 in seq.int(1L, n, by = block_size)) {
+        jj <- j0:min(n, j0 + block_size - 1L)
+        E1 <- .coloc_exp_panel(bf1, m1, jj)
+        E2 <- .coloc_exp_panel(bf2, m2, jj)
+        dot <- dot + .coloc_gemm(t(E1), t(E2), backend)
+    }
     cc <- outer(m1, m2, "+") + log(dot) # S1 x S2, = c[a,b]
+    cc[dot == 0] <- -Inf
 
     ## combine.abf, vectorised over the S1 x S2 grid
     lp1 <- log(p1); lp2 <- log(p2); lp12 <- log(p12)
@@ -104,18 +113,50 @@ statgen_coloc_bf <- function(bf1, bf2, p1 = 1e-4, p2 = 1e-4, p12 = 1e-5,
         PP3 = as.vector(PP3), PP4 = as.vector(PP4)
     )
     if (trim) {
-        ## within-signal posteriors (softmax of each bf row), then per-pair
-        ## overlap = sum_i min(pp1[a,i], pp2[b,i]).
-        pp1 <- exp(bf1 - s1) # S1 x n rows sum to 1
-        pp2 <- exp(bf2 - s2) # S2 x n
+        ## Within-signal posterior overlap accumulated over bounded SNP panels.
         ov <- matrix(0, S1, S2)
-        for (b in seq_len(S2)) {
-            ov[, b] <- rowSums(pmin(pp1, matrix(pp2[b, ], S1, n, byrow = TRUE)))
+        for (j0 in seq.int(1L, n, by = block_size)) {
+            jj <- j0:min(n, j0 + block_size - 1L)
+            pp1 <- .coloc_exp_panel(bf1, s1, jj)
+            pp2 <- .coloc_exp_panel(bf2, s2, jj)
+            for (b in seq_len(S2)) {
+                rhs <- matrix(pp2[b, ], S1, length(jj), byrow = TRUE)
+                ov[, b] <- ov[, b] + rowSums(pmin(pp1, rhs))
+            }
         }
         out$overlap <- as.vector(ov)
         out$keep <- out$overlap >= overlap_min
     }
     out
+}
+
+.coloc_block_size <- function(block_size, n, S1, S2) {
+    if (is.null(block_size)) {
+        block_size <- max(1, floor((64 * 2^20) / (8 * (S1 + S2))))
+    }
+    block_size <- as.integer(block_size)
+    if (length(block_size) != 1L || is.na(block_size) || block_size < 1L) {
+        stop("block_size must be a single positive integer")
+    }
+    min(block_size, n)
+}
+
+## exp(M[, jj] - centre) without allowing an all--Inf row to produce NaNs.
+.coloc_exp_panel <- function(M, centre, jj) {
+    ans <- exp(sweep(M[, jj, drop = FALSE], 1L, centre, "-"))
+    ans[!is.finite(centre), ] <- 0
+    ans
+}
+
+.coloc_row_lse <- function(M, maxima, block_size) {
+    total <- numeric(nrow(M))
+    for (j0 in seq.int(1L, ncol(M), by = block_size)) {
+        jj <- j0:min(ncol(M), j0 + block_size - 1L)
+        total <- total + rowSums(.coloc_exp_panel(M, maxima, jj))
+    }
+    ans <- maxima + log(total)
+    ans[total == 0] <- -Inf
+    ans
 }
 
 ## log(exp(a) - exp(b)) elementwise, assuming a >= b; a==b -> -Inf; a==-Inf -> -Inf

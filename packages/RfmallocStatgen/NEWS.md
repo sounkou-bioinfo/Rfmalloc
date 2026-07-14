@@ -1,9 +1,13 @@
 # RfmallocStatgen 0.1.0 (unreleased)
 
-- Package scaffold: `RfmallocStatgen` joins the Rfmalloc monorepo as the
-  statistical-genetics layer (see `ROADMAP.md` / the README for the full
-  plan). This first commit ships the package skeleton and one working
-  method, so the package builds and checks green from the start.
+- The pinned PCAone logger now initializes its screen state deterministically
+  and sends optional output through R's console instead of `std::cout` or
+  `std::cerr`. The adaptation is part of the byte-checked vendoring recipe.
+
+- `RfmallocStatgen` is the statistical-genetics layer over Rfmalloc genotype,
+  haplotype, and LD stores. Its current surface covers streamed regression and
+  PCA, banded LD, LDpred2, and matrix-form colocalisation; `ROADMAP.md` tracks
+  the remaining research directions.
 - `statgen_gwas_lin()`: univariate linear-regression GWAS over a `bed` or
   `dosage` fmalloc genotype tensor, the fused whole-genome form (residualize
   once on the covariate design, then reduce per variant), not a loop of
@@ -13,7 +17,8 @@
   and cross-checks against `bigstatsr::big_univLinReg()` when `bigstatsr` is
   installed.
 - `statgen_pca()`: fast principal-component analysis by randomized SVD. The
-  RSVD workhorse is vendored verbatim (GPL-3) from 'PCAone'
+  RSVD workhorse is pinned from GPL-3 'PCAone', with deterministic dependency
+  trimming and R-console adaptation
   (`src/pcaone/`, `RsvdOpData::computeUSV`), not reimplemented, behind the
   pinned drift-guard recipe `tools/vendor-pcaone/vendorpcaone.R` (CI job
   `vendored-pcaone-matches-recipe`). This makes the package compiled for the

@@ -90,14 +90,26 @@ rpgen_read_dosages <- function(path, pvar = NULL) {
     sub("\\.bed$", ext, bed_path)
 }
 
-## Plain line count of a text file - used to size the sample/variant axes of
+## Bounded line count of a text file - used to size the sample/variant axes of
 ## a PLINK 1 .bed read from its companion .fam (one line per sample) and .bim
 ## (one line per variant), which carry no counts of their own the way a
-## .pgen's header does. suppressWarnings() covers readLines()'s "incomplete
-## final line" warning on a .fam/.bim whose last line has no trailing
-## newline - still a complete, countable line.
+## .pgen's header does. The fixed-size read avoids materializing a large
+## companion or HAPS file as one character vector. suppressWarnings() covers
+## readLines()'s "incomplete final line" warning: it is still a complete,
+## countable record.
 .rpgen_count_lines <- function(path) {
-    length(suppressWarnings(readLines(path)))
+    open <- if (grepl("\\.(gz|bgz)$", tolower(path))) gzfile else file
+    con <- open(path, open = "rt")
+    on.exit(close(con), add = TRUE)
+    count <- 0
+    repeat {
+        lines <- suppressWarnings(readLines(con, n = 65536L))
+        count <- count + length(lines)
+        if (length(lines) < 65536L) {
+            break
+        }
+    }
+    if (count <= .Machine$integer.max) as.integer(count) else count
 }
 
 #' Report a PLINK 1 .bed fileset's sample and variant counts
@@ -156,16 +168,13 @@ rpgen_read_bed_hardcalls <- function(bed, bim = NULL, fam = NULL) {
 
 #' Read a .pgen or PLINK 1 .bed fileset into an Rfmalloc bed tensor
 #'
-#' Reads hardcalls and packs them into fmalloc-backed, 2-bit `.bed` storage
-#' with [Rfmalloc::fmalloc_bed()]. `path` selects the reader: a path ending in
+#' Streams hardcalls into fmalloc-backed, 2-bit `.bed` storage. `path` selects
+#' the reader: a path ending in
 #' `.bed` is read with [rpgen_read_bed_hardcalls()] (PLINK 1, counts from the
 #' companion `.bim`/`.fam`); anything else is read with
-#' [rpgen_read_hardcalls()] (PLINK 2 `.pgen`). The genotype matrix itself is
-#' materialized once, in R, as the integer matrix pgenlib decodes to; the
-#' fmalloc tensor it packs into is what downstream matrix products (a
-#' genotype PCA, a GRM) stream out-of-core, so the genotypes make one trip
-#' through an ordinary R matrix on the way into fmalloc storage, never a
-#' second one back out as doubles.
+#' [rpgen_read_hardcalls()] (PLINK 2 `.pgen`). One pgenlib reader remains open
+#' while bounded variant panels are decoded directly into an Rfmalloc-owned
+#' codec sink. No full genotype matrix is allocated in R or C.
 #'
 #' @param path Path to a `.pgen` file, or a PLINK 1 `.bed` file.
 #' @param pvar Path to the companion `.pvar`/`.pvar.zst` file; see
@@ -176,6 +185,8 @@ rpgen_read_bed_hardcalls <- function(bed, bim = NULL, fam = NULL) {
 #'   to `NULL` (inferred from `path`).
 #' @param runtime Runtime handle from [Rfmalloc::open_fmalloc()]; defaults to
 #'   the runtime established by [Rfmalloc::init_fmalloc()].
+#' @param block_size Number of variants in the transient decode panel. `NULL`
+#'   chooses a panel of approximately 64 MiB.
 #' @return An `fmalloc_tensor` of dtype `"bed"`, `n_sample x n_variant`.
 #' @seealso [rpgen_dosage()], [rpgen_read_hardcalls()],
 #'   [rpgen_read_bed_hardcalls()]
@@ -186,24 +197,26 @@ rpgen_read_bed_hardcalls <- function(bed, bim = NULL, fam = NULL) {
 #' dim(tn)
 #' Rfmalloc::cleanup_fmalloc(rt)
 #' @export
-rpgen_bed <- function(path, pvar = NULL, bim = NULL, fam = NULL, runtime = NULL) {
+rpgen_bed <- function(path, pvar = NULL, bim = NULL, fam = NULL, runtime = NULL,
+                      block_size = NULL) {
     path <- path.expand(as.character(path))
-    g <- if (grepl("\\.bed$", path)) {
-        rpgen_read_bed_hardcalls(path, bim = bim, fam = fam)
+    is_bed <- grepl("\\.bed$", path)
+    info <- if (is_bed) {
+        bim <- if (is.null(bim)) .rpgen_bed_sibling(path, ".bim") else path.expand(as.character(bim))
+        fam <- if (is.null(fam)) .rpgen_bed_sibling(path, ".fam") else path.expand(as.character(fam))
+        list(n_sample = .rpgen_count_lines(fam), n_variant = .rpgen_count_lines(bim))
     } else {
-        rpgen_read_hardcalls(path, pvar = pvar)
+        .rpgen_expand_pvar(pvar)
+        rpgen_info(path)
     }
-    Rfmalloc::fmalloc_bed(g, runtime = runtime)
+    .rpgen_stream_fmalloc(path, info, "bed", runtime, block_size)
 }
 
 #' Read a .pgen file into an Rfmalloc dosage tensor
 #'
-#' Reads dosages from a PLINK 2 `.pgen` file with [rpgen_read_dosages()] and
-#' packs them into fmalloc-backed, 1-byte fixed-point storage with
-#' [Rfmalloc::fmalloc_dosage()]. As with [rpgen_bed()], the genotype matrix is
-#' materialized once, in R, as the numeric matrix pgenlib decodes to; the
-#' fmalloc tensor it packs into is what a downstream standardized product
-#' (via [Rfmalloc::fmalloc_dosage_standardize()]) streams out-of-core.
+#' Streams dosages from one open PLINK 2 `.pgen` reader into fmalloc-backed,
+#' 1-byte fixed-point storage. As with [rpgen_bed()], only one bounded variant
+#' panel is decoded at a time.
 #'
 #' @inheritParams rpgen_bed
 #' @return An `fmalloc_tensor` of dtype `"dosage"`, `n_sample x n_variant`.
@@ -216,7 +229,94 @@ rpgen_bed <- function(path, pvar = NULL, bim = NULL, fam = NULL, runtime = NULL)
 #' dim(tn)
 #' Rfmalloc::cleanup_fmalloc(rt)
 #' @export
-rpgen_dosage <- function(path, pvar = NULL, runtime = NULL) {
-    d <- rpgen_read_dosages(path, pvar = pvar)
-    Rfmalloc::fmalloc_dosage(d, runtime = runtime)
+rpgen_dosage <- function(path, pvar = NULL, runtime = NULL, block_size = NULL) {
+    path <- path.expand(as.character(path))
+    .rpgen_expand_pvar(pvar)
+    .rpgen_stream_fmalloc(path, rpgen_info(path), "dosage", runtime, block_size)
+}
+
+#' Read fully phased haplotypes into a locus-major Rfmalloc store
+#'
+#' Reads hardcall phase with pgenlib's `PgrGetP()` and writes packed locus rows
+#' directly into [Rfmalloc::create_fmalloc_haplotypes()] storage. The result has
+#' dimensions `n_variant x (2 * n_sample)`, with the two haplotypes of each
+#' sample adjacent in the second dimension. No dense haplotype matrix is
+#' constructed.
+#'
+#' Every heterozygous call must carry phase and every genotype must be present.
+#' The function errors at the first unphased heterozygote or missing genotype
+#' instead of inventing phase. Multiallelic alleles are collapsed to the binary
+#' reference/non-reference view returned by `PgrGetP()`.
+#'
+#' @inheritParams rpgen_dosage
+#' @return An `Rfmalloc::fmalloc_haplotypes` object with variants in rows and
+#'   haplotypes in columns.
+#' @seealso [rpgen_bed()], [rpgen_dosage()],
+#'   [Rfmalloc::fmalloc_hap_materialize()]
+#' @export
+rpgen_haplotypes <- function(path, pvar = NULL, runtime = NULL,
+                             block_size = NULL) {
+    path <- path.expand(as.character(path))
+    .rpgen_expand_pvar(pvar)
+    .rpgen_stream_fmalloc(
+        path, rpgen_info(path), "haplotype", runtime, block_size
+    )
+}
+
+.rpgen_stream_fmalloc <- function(path, info, kind, runtime, block_size) {
+    runtime <- .rpgen_runtime(runtime)
+    n_sample <- as.double(info$n_sample)
+    n_variant <- as.double(info$n_variant)
+    if (!is.finite(n_sample) || !is.finite(n_variant) ||
+        n_sample < 1 || n_variant < 1) {
+        stop("genotype source must contain at least one sample and one variant")
+    }
+    record_bytes <- switch(kind,
+        bed = n_sample * 4,
+        dosage = n_sample * 8,
+        haplotype = ceiling(2 * n_sample / 8),
+        f64 = n_sample * 8,
+        stop("unknown genotype storage kind")
+    )
+    if (is.null(block_size)) {
+        block_size <- max(1, floor((64 * 1024^2) / record_bytes))
+    }
+    if (length(block_size) != 1L || !is.finite(block_size) ||
+        block_size < 1 || block_size != floor(block_size)) {
+        stop("block_size must be a positive whole number")
+    }
+    block_size <- min(as.double(block_size), n_variant)
+    payload <- .Call(
+        "RC_rpgen_stream_fmalloc", path, n_sample, n_variant,
+        match(kind, c("bed", "dosage", "haplotype", "f64")) - 1L,
+        runtime, block_size
+    )
+    .rpgen_wrap_fmalloc(payload, kind, n_sample, n_variant)
+}
+
+.rpgen_runtime <- function(runtime) {
+    if (is.null(runtime)) {
+        runtime <- Rfmalloc::fmalloc_default_runtime()
+    }
+    if (!Rfmalloc::is_fmalloc_runtime(runtime)) {
+        stop("runtime must be an open fmalloc runtime")
+    }
+    runtime
+}
+
+.rpgen_wrap_fmalloc <- function(payload, kind, n_sample, n_variant) {
+    if (identical(kind, "haplotype")) {
+        return(Rfmalloc::create_fmalloc_haplotypes(
+            payload, c(as.integer(n_variant), as.integer(2 * n_sample))
+        ))
+    }
+    if (identical(kind, "f64")) {
+        return(Rfmalloc::as_fmalloc_matrix(
+            payload, nrow = as.integer(n_sample),
+            ncol = as.integer(n_variant), copy = FALSE
+        ))
+    }
+    Rfmalloc::create_fmalloc_tensor(
+        payload, dtype = kind, dim = c(as.integer(n_sample), as.integer(n_variant))
+    )
 }

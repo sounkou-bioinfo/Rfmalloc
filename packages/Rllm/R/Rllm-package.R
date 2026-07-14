@@ -5,9 +5,9 @@
 #' kernels) as a codec-aware matrix-multiply backend for \pkg{Rfmalloc}, so
 #' products of file-backed quantized tensors run natively in quantized space
 #' rather than being decoded to double first. Together with \pkg{Rgguf} (which
-#' exposes GGUF model weights as Rfmalloc-backed tensors) this lets a
+#' exposes GGUF model weights as borrowed typed spans) this lets a
 #' larger-than-memory model's linear layers multiply through GGML's
-#' SIMD-accelerated dot kernels, zero-copy from the memory-mapped payload.
+#' SIMD-accelerated dot kernels, zero-copy from the original GGUF mapping.
 #'
 #' Loading the package registers and selects the \code{"ggml"} backend; toggle
 #' it with [rllm_use_ggml()]. Build quantized tensors with

@@ -1,15 +1,15 @@
 #!/usr/bin/env Rscript
-# vendor plink2's VCF/BCF import closure (VcfToPgen and friends) from
+# vendor PLINK 2's genotype format-import closure from
 # plink-ng, pinned at one exact upstream commit. Same shape as
 # tools/vendor-pgenlib/vendorpgen.R (self-locating, mode-driven, pins an
-# immutable upstream artifact, applies a small local patch), extended for the
+# immutable upstream artifact, applies small local patches), extended for the
 # *program* subset of plink2 (as opposed to vendorpgen.R's *library*/pgenlib
-# read subset). This is milestone 4a's path to VcfToPgen():
+# read subset). This supplies every native file importer Rpgen exposes:
 #
 #     packages/Rpgen/tools/include/{program files, new}
 #       + packages/Rpgen/tools/include/include/{pgenlib_write,SFMT, new}
 #     =  (SHA-pinned plink-ng commit tarball)
-#      + (one local patch: plink2_cmdline.cc logging -> R I/O)
+#      + (logging through R and STPgenWriter direct-sink patches)
 #
 # See PROVENANCE.md for why these exact files and no others, and why the
 # vendored subset lands one directory level up from vendorpgen.R's pgenlib
@@ -54,7 +54,7 @@ pkg_dst <- file.path(repo, "packages", "Rpgen")
 cache   <- file.path(here, "cache")
 patches <- file.path(here, "patches")
 
-# Program-level files (plink-ng's 2.0/, NOT 2.0/include/): the VcfToPgen()
+# Program-level files (plink-ng's 2.0/, NOT 2.0/include/): the format-import
 # closure. Land at packages/Rpgen/tools/include/ (program level), one
 # directory above vendorpgen.R's pgenlib read subset - see PROVENANCE.md for
 # why (mirrors plink-ng's own program/library split: program files #include
@@ -72,9 +72,6 @@ program_files <- c(
   "plink2_data.cc", "plink2_data.h",
   "plink2_family.cc", "plink2_family.h"
 )
-# plink2_cmdline.cc gets one local patch after copying (see below).
-patched_program_files <- c("plink2_cmdline.cc")
-
 # Library-level files (plink-ng's 2.0/include/): join vendorpgen.R's existing
 # pgenlib read subset in packages/Rpgen/tools/include/include/. pgenlib_write
 # is the .pgen writer VcfToPgen() calls; SFMT is the Mersenne-twister-family
@@ -151,6 +148,10 @@ for (p in sort(list.files(patches, "\\.patch$", full.names = TRUE))) {
   if (rc != 0) stop("patch failed: ", basename(p))
   message("  applied ", basename(p))
 }
+## GNU patch keeps .orig backups when a hunk applies with an offset. They are
+## recipe machinery, not vendored sources.
+unlink(list.files(out_tools_include, "\\.orig$", recursive = TRUE,
+                  full.names = TRUE))
 
 if (mode == "check") {
   mism <- character(0)
@@ -171,5 +172,5 @@ if (mode == "check") {
          paste(mism, collapse = "\n  "))
   }
 } else {
-  message("regenerated packages/Rpgen tools/include/ VcfToPgen() closure from plink-ng ", plinkng_sha)
+  message("regenerated packages/Rpgen tools/include/ format-import closure from plink-ng ", plinkng_sha)
 }

@@ -18,6 +18,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"RC_gguf_tensor_info", (DL_FUNC) &RC_gguf_tensor_info, 2},
     {"RC_gguf_tensor_fill", (DL_FUNC) &RC_gguf_tensor_fill, 3},
     {"RC_gguf_tensor_fill_raw", (DL_FUNC) &RC_gguf_tensor_fill_raw, 3},
+    {"RC_gguf_tensor_view", (DL_FUNC) &RC_gguf_tensor_view, 3},
     {"RC_gguf_write", (DL_FUNC) &RC_gguf_write, 3},
     {"RC_gguf_register_codecs", (DL_FUNC) &RC_gguf_register_codecs, 0},
     {NULL, NULL, 0}

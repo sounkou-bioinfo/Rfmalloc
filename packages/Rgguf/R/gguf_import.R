@@ -14,12 +14,12 @@
 #'   file. If `NULL`, `Rfmalloc`'s own default-runtime resolution is used for
 #'   each tensor.
 #' @param as Passed through to [gguf_tensor()]: `"numeric"` dequantizes to
-#'   fmalloc double matrices/arrays, `"native"` keeps the GGUF payload
-#'   encoding and returns typed `fmalloc_tensor` objects.
+#'   fmalloc double matrices/arrays, `"native"` copies the encoded bytes into
+#'   fmalloc storage, and `"view"` borrows the original read-only GGUF spans.
 #'
-#' @return A named list of `Rfmalloc`-backed matrices/arrays, one per
-#'   imported tensor, in the order requested (or file order, if `tensors` is
-#'   `NULL`).
+#' @return A named list of tensors, in the order requested (or file order, if
+#'   `tensors` is `NULL`). Numeric and native imports own fmalloc allocations;
+#'   views are read-only spans over the original GGUF mapping.
 #'
 #' @examples
 #' tmp <- tempfile(fileext = ".gguf")
@@ -35,10 +35,10 @@
 #'
 #' @export
 gguf_import <- function(path_or_ctx, tensors = NULL, runtime = NULL,
-                        as = c("numeric", "native")) {
+                        as = c("numeric", "native", "view")) {
     as <- match.arg(as)
     h <- .gguf_resolve(path_or_ctx)
-    if (h$owned) {
+    if (h$owned && !identical(as, "view")) {
         on.exit(gguf_close(h$ctx), add = TRUE)
     }
 

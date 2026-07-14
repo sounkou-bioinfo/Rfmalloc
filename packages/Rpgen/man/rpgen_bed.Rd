@@ -4,7 +4,14 @@
 \alias{rpgen_bed}
 \title{Read a .pgen or PLINK 1 .bed fileset into an Rfmalloc bed tensor}
 \usage{
-rpgen_bed(path, pvar = NULL, bim = NULL, fam = NULL, runtime = NULL)
+rpgen_bed(
+  path,
+  pvar = NULL,
+  bim = NULL,
+  fam = NULL,
+  runtime = NULL,
+  block_size = NULL
+)
 }
 \arguments{
 \item{path}{Path to a \code{.pgen} file, or a PLINK 1 \code{.bed} file.}
@@ -19,21 +26,21 @@ to \code{NULL} (inferred from \code{path}).}
 
 \item{runtime}{Runtime handle from \code{\link[Rfmalloc:open_fmalloc]{Rfmalloc::open_fmalloc()}}; defaults to
 the runtime established by \code{\link[Rfmalloc:init_fmalloc]{Rfmalloc::init_fmalloc()}}.}
+
+\item{block_size}{Number of variants in the transient decode panel. \code{NULL}
+chooses a panel of approximately 64 MiB.}
 }
 \value{
 An \code{fmalloc_tensor} of dtype \code{"bed"}, \verb{n_sample x n_variant}.
 }
 \description{
-Reads hardcalls and packs them into fmalloc-backed, 2-bit \code{.bed} storage
-with \code{\link[Rfmalloc:fmalloc_bed]{Rfmalloc::fmalloc_bed()}}. \code{path} selects the reader: a path ending in
+Streams hardcalls into fmalloc-backed, 2-bit \code{.bed} storage. \code{path} selects
+the reader: a path ending in
 \code{.bed} is read with \code{\link[=rpgen_read_bed_hardcalls]{rpgen_read_bed_hardcalls()}} (PLINK 1, counts from the
 companion \code{.bim}/\code{.fam}); anything else is read with
-\code{\link[=rpgen_read_hardcalls]{rpgen_read_hardcalls()}} (PLINK 2 \code{.pgen}). The genotype matrix itself is
-materialized once, in R, as the integer matrix pgenlib decodes to; the
-fmalloc tensor it packs into is what downstream matrix products (a
-genotype PCA, a GRM) stream out-of-core, so the genotypes make one trip
-through an ordinary R matrix on the way into fmalloc storage, never a
-second one back out as doubles.
+\code{\link[=rpgen_read_hardcalls]{rpgen_read_hardcalls()}} (PLINK 2 \code{.pgen}). One pgenlib reader remains open
+while bounded variant panels are decoded directly into an Rfmalloc-owned
+codec sink. No full genotype matrix is allocated in R or C.
 }
 \examples{
 pgen <- system.file("extdata", "chr21_phase3_start.pgen", package = "Rpgen")

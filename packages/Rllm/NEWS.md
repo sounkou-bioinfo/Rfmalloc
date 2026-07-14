@@ -1,5 +1,10 @@
 # Rllm 0.1.0 (unreleased)
 
+- `rllm_gguf_model()` now borrows every weight directly from the read-only
+  GGUF mapping. It no longer copies all two-dimensional weights into an
+  Rfmalloc file or dequantizes and repacks one-dimensional norms. The model
+  retains the mapping, and GGML receives the original encoded pointers.
+
 - `rllm_generate()` gained **sampling**: `temperature` (0 = greedy, the
   default, so existing behaviour is unchanged), `top_k`, `top_p` (nucleus),
   and `seed` for reproducibility. Greedy stays deterministic; sampled
@@ -35,24 +40,17 @@
   30 layers, not graph error. An opt-in smoke test
   (`RLLM_TEST_GGUF=<path>`, `test_real_model.R`) exercises the loader and
   graph on real files without affecting CI/CRAN.
-- Registered **GGML-backed Rfmalloc codecs** for the GGUF quantized types
-  Rgguf's vendored gguflib cannot decode - `q5_0`, `q5_1`, `q3_k`, `q5_k`
-  (real `Q4_K_M` model files are full of `q5_0` tensors). The decoder is
-  GGML's reference `to_float` via `Rggml_dequantize`, so these codecs are
-  consistent-by-construction with the compute path; block geometry is taken
-  from the vendored GGML at registration. `rllm_quantize_tensor()` and the
-  typed-GEMM bridge accept the new types too.
+- `q5_0`, `q5_1`, `q3_k`, and `q5_k` remain accepted by quantization and the
+  typed-GEMM bridge. Their Rfmalloc codec registration now lives with every
+  other GGUF storage codec in Rgguf and uses Rggml's reference decoder.
 - Added the **llama-architecture forward pass**: `rllm_gguf_model()` loads a
-  GGUF model's hyperparameters and weights (2-d tensors imported natively -
-  still `q4_k`/`f32`/... encoded - into fmalloc-backed, memory-mapped
-  storage), and `rllm_forward()` assembles the GGML compute graph (RMSNorm,
+  GGUF model's hyperparameters and exposes weights in their native
+  `q4_k`/`f32`/... encoding, and `rllm_forward()` assembles the GGML compute graph (RMSNorm,
   RoPE, causal self-attention with grouped-query support, SwiGLU) from
   Rggml's graph-op C-callables over those weights zero-copy, computing the
   logits for every position of a token batch on the GGML CPU backend.
   Quantized weights are contracted through the SIMD-dispatched quantized
-  kernels without ever being decoded to double. No KV cache yet (whole-batch
-  causal attention: a prompt-scoring entry point, not incremental
-  generation). Verified against a pure-R reference implementation of the
+  kernels without ever being decoded to double. Verified against a pure-R reference implementation of the
   same arithmetic on a synthetic GGUF model written at test time - logits
   agree to float accumulation error (< 1e-4 relative) for both multi-head
   and grouped-query configurations, plus causality probes

@@ -86,6 +86,25 @@ Compression (typed tensors):
 - codecs are a registry (`fmalloc_tensor_codecs()`); downstream packages add
   their own (Rgguf registers the quantized GGUF formats).
 
+Genomic record layouts:
+
+- hardcalls (`bed`), fixed-point dosages, full-precision dosages, and phased
+  haplotypes share one native record-panel transfer context. Sources declare
+  the panel type while Rfmalloc owns allocation, packing, alignment, and the
+  persistent layout;
+- phased haplotypes are stored locus-major, with all donor haplotypes for one
+  variant in a contiguous, 64-byte-aligned bit row. This is the traversal used
+  by Li and Stephens HMM kernels such as kalis Forward/Backward.
+
+Borrowed storage:
+
+- typed tensors may borrow a read-only byte span already owned by another
+  mapping. The view retains its owner, so GGUF weights enter codecs and compute
+  backends without being copied into a second fmalloc file;
+- `fmalloc_storage_advise()` expresses sequential, prefetch, and release
+  intentions over those spans. The policy remains with the graph or algorithm
+  that knows its access phases.
+
 In-place mutation:
 
 - `fmalloc_set()`, `fmalloc_fill()`, and `fmalloc_add()`/`sub()`/`mul()`/`div()`
@@ -96,8 +115,8 @@ Native surface:
 
 - explicit `destroy_fmalloc_vector()`, an in-file persistent allocation catalog,
   runtime/vector introspection, and an installed C header with
-  `R_RegisterCCallable()` entry points (API version 5), including tensor codec
-  and matmul backend registration for downstream packages.
+  `R_RegisterCCallable()` entry points, including tensor codec and matmul
+  backend registration for downstream packages.
 
 Known base-fallback boundaries:
 
@@ -1057,11 +1076,12 @@ Rfmalloc installs `inst/include/Rfmalloc.h` and registers C-callable entry
 points with `R_RegisterCCallable()`. Downstream packages can add Rfmalloc to
 `LinkingTo` and `Imports`, include the header, and use the inline wrappers.
 
-The current native surface (API version 5) exposes runtime open/cleanup,
-vector creation, default-runtime lookup and synchronization, catalog listing,
-runtime/vector introspection, vector destruction, an API-version query, and the
-two extension registries: `Rfmalloc_register_tensor_codec` (plug an element
-encoding into the panel-streamed matrix products -
+The native surface exposes runtime open/cleanup, vector creation,
+default-runtime lookup and synchronization, catalog listing, runtime/vector
+introspection, vector destruction, typed tensor access, the record-panel
+transfer context, and two extension registries:
+`Rfmalloc_register_tensor_codec` (plug an element encoding into the
+panel-streamed matrix products -
 [Rgguf](https://github.com/sounkou-bioinfo/Rgguf) uses this for the quantized
 GGUF formats) and `Rfmalloc_register_matmul_backend` (plug a GEMM kernel behind
 the matrix products). Returned `SEXP` objects follow normal R API ownership

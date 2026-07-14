@@ -39,7 +39,8 @@ library(RfmallocStatgen)
 
     ## -- basic shape/type contract --------------------------------------
 
-    res <- statgen_gwas_lin(tn, y, covar = covar)
+    ## Five columns forces several decode panels and a short tail panel.
+    res <- statgen_gwas_lin(tn, y, covar = covar, block_size = 5L)
 
     expect_true(is.data.frame(res))
     expect_equal(names(res), c("beta", "se", "t", "p", "n"))
@@ -49,6 +50,10 @@ library(RfmallocStatgen)
     expect_true(all(is.finite(res$t)))
     expect_true(all(res$p >= 0 & res$p <= 1))
     expect_equal(res$n, rep.int(n, m))
+
+    ## Panel size is an execution choice, never a numerical one.
+    res_one <- statgen_gwas_lin(tn, y, covar = covar, block_size = m)
+    expect_equal(res, res_one, tolerance = 1e-12)
 
     ## -- per-variant oracle: lm(y ~ covar + g_j), tight tolerance --------
 
@@ -131,6 +136,18 @@ library(RfmallocStatgen)
     ## Dosage is a lossy 1-byte codec (resolution 2/254): a slightly looser
     ## tolerance than the exact 2-bit "bed" comparisons above.
     expect_equal(res_d$beta[j], unname(oracle_d[["Estimate"]]), tolerance = 1e-3)
+
+    ## -- degenerate variants are explicitly not estimable ----------------
+
+    g_bad <- g[, 1:3, drop = FALSE]
+    g_bad[, 1L] <- 1L
+    g_bad[, 2L] <- NA_integer_
+    tn_bad <- fmalloc_bed(g_bad, runtime = rt)
+    res_bad <- statgen_gwas_lin(tn_bad, y, covar = covar, block_size = 1L)
+    expect_true(all(is.na(unlist(res_bad[1:2, c("beta", "se", "t", "p")]))))
+    expect_true(all(is.finite(unlist(res_bad[3L, c("beta", "se", "t", "p")]))))
+
+    expect_error(statgen_gwas_lin(tn, y, block_size = 0L), "block_size")
 
     ## -- optional oracle: bigstatsr::big_univLinReg(), when installed -----
 

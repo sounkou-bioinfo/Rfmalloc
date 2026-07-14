@@ -115,3 +115,25 @@ new_runtime <- function() {
 
     message("  Multi-tensor round-trip test passed")
 })()
+
+if (.Platform$OS.type != "windows") (function() {
+    message("  Test 6: a read-only GGUF file can be opened and read")
+    tmp <- tempfile(fileext = ".gguf")
+    rt <- new_runtime()
+    on.exit({
+        Sys.chmod(tmp, mode = "0600")
+        unlink(tmp)
+        Rfmalloc::cleanup_fmalloc(rt)
+    }, add = TRUE)
+
+    m <- matrix(as.double(1:12), nrow = 3)
+    gguf_write_tensors(tmp, list(m = m))
+    Sys.chmod(tmp, mode = "0444")
+
+    ctx <- gguf_open(tmp)
+    expect_equal(gguf_tensors(ctx)$name, "m")
+    got <- gguf_tensor(ctx, "m", runtime = rt)
+    expect_equal(as.vector(got), as.vector(m))
+
+    message("  Read-only GGUF test passed")
+})()

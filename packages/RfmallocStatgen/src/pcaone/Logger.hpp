@@ -5,6 +5,7 @@
  ******************************************************************************/
 #ifndef LOG_H_
 #define LOG_H_
+#include <R_ext/Print.h>
 
 #include <cstring>
 #include <fstream>
@@ -12,12 +13,44 @@
 #include <iostream>
 #include <sstream>
 
+class RConsoleBuffer : public std::streambuf {
+ public:
+  explicit RConsoleBuffer(bool error) : error_(error) {}
+
+ protected:
+  int_type overflow(int_type ch) override {
+    if (traits_type::eq_int_type(ch, traits_type::eof()))
+      return traits_type::not_eof(ch);
+    const char c = traits_type::to_char_type(ch);
+    xsputn(&c, 1);
+    return ch;
+  }
+
+  std::streamsize xsputn(const char* text, std::streamsize size) override {
+    if (size <= 0) return 0;
+    const std::string value(text, static_cast<size_t>(size));
+    if (error_)
+      REprintf("%s", value.c_str());
+    else
+      Rprintf("%s", value.c_str());
+    return size;
+  }
+
+ private:
+  bool error_;
+};
+
+inline RConsoleBuffer r_stdout_buffer(false);
+inline RConsoleBuffer r_stderr_buffer(true);
+inline std::ostream r_cout(&r_stdout_buffer);
+inline std::ostream r_cerr(&r_stderr_buffer);
+
 class Logger {
  public:
   std::ofstream cao;
-  bool is_screen;
+  bool is_screen = false;
 
-  Logger() {}
+  Logger() = default;
 
   Logger(std::string filename, bool screen = true) {
     is_screen = screen;
@@ -32,13 +65,13 @@ class Logger {
   template <class S>
   Logger& operator<<(const S& val) {
     cao << val;
-    if (is_screen) std::cout << val;
+    if (is_screen) r_cout << val;
     return *this;
   }
 
   Logger& operator<<(std::ostream& (*pfun)(std::ostream&)) {
     pfun(cao);
-    if (is_screen) pfun(std::cout);
+    if (is_screen) pfun(r_cout);
     return *this;
   };
 
@@ -57,18 +90,18 @@ class Logger {
     (..., printSpace(cao, args));
     cao << std::endl;
     if (is_screen) {
-      std::cout.precision(6);
-      std::cout.flags(std::ios::fixed | std::ios::right);
-      (..., printSpace(std::cout, args));
-      std::cout << std::endl;
+      r_cout.precision(6);
+      r_cout.flags(std::ios::fixed | std::ios::right);
+      (..., printSpace(r_cout, args));
+      r_cout << std::endl;
     }
   }
 
   // only print to stderr
   template <typename... Args>
   void cerr(const Args&... args) {
-    (..., printSpace(std::cerr, args));
-    std::cerr << std::endl;
+    (..., printSpace(r_cerr, args));
+    r_cerr << std::endl;
   }
 
   template <typename... Args>
@@ -76,9 +109,9 @@ class Logger {
     (..., printSpace(cao, args));
     cao << std::endl;
     if (is_screen) {
-      std::cout << "\x1B[33m";
-      (..., printSpace(std::cout, args));
-      std::cout << "\033[0m" << std::endl;
+      r_cout << "\x1B[33m";
+      (..., printSpace(r_cout, args));
+      r_cout << "\033[0m" << std::endl;
     }
   }
 
@@ -98,9 +131,9 @@ class Logger {
     (..., printSpace(cao, args));
     cao << std::endl;
     if (is_screen) {
-      std::cout << "\x1B[32m";
-      (..., printSpace(std::cout, args));
-      std::cout << "\033[0m" << std::endl;
+      r_cout << "\x1B[32m";
+      (..., printSpace(r_cout, args));
+      r_cout << "\033[0m" << std::endl;
     }
   }
 };

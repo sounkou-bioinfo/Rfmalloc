@@ -6,11 +6,11 @@ library(Rllm)
 # must produce the same values from the same bytes. Rllm is the natural home
 # for this test - it is the only package that links all three: it quantizes
 # with GGML (rllm_quantize_tensor), decodes once through the Rfmalloc codec
-# registry (fmalloc_tensor_materialize -> Rgguf's vendored gguflib) and once
+# registry (fmalloc_tensor_materialize -> Rgguf's GGML-backed codecs) and once
 # through GGML's type-traits to_float (RC_rllm_dequantize), and demands
 # float-level agreement. Divergence here means a decoder bug, never intrinsic
-# quantization error - this is the test that caught gguf-tools' Q4_K
-# scale-indexing bug (~33% wrong decodes, fixed in Rgguf's vendored copy).
+# quantization error. It also pins registry geometry and panel offsets to the
+# same reference implementation used by compute.
 
 rt <- Rfmalloc::open_fmalloc(tempfile(fileext = ".bin"))
 
@@ -18,10 +18,9 @@ set.seed(7L)
 k <- 512L; n <- 3L
 W <- matrix(rnorm(k * n, sd = 0.4), nrow = k, ncol = n)
 
-# The first six decode through Rgguf's gguflib codecs (independent
-# implementation - real cross-validation); q5_0/q5_1/q3_k/q5_k decode through
-# Rllm's own GGML-backed codecs (consistent by construction, but the loop still
-# exercises their registration, block geometry, and panel offsets).
+# All formats decode through Rgguf's authoritative GGML codecs. The comparison
+# is consistent by construction and still exercises registration, block
+# geometry, and panel offsets independently of Rllm's direct decode surface.
 for (ty in c("q4_0", "q4_1", "q8_0", "q2_k", "q4_k", "q6_k",
              "q5_0", "q5_1", "q3_k", "q5_k")) {
     Wt <- rllm_quantize_tensor(W, ty, runtime = rt)

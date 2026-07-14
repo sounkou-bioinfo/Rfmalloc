@@ -67,17 +67,20 @@ gguf_tensors <- function(x) {
 #'   [Rfmalloc::open_fmalloc()]). If `NULL`, `Rfmalloc`'s own default-runtime
 #'   resolution is used.
 #' @param as `"numeric"` (default) dequantizes the whole tensor into an
-#'   fmalloc double matrix/array. `"native"` instead copies the tensor's raw,
+#'   fmalloc double matrix/array. `"native"` copies the tensor's raw,
 #'   still-encoded payload into fmalloc storage and returns an
 #'   [Rfmalloc::create_fmalloc_tensor()] typed tensor: it keeps the GGUF
 #'   storage density (e.g. 4.5 bits/weight for `q4_k`) and is decoded in
-#'   bounded panels only when used in matrix products. Native mode requires a
-#'   2-dimensional tensor whose type has a registered Rfmalloc codec.
+#'   bounded panels only when used in matrix products. `"view"` returns the
+#'   same typed tensor without copying: it borrows the exact read-only span in
+#'   the original GGUF mapping and keeps that mapping alive. Native mode
+#'   requires two dimensions; view mode accepts any rank. Both require a
+#'   registered Rfmalloc codec.
 #'
 #' @return For `as = "numeric"`, an `Rfmalloc`-backed ALTREP matrix (if the
 #'   tensor has 2 dimensions) or array (otherwise) of doubles, with `dim()`
 #'   equal to the tensor's GGUF dimensions in `c(dim[0], dim[1], ...)` order.
-#'   For `as = "native"`, an `fmalloc_tensor` with the same dims.
+#'   For `as = "native"` or `"view"`, an `fmalloc_tensor` with the same dims.
 #'
 #' @examples
 #' tmp <- tempfile(fileext = ".gguf")
@@ -89,13 +92,14 @@ gguf_tensors <- function(x) {
 #' unlink(tmp)
 #'
 #' @export
-gguf_tensor <- function(x, name, runtime = NULL, as = c("numeric", "native")) {
+gguf_tensor <- function(x, name, runtime = NULL,
+                        as = c("numeric", "native", "view")) {
     if (!is.character(name) || length(name) != 1L || is.na(name)) {
         stop("name must be a single non-missing character string")
     }
     as <- match.arg(as)
     h <- .gguf_resolve(x)
-    if (h$owned) {
+    if (h$owned && !identical(as, "view")) {
         on.exit(gguf_close(h$ctx), add = TRUE)
     }
 
@@ -106,11 +110,20 @@ gguf_tensor <- function(x, name, runtime = NULL, as = c("numeric", "native")) {
 
     dims <- as.integer(info$dims)
 
+    if (as == "view") {
+        if (!(info$type %in% Rfmalloc::fmalloc_tensor_codecs())) {
+            stop(
+                "tensor '", name, "' has type '", info$type,
+                "' with no registered Rfmalloc tensor codec"
+            )
+        }
+        payload <- .Call("RC_gguf_tensor_view", h$ctx, name, runtime)
+        return(Rfmalloc::create_fmalloc_tensor(payload, info$type, dims))
+    }
+
     if (as == "native") {
         # Native import copies the raw, still-encoded payload; it does not
-        # need gguflib's dequantizer, only a registered Rfmalloc codec for the
-        # type (another package may provide one - e.g. Rllm registers
-        # GGML-backed codecs for types gguflib cannot decode, such as q5_0).
+        # need a numeric destination, only a registered Rfmalloc codec.
         if (length(dims) != 2L) {
             stop("as = \"native\" requires a 2-dimensional tensor; '",
                 name, "' has ", length(dims))
@@ -129,13 +142,12 @@ gguf_tensor <- function(x, name, runtime = NULL, as = c("numeric", "native")) {
         return(Rfmalloc::create_fmalloc_tensor(payload, info$type, dims))
     }
 
-    # Numeric import goes through gguflib's dequantizer, which only covers a
-    # subset of the quantized types.
+    # Numeric import goes through GGML's authoritative type-traits decoder.
     if (!isTRUE(info$supported)) {
         stop(
             "tensor '", name, "' has type '", info$type,
-            "' which the vendored gguflib parser cannot dequantize; ",
-            "use as = \"native\" with a registered Rfmalloc codec"
+            "' which GGML cannot dequantize; ",
+            "use as = \"native\" or \"view\" with a registered Rfmalloc codec"
         )
     }
 

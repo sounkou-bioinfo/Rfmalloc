@@ -28,9 +28,8 @@ the defaults a plain \verb{plink2 --vcf <vcf> --make-pgen} (no other flags)
 would use - no argv parsing happens; every default matches what plink2.cc
 itself computes for that combination (see \code{src/rpgen_import.cpp}'s
 comments for exactly which). The design choice this embodies: reuse
-plink2's own import code rather than a from-scratch \code{htslib}-based VCF
-reader, because the identical vendored closure also covers BCF/BGEN/
-Oxford for a later milestone.
+plink2's own import code rather than maintain a second parser for each
+format. The identical closure covers BCF, BGEN, and Oxford inputs.
 }
 \details{
 The produced \code{.pgen} (plus its companion \code{.pvar}/\code{.psam}, written next to

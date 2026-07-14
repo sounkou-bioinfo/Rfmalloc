@@ -160,14 +160,15 @@ caller's interpretation, `rawToChar()`):
 ```{r llm, eval = FALSE}
 library(Rllm)
 
-rt <- Rfmalloc::open_fmalloc("weights.bin", size_gb = 2)  # the memory-mapped store
+rt <- Rfmalloc::open_fmalloc("rllm-work.bin", size_gb = 2)
 model <- rllm_gguf_model("SmolLM2-135M.Q4_K_M.gguf", runtime = rt)
-# Weights land in that mmap'd file still quantized (q4_k/q5_0/q6_k/q8_0): the
-# import copies the raw GGUF blocks over without decoding them. From then on the
-# forward pass points GGML tensors straight at those payloads, zero-copy.
+# Every weight borrows its exact read-only span in the original GGUF mapping.
+# The encoded q4_k/q5_0/q6_k/q8_0 bytes are neither decoded nor copied into a
+# second backing file, and the forward pass points GGML tensors at them directly.
 
 gen <- rllm_generate(model, charToRaw(
-    "The capital of France is Paris. The capital of Germany is"), n_new = 16L)
+    "The capital of France is Paris. The capital of Germany is"), n_new = 16L,
+    runtime = rt) # the optional KV cache, not the weights, uses this store
 rawToChar(gen$raw)
 #> [1] " Berlin. The capital of Italy is Rome. The capital of Spain is Madrid."
 ```
@@ -205,17 +206,18 @@ backend registry, a faster backend accelerates both at once, with no change to
 
 ## The packages
 
-Five packages, one stack. Each links to its reference documentation; the
+Six packages, one stack. Each links to its reference documentation; the
 sources live under [`packages/`](https://github.com/sounkou-bioinfo/Rfmalloc/tree/main/packages)
 in this repository.
 
 | package | role |
 |---|---|
 | [**Rfmalloc**](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/) | the substrate: file-backed ALTREP vectors/matrices/tensors, codec + backend registries, panel matmul, out-of-core eviction, `fmalloc_pca()`, and the genotype codecs (`bed`/`dosage`/`haplotypes`) with fused standardization |
-| [**Rgguf**](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/) | GGUF model files: metadata, tensor directory, dequantized or **native (still-quantized)** imports into fmalloc storage |
-| [**Rggml**](https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/) | compute carrier: vendored GGML with a BLAS backend (R's own BLAS via a `cblas`→Fortran shim) and runtime-SIMD-dispatched quantized kernels |
+| [**Rgguf**](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/) | GGUF model files through GGML's official parser: metadata, tensor directory, explicit decoded copies, encoded copies, or borrowed read-only tensor views |
+| [**Rggml**](https://sounkou-bioinfo.github.io/Rfmalloc/Rggml/) | compute and format authority: vendored GGML kernels and official GGUF implementation, with BLAS and runtime-SIMD-dispatched quantized backends |
 | [**Rllm**](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/) | composition + inference: registers Rggml as Rfmalloc's codec-aware matmul backend, and builds the llama forward pass, KV cache, and byte-level generation |
-| [**Rpgen**](https://github.com/sounkou-bioinfo/Rfmalloc/tree/main/packages/Rpgen) | genomics I/O: a native PLINK2 `.pgen` reader in C (vendored pgenlib, GPL-3) exposing the C-callable API pgenlibr lacks, the on-disk source the genotype codecs pack from |
+| [**Rpgen**](https://github.com/sounkou-bioinfo/Rfmalloc/tree/main/packages/Rpgen) | genomics I/O: bounded ingestion from PGEN, BED, PED/MAP, TPED/TFAM, BGEN, VCF/BCF, GEN, HAPS/legend, EIGENSTRAT, and legacy dosage into hardcall, dosage, haplotype, or dense stores |
+| [**RfmallocStatgen**](https://github.com/sounkou-bioinfo/Rfmalloc/tree/main/packages/RfmallocStatgen) | statistical genetics over those stores: streamed regression/PCA, banded LD, LDpred2, and matrix-form colocalisation |
 
 ## Install
 
@@ -228,11 +230,11 @@ install.packages("Rllm",
 
 or a GitHub subdir ref: `pak::pak("sounkou-bioinfo/Rfmalloc/packages/Rllm")`.
 
-All five packages target Linux, macOS and Windows (Rtools), and all five are
-verified on ARM in CI: Apple Silicon and Linux aarch64. On Windows, Rgguf's
-vendored GGUF parser maps files through a small `CreateFileMapping` shim in
-place of `mmap`, and Rpgen's vendored pgenlib builds with the same `Makevars.win`
-that carries pgenlibr on CRAN.
+All six packages target Linux, macOS and Windows (Rtools), and all six are
+verified on ARM in CI: Apple Silicon and Linux aarch64. On Windows, Rgguf maps
+the tensor bytes through a small `CreateFileMapping` shim in place of `mmap`,
+while Rggml remains the official parser authority. Rpgen's vendored pgenlib
+builds with the same `Makevars.win` pattern that carries pgenlibr on CRAN.
 
 ## Correctness discipline
 
@@ -249,7 +251,8 @@ every package's test suite against it (`tests/integration.R`).
 ## Layout & provenance
 
 ```
-packages/    the four R packages (independent installable units)
+packages/    the six R packages (independent installable units)
+experiments/ falsifiable probes of storage and compute bets
 tests/       cross-package integration entry points (run in CI)
 tools/       fixture generators and shared scripts
 ```
@@ -268,5 +271,8 @@ runtime-SIMD staging pattern Rggml adopts).
 
 ## License
 
-GPL (>= 2). Vendored third-party components (fmalloc, gguflib, GGML via ggmlR)
-keep their upstream licenses; see each package's `inst/COPYRIGHTS`.
+The stack is GPL (>= 2). Rpgen is GPL-3 because it combines PLINK2's GPL-3
+import closure with LGPL (>= 3) pgenlib, and RfmallocStatgen is GPL-3 because
+its pinned PCAone workhorse is GPL-3. Vendored third-party components (fmalloc,
+GGML, pgenlib, PCAone, and ALP) keep their upstream licenses; see each
+package's `inst/COPYRIGHTS`.

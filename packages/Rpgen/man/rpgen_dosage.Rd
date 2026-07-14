@@ -4,7 +4,7 @@
 \alias{rpgen_dosage}
 \title{Read a .pgen file into an Rfmalloc dosage tensor}
 \usage{
-rpgen_dosage(path, pvar = NULL, runtime = NULL)
+rpgen_dosage(path, pvar = NULL, runtime = NULL, block_size = NULL)
 }
 \arguments{
 \item{path}{Path to a \code{.pgen} file, or a PLINK 1 \code{.bed} file.}
@@ -15,17 +15,17 @@ rpgen_dosage(path, pvar = NULL, runtime = NULL)
 
 \item{runtime}{Runtime handle from \code{\link[Rfmalloc:open_fmalloc]{Rfmalloc::open_fmalloc()}}; defaults to
 the runtime established by \code{\link[Rfmalloc:init_fmalloc]{Rfmalloc::init_fmalloc()}}.}
+
+\item{block_size}{Number of variants in the transient decode panel. \code{NULL}
+chooses a panel of approximately 64 MiB.}
 }
 \value{
 An \code{fmalloc_tensor} of dtype \code{"dosage"}, \verb{n_sample x n_variant}.
 }
 \description{
-Reads dosages from a PLINK 2 \code{.pgen} file with \code{\link[=rpgen_read_dosages]{rpgen_read_dosages()}} and
-packs them into fmalloc-backed, 1-byte fixed-point storage with
-\code{\link[Rfmalloc:fmalloc_dosage]{Rfmalloc::fmalloc_dosage()}}. As with \code{\link[=rpgen_bed]{rpgen_bed()}}, the genotype matrix is
-materialized once, in R, as the numeric matrix pgenlib decodes to; the
-fmalloc tensor it packs into is what a downstream standardized product
-(via \code{\link[Rfmalloc:fmalloc_dosage_standardize]{Rfmalloc::fmalloc_dosage_standardize()}}) streams out-of-core.
+Streams dosages from one open PLINK 2 \code{.pgen} reader into fmalloc-backed,
+1-byte fixed-point storage. As with \code{\link[=rpgen_bed]{rpgen_bed()}}, only one bounded variant
+panel is decoded at a time.
 }
 \examples{
 pgen <- system.file("extdata", "chr21_phase3_start.pgen", package = "Rpgen")

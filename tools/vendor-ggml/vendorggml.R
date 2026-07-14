@@ -10,10 +10,9 @@
 #
 # all recorded beside this script and verifiable by re-running it.
 #
-#   base    : ggmlR <VER> source tarball from CRAN, SHA256-pinned. 45 of the 52
-#             vendored GGML files are byte-identical to it; ggmlR supplies the
-#             GGML 0.9.5 sources already split for CRAN + the stdio/abort shim.
-#   patches : patches/*.patch - our 9 local edits on top of stock ggmlR
+#   base    : ggmlR <VER> source tarball from CRAN, SHA256-pinned. It supplies
+#             GGML 0.9.5 already split for CRAN plus the stdio/abort shim.
+#   patches : patches/*.patch - our local edits on top of stock ggmlR
 #             (Windows/MinGW by-pointer buffer iface, never-destroyed teardown
 #             singletons, NULL-guards against small-pool heap corruption, and
 #             the arch-fallback.h hook that lets our runtime SIMD dispatcher

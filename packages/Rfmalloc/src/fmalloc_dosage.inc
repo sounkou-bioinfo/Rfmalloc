@@ -139,28 +139,19 @@ static void tensor_register_dosage_codec(void)
     Rfmalloc_register_tensor_codec("dosage", 1, 1, tensor_decode_dosage);
 }
 
-//==============================================================================
-// Encode a numeric dosage matrix (values in [0, 2] or NA) into a "dosage"
-// payload. Importing a real .pgen is: decode dosages through pgenlibr at the R
-// level, then pack them here.
-//==============================================================================
-extern "C" SEXP rfm_tensor_dosage_encode_impl(SEXP x, SEXP runtime_xptr)
+extern "C" SEXP Rfmalloc_dosage_create(SEXP runtime_xptr, R_xlen_t nrow,
+                                        R_xlen_t ncol)
 {
     fm_runtime *runtime = runtime_from_xptr(runtime_xptr);
     if (!runtime || !runtime->info) {
         Rf_error("fmalloc runtime is closed");
     }
-    if (TYPEOF(x) != REALSXP) {
-        Rf_error("x must be a numeric matrix of dosages in [0, 2] (or NA)");
-    }
-    SEXP xdim = Rf_getAttrib(x, R_DimSymbol);
-    if (xdim == R_NilValue || TYPEOF(xdim) != INTSXP || XLENGTH(xdim) != 2) {
-        Rf_error("x must be a matrix");
-    }
-    const R_xlen_t nrow = (R_xlen_t)INTEGER(xdim)[0];
-    const R_xlen_t ncol = (R_xlen_t)INTEGER(xdim)[1];
     if (nrow <= 0 || ncol <= 0) {
-        Rf_error("x must have at least one row and one column");
+        Rf_error("dosage dimensions must be positive");
+    }
+    if (nrow > (std::numeric_limits<R_xlen_t>::max() - RFM_DOS_HDR_BYTES) /
+                   ncol) {
+        Rf_error("dosage payload is too large");
     }
 
     const R_xlen_t body = nrow * ncol;
@@ -177,7 +168,36 @@ extern "C" SEXP rfm_tensor_dosage_encode_impl(SEXP x, SEXP runtime_xptr)
     memcpy(p, &hdr, sizeof(hdr));
 
     uint8_t *base = p + RFM_DOS_HDR_BYTES;
-    const double *src = REAL(x);
+    memset(base, RFM_DOS_MISSING, (size_t)body);
+    vec->maybe_dirty = true;
+    UNPROTECT(1);
+    return ans;
+}
+
+extern "C" int Rfmalloc_dosage_write(SEXP payload, R_xlen_t first_col,
+                                      R_xlen_t ncol, const double *src)
+{
+    if (first_col < 0 || ncol < 0 || (ncol && !src)) {
+        return -1;
+    }
+    fm_vector *vec = maybe_vector_from_altrep(payload);
+    if (!vec || vec->type != RAWSXP || !vec->runtime || !vec->runtime->info ||
+        (size_t)vec->len < RFM_DOS_HDR_BYTES) {
+        return -1;
+    }
+    uint8_t *p = static_cast<uint8_t *>(vector_data_or_dummy(vec));
+    rfm_dos_header hdr;
+    memcpy(&hdr, p, sizeof(hdr));
+    if (memcmp(hdr.magic, rfm_dos_magic7, sizeof(rfm_dos_magic7)) != 0 ||
+        hdr.magic[7] != RFM_DOS_RAW || hdr.nrow == 0 || hdr.ncol == 0 ||
+        (uint64_t)first_col > hdr.ncol || (uint64_t)ncol > hdr.ncol - first_col ||
+        hdr.nrow > (uint64_t)(std::numeric_limits<size_t>::max() -
+                              RFM_DOS_HDR_BYTES) / hdr.ncol ||
+        (size_t)vec->len < RFM_DOS_HDR_BYTES + (size_t)hdr.nrow * (size_t)hdr.ncol) {
+        return -1;
+    }
+    const R_xlen_t nrow = (R_xlen_t)hdr.nrow;
+    uint8_t *base = p + RFM_DOS_HDR_BYTES + first_col * nrow;
     for (R_xlen_t c = 0; c < ncol; c++) {
         uint8_t *col = base + c * nrow;
         for (R_xlen_t i = 0; i < nrow; i++) {
@@ -185,15 +205,36 @@ extern "C" SEXP rfm_tensor_dosage_encode_impl(SEXP x, SEXP runtime_xptr)
             if (ISNAN(d)) {
                 col[i] = (uint8_t)RFM_DOS_MISSING;
             } else if (d < 0.0 || d > 2.0) {
-                UNPROTECT(1);
-                Rf_error("dosage must be in [0, 2] or NA, got %g", d);
+                return -1;
             } else {
                 col[i] = (uint8_t)lround(d * RFM_DOS_SCALE);
             }
         }
-        R_CheckUserInterrupt();
     }
     vec->maybe_dirty = true;
+    return 0;
+}
+
+//==============================================================================
+// Encode a numeric dosage matrix (values in [0, 2] or NA) into a "dosage"
+// payload.
+//==============================================================================
+extern "C" SEXP rfm_tensor_dosage_encode_impl(SEXP x, SEXP runtime_xptr)
+{
+    if (TYPEOF(x) != REALSXP) {
+        Rf_error("x must be a numeric matrix of dosages in [0, 2] (or NA)");
+    }
+    SEXP xdim = Rf_getAttrib(x, R_DimSymbol);
+    if (xdim == R_NilValue || TYPEOF(xdim) != INTSXP || XLENGTH(xdim) != 2) {
+        Rf_error("x must be a matrix");
+    }
+    const R_xlen_t nrow = (R_xlen_t)INTEGER(xdim)[0];
+    const R_xlen_t ncol = (R_xlen_t)INTEGER(xdim)[1];
+    SEXP ans = PROTECT(Rfmalloc_dosage_create(runtime_xptr, nrow, ncol));
+    if (Rfmalloc_dosage_write(ans, 0, ncol, REAL(x)) != 0) {
+        UNPROTECT(1);
+        Rf_error("x contains a dosage outside [0, 2]");
+    }
     UNPROTECT(1);
     return ans;
 }

@@ -10,10 +10,11 @@ Description: The composition layer of the 'Rfmalloc' ecosystem: it registers
     products of file-backed, quantized tensors run natively in quantized space
     (weights stay 'Q4_K'/'Q6_K'/... encoded, activations are quantized on the
     fly) instead of being decoded to double first. Combined with 'Rgguf', which
-    exposes 'GGUF' model weights as 'Rfmalloc'-backed tensors, this lets a
+    exposes 'GGUF' model weights as borrowed typed spans, this lets a
     larger-than-memory model's linear layers be multiplied through 'GGML's
-    SIMD-accelerated dot kernels zero-copy from the memory-mapped payload. A
-    transformer forward-pass graph builder over these primitives is planned.
+    SIMD-accelerated dot kernels zero-copy from the original model mapping.
+    A llama-architecture graph builder, KV cache, byte-level tokenizer, and
+    generation loop compose these primitives into CPU inference.
 License: GPL (>= 2)
 Encoding: UTF-8
 Imports:

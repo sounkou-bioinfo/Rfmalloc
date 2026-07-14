@@ -1,17 +1,16 @@
 Package: Rgguf
-Title: Read 'GGUF' Model Files into 'Rfmalloc'-Backed Arrays
+Title: Official GGUF Parsing and Typed Storage Views
 Version: 0.1.0
 Authors@R: c(
-    person(given = "Sounkou Mahamane", family = "Toure", email = "sounkoutoure@gmail.com", role = c("aut", "cre")),
-    person(given = "Salvatore", family = "Sanfilippo", role = "cph", comment = "gguf-tools/gguflib"),
-    person(given = "Georgi", family = "Gerganov", role = "cph", comment = "GGUF format enums/structures adapted from ggml")
+    person(given = "Sounkou Mahamane", family = "Toure", email = "sounkoutoure@gmail.com", role = c("aut", "cre"))
     )
 Description: Reads 'GGUF' model files, the file format used by the
     'llama.cpp' project (<https://github.com/ggerganov/llama.cpp>) to store
-    large language model tensors and metadata, and exposes their tensors
-    directly as 'Rfmalloc'-backed, file-backed ALTREP matrices and arrays.
-    Quantized tensor types supported by the vendored 'gguflib' parser
-    (<https://github.com/antirez/gguf-tools>) are dequantized on demand.
+    large language model tensors and metadata. Tensors can be decoded into
+    file-backed 'Rfmalloc' arrays, copied at their native codec density, or
+    borrowed as zero-copy read-only spans over the original model mapping.
+    Parsing, writing, and quantized decoding use the official 'GGML' GGUF
+    implementation exposed by the sibling 'Rggml' package.
     Metadata key-value pairs and the tensor directory are exposed as ordinary
     R lists and data frames. A minimal writer is included to create 'GGUF'
     files containing 32-bit floating point tensors, primarily to support
@@ -19,13 +18,16 @@ Description: Reads 'GGUF' model files, the file format used by the
 License: GPL (>= 2)
 Encoding: UTF-8
 Imports:
-    Rfmalloc
+    Rfmalloc,
+    Rggml
 LinkingTo:
-    Rfmalloc
+    Rfmalloc,
+    Rggml
 Suggests:
     tinytest
 Remotes:
-    sounkou-bioinfo/Rfmalloc/packages/Rfmalloc
+    sounkou-bioinfo/Rfmalloc/packages/Rfmalloc,
+    sounkou-bioinfo/Rfmalloc/packages/Rggml
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 SystemRequirements: GNU make

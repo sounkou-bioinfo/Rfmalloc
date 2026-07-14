@@ -8,7 +8,7 @@ gguf_import(
   path_or_ctx,
   tensors = NULL,
   runtime = NULL,
-  as = c("numeric", "native")
+  as = c("numeric", "native", "view")
 )
 }
 \arguments{
@@ -24,13 +24,13 @@ file. If \code{NULL}, \code{Rfmalloc}'s own default-runtime resolution is used f
 each tensor.}
 
 \item{as}{Passed through to \code{\link[=gguf_tensor]{gguf_tensor()}}: \code{"numeric"} dequantizes to
-fmalloc double matrices/arrays, \code{"native"} keeps the GGUF payload
-encoding and returns typed \code{fmalloc_tensor} objects.}
+fmalloc double matrices/arrays, \code{"native"} copies the encoded bytes into
+fmalloc storage, and \code{"view"} borrows the original read-only GGUF spans.}
 }
 \value{
-A named list of \code{Rfmalloc}-backed matrices/arrays, one per
-imported tensor, in the order requested (or file order, if \code{tensors} is
-\code{NULL}).
+A named list of tensors, in the order requested (or file order, if
+\code{tensors} is \code{NULL}). Numeric and native imports own fmalloc allocations;
+views are read-only spans over the original GGUF mapping.
 }
 \description{
 Reads some or all tensors from a GGUF file into a named list of

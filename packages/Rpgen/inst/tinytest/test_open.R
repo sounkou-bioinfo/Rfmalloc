@@ -1,4 +1,4 @@
-## rpgen_info(): the milestone 1 correctness contract. Rpgen vendors the same
+## rpgen_info() count contract. Rpgen vendors the same
 ## pgenlib read subset pgenlibr does (see PROVENANCE.md); verify our own
 ## C-callable path (PgfiInitPhase1/PgfiInitPhase2/PgrInit -> counts) agrees
 ## with pgenlibr's independent implementation of the same open sequence,
@@ -24,7 +24,7 @@ if (requireNamespace("pgenlibr", quietly = TRUE)) {
     ## without a pvar object (its own consistency check - see pgenlibr.cpp's
     ## Load(): "Multiallelic variants and phase/dosage info simultaneously
     ## present; pvar required in this case"). Rpgen_open_info() has no such
-    ## restriction: milestone 1 only reads the two header counts, which do
+    ## restriction: rpgen_info() only reads the two header counts, which do
     ## not depend on per-variant allele bookkeeping. Supply the matching
     ## pvar so the oracle can open the same file at all.
     pvar_path <- system.file("extdata", "chr21_phase3_start.pvar.zst", package = "Rpgen")

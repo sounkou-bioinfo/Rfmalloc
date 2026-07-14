@@ -5,8 +5,9 @@
 #' closing over 'bigsnpr's analysis stack on denser storage with native
 #' readers, and adding the haplotype methods 'bigsnpr' cannot. See
 #' \code{ROADMAP.md} in the package source (or the package README) for the
-#' full plan; this milestone ships the first Tier 1 method,
-#' \code{\link{statgen_gwas_lin}}.
+#' active research programme. Implemented methods cover streamed PCA and
+#' regression, banded LD construction, LDpred2, and matrix-form
+#' colocalisation.
 #'
 #' @section Validation policy:
 #' Every method is validated against 'bigsnpr'/'bigstatsr' as the reference

@@ -2,9 +2,9 @@
 #define RPGEN_PLINK2_GLUE_H
 
 /* Shared jump target the CLI shim's exit()/abort() replacements
- * (rpgen_cli_shim.h) longjmp to, and the VCF import driver
- * (rpgen_import_vcf() in rpgen_import.cpp) setjmp()s before calling into
- * the vendored plink2 closure. This file is deliberately NOT compiled with
+ * (rpgen_cli_shim.h) longjmp to. Every import driver in rpgen_import.cpp
+ * setjmp()s it before calling into the vendored PLINK 2 closure. This file is
+ * deliberately NOT compiled with
  * the shim (see src/Makevars.in/.win) - it needs the real setjmp.h, not
  * anything the shim redirects.
  *
@@ -21,15 +21,9 @@
  *
  * Single call path assumption: like the bigstack arena itself (see
  * tools/vendor-plink2-import/PROVENANCE.md, "Arena and defaults"), this
- * jmp_buf is process-global, not thread-local, and is only ever armed by
- * rpgen_import_vcf(). That matches every current caller into the LIBPLINK2
- * object set - R's evaluator is single-threaded, and the only other
- * caller, rpgen.cpp's pgenlib *read* path, never reaches a translation
- * unit that calls exit()/abort() (verified by grepping the vendored tree;
- * only plink2_data.cc/plink2_import.cc do, both exclusively reachable from
- * VcfToPgen()). If a future milestone adds another entry point into
- * LIBPLINK2 code that can reach exit()/abort(), it must setjmp() this same
- * buffer first, the same way rpgen_import_vcf() does.
+ * jmp_buf is process-global, not thread-local. R's evaluator serializes the
+ * current callers. Any new entry point into LIBPLINK2 code that can reach
+ * exit()/abort() must setjmp() this same buffer before entering the closure.
  */
 
 #include <setjmp.h>

@@ -6,14 +6,12 @@
 # into Rggml.so. Downstream packages never see this Makefile: they consume
 # the installed headers in inst/include/ and the registered C-callables.
 #
-# CPU kernels are architecture-generic: GGML_CPU_GENERIC forces the portable
-# scalar/C reference path (see ggml-cpu/arch-fallback.h) - no -march SIMD
-# flags, no OpenMP, no x86 hand-written SIMD kernel files, no GPU backends -
-# so this compiles the same way regardless of the build machine's CPU.
-# EXCEPTION: dense products use the BLAS backend (GGML_USE_BLAS, ggml-blas.cpp),
-# offloading F32 mul_mat to R's own BLAS via the cblas->Fortran shim below.
-# Runtime-SIMD-dispatched quantized kernels (GGML_CPU_ALL_VARIANTS) are the
-# next planned addition for the dequant-dot path (see README).
+# The portable CPU baseline uses GGML_CPU_GENERIC. On x86, configure stages
+# selected kernels under ISA flags and runtime dispatch owns their canonical
+# symbols. On aarch64, configure clears GENERIC_DEFS and builds GGML's NEON
+# kernels directly. Dense products use the BLAS backend and offload F32
+# mul_mat to R's own BLAS through the cblas-to-Fortran shim below. Vulkan is
+# built separately only when configure receives --with-vulkan.
 
 AR     ?= ar
 RANLIB ?= ranlib
@@ -64,7 +62,7 @@ C_SOURCES = \
   ggml-cpu/ggml-cpu-backend.c ggml-cpu/quants.c
 
 CXX_SOURCES = \
-  ggml-backend.cpp ggml-backend-reg.cpp ggml-backend-meta.cpp ggml-threading.cpp \
+  ggml-backend.cpp ggml-backend-reg.cpp ggml-backend-meta.cpp ggml-threading.cpp gguf.cpp \
   ggml-cpu/ggml-cpu.cpp ggml-cpu/traits.cpp ggml-cpu/vec.cpp ggml-cpu/repack.cpp \
   ggml-cpu/binary-ops.cpp ggml-cpu/unary-ops.cpp ggml-cpu/ops-private.cpp \
   ggml-blas.cpp

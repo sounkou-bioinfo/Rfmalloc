@@ -4,6 +4,7 @@
 #include <R.h>
 #include <Rinternals.h>
 #include <R_ext/Rdynload.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -106,6 +107,42 @@ typedef int (*Rfmalloc_register_matmul_backend_ex_fun)(const char *name,
  */
 typedef int (*Rfmalloc_tensor_decode_range_fun)(SEXP tensor, R_xlen_t elem_offset,
                                                 R_xlen_t n_elems, double *out);
+
+/* Record-panel transfer context. Sources provide decoded records while
+ * Rfmalloc owns allocation, packing, alignment, and persistent layout. This
+ * is the same interface for plain f64, packed hardcalls, fixed-point dosage,
+ * and locus-major haplotype bits. */
+struct Rfmalloc_buffer_context;
+enum Rfmalloc_buffer_source_type {
+    RFMALLOC_BUFFER_I32 = 1,
+    RFMALLOC_BUFFER_F64 = 2,
+    RFMALLOC_BUFFER_PACKED_BITS = 3
+};
+typedef struct Rfmalloc_buffer_context *(*Rfmalloc_buffer_open_fun)(
+    SEXP runtime, const char *storage, R_xlen_t n_item, R_xlen_t n_record);
+typedef int (*Rfmalloc_buffer_write_fun)(
+    struct Rfmalloc_buffer_context *ctx, R_xlen_t first_record,
+    R_xlen_t n_record, int source_type, const void *data,
+    size_t record_stride);
+typedef SEXP (*Rfmalloc_buffer_finish_fun)(struct Rfmalloc_buffer_context *ctx);
+typedef void (*Rfmalloc_buffer_abort_fun)(struct Rfmalloc_buffer_context *ctx);
+
+/* Borrow bytes already owned by another mapped container. `owner` remains
+ * reachable for the lifetime of the returned external pointer; `runtime` is
+ * where Rfmalloc allocates decoded results. The view is read-only and does not
+ * copy or free `data`. Rfmalloc_storage_data() also resolves ordinary raw and
+ * fmalloc raw vectors, so compute packages need one payload accessor. */
+typedef SEXP (*Rfmalloc_storage_view_fun)(SEXP owner, SEXP runtime,
+                                          const void *data, size_t nbytes);
+typedef int (*Rfmalloc_storage_data_fun)(SEXP object, const void **data,
+                                         size_t *nbytes, SEXP *runtime);
+enum Rfmalloc_storage_advice {
+    RFMALLOC_STORAGE_SEQUENTIAL = 0,
+    RFMALLOC_STORAGE_DONTNEED = 1,
+    RFMALLOC_STORAGE_WILLNEED = 2
+};
+typedef int (*Rfmalloc_storage_advise_fun)(SEXP object, size_t offset,
+                                           size_t nbytes, int advice);
 
 /*
  * Banded LD-matrix accessor API (API version 8). An "ld" store is a compressed,
@@ -354,6 +391,66 @@ static inline int Rfmalloc_tensor_decode(SEXP tensor, R_xlen_t elem_offset,
                                          R_xlen_t n_elems, double *out)
 {
     return Rfmalloc_tensor_decode_ptr()(tensor, elem_offset, n_elems, out);
+}
+
+static inline Rfmalloc_buffer_open_fun Rfmalloc_buffer_open_ptr(void)
+{
+    return (Rfmalloc_buffer_open_fun)
+        R_GetCCallable("Rfmalloc", "Rfmalloc_buffer_open");
+}
+
+static inline Rfmalloc_buffer_write_fun Rfmalloc_buffer_write_ptr(void)
+{
+    return (Rfmalloc_buffer_write_fun)
+        R_GetCCallable("Rfmalloc", "Rfmalloc_buffer_write");
+}
+
+static inline Rfmalloc_buffer_finish_fun Rfmalloc_buffer_finish_ptr(void)
+{
+    return (Rfmalloc_buffer_finish_fun)
+        R_GetCCallable("Rfmalloc", "Rfmalloc_buffer_finish");
+}
+
+static inline Rfmalloc_buffer_abort_fun Rfmalloc_buffer_abort_ptr(void)
+{
+    return (Rfmalloc_buffer_abort_fun)
+        R_GetCCallable("Rfmalloc", "Rfmalloc_buffer_abort");
+}
+
+static inline Rfmalloc_storage_view_fun Rfmalloc_storage_view_ptr(void)
+{
+    return (Rfmalloc_storage_view_fun)
+        R_GetCCallable("Rfmalloc", "Rfmalloc_storage_view");
+}
+
+static inline Rfmalloc_storage_data_fun Rfmalloc_storage_data_ptr(void)
+{
+    return (Rfmalloc_storage_data_fun)
+        R_GetCCallable("Rfmalloc", "Rfmalloc_storage_data");
+}
+
+static inline SEXP Rfmalloc_storage_view(SEXP owner, SEXP runtime,
+                                         const void *data, size_t nbytes)
+{
+    return Rfmalloc_storage_view_ptr()(owner, runtime, data, nbytes);
+}
+
+static inline int Rfmalloc_storage_data(SEXP object, const void **data,
+                                        size_t *nbytes, SEXP *runtime)
+{
+    return Rfmalloc_storage_data_ptr()(object, data, nbytes, runtime);
+}
+
+static inline Rfmalloc_storage_advise_fun Rfmalloc_storage_advise_ptr(void)
+{
+    return (Rfmalloc_storage_advise_fun)
+        R_GetCCallable("Rfmalloc", "Rfmalloc_storage_advise");
+}
+
+static inline int Rfmalloc_storage_advise(SEXP object, size_t offset,
+                                          size_t nbytes, int advice)
+{
+    return Rfmalloc_storage_advise_ptr()(object, offset, nbytes, advice);
 }
 
 static inline R_xlen_t Rfmalloc_ld_ncol(SEXP store)

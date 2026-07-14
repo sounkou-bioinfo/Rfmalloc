@@ -15,7 +15,7 @@
  #include "include/plink2_float.h"
  #include "include/plink2_htable.h"
  #include "include/plink2_thread.h"
-@@ -52,55 +60,39 @@
+@@ -52,55 +60,51 @@
  uint32_t g_log_failed = 0;
  uint32_t g_stderr_written_to = 0;
  
@@ -31,6 +31,18 @@
 +// (logprintf(), logerrprintf(), logprintfww(), ...) is a HEADER_INLINE
 +// wrapper in plink2_cmdline.h that bottoms out in one of these five, so
 +// patching only these five covers the whole vendored tree.
++static void RpgenLogputs(const char* str) {
++#ifdef RPGEN_DIRECT_SINK
++  if (::rpgen_direct_sink_active() && strstr(str, ".pgen") &&
++      strstr(str, "written")) {
++    Rprintf("\nPLINK 2 import complete: genotype records transferred directly "
++            "to Rfmalloc.\n");
++    return;
++  }
++#endif
++  Rprintf("%s", str);
++}
++
  void logputs_silent(const char* str) {
 -  if (!g_debug_on) {
 -    fputs(str, g_logfile);
@@ -65,7 +77,7 @@
  void logputs(const char* str) {
 -  logputs_silent(str);
 -  fputs(str, stdout);
-+  Rprintf("%s", str);
++  RpgenLogputs(str);
  }
  
  void logerrputs(const char* str) {
@@ -79,7 +91,7 @@
  void logputsb() {
 -  logputs_silent(g_logbuf);
 -  fputs(g_logbuf, stdout);
-+  Rprintf("%s", g_logbuf);
++  RpgenLogputs(g_logbuf);
  }
  
  void logerrputsb() {

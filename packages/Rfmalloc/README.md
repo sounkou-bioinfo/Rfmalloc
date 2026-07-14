@@ -1,3 +1,4 @@
+
 # Rfmalloc
 
 <!-- badges: start -->
@@ -75,6 +76,27 @@ Compression (typed tensors):
 - codecs are a registry (`fmalloc_tensor_codecs()`); downstream packages
   add their own (Rgguf registers the quantized GGUF formats).
 
+Genomic record layouts:
+
+- hardcalls (`bed`), fixed-point dosages, full-precision dosages, and
+  phased haplotypes share one native record-panel transfer context.
+  Sources declare the panel type while Rfmalloc owns allocation,
+  packing, alignment, and the persistent layout;
+- phased haplotypes are stored locus-major, with all donor haplotypes
+  for one variant in a contiguous, 64-byte-aligned bit row. This is the
+  traversal used by Li and Stephens HMM kernels such as kalis
+  Forward/Backward.
+
+Borrowed storage:
+
+- typed tensors may borrow a read-only byte span already owned by
+  another mapping. The view retains its owner, so GGUF weights enter
+  codecs and compute backends without being copied into a second fmalloc
+  file;
+- `fmalloc_storage_advise()` expresses sequential, prefetch, and release
+  intentions over those spans. The policy remains with the graph or
+  algorithm that knows its access phases.
+
 In-place mutation:
 
 - `fmalloc_set()`, `fmalloc_fill()`, and
@@ -86,8 +108,8 @@ Native surface:
 
 - explicit `destroy_fmalloc_vector()`, an in-file persistent allocation
   catalog, runtime/vector introspection, and an installed C header with
-  `R_RegisterCCallable()` entry points (API version 5), including tensor
-  codec and matmul backend registration for downstream packages.
+  `R_RegisterCCallable()` entry points, including tensor codec and
+  matmul backend registration for downstream packages.
 
 Known base-fallback boundaries:
 
@@ -156,19 +178,19 @@ local({
 })
 #> $integer
 #> [1] 1 2 3
-#> 
+#>
 #> $numeric
 #> [1] 1.1 2.2 3.3
-#> 
+#>
 #> $raw
 #> [1] 01 02 03 04
-#> 
+#>
 #> $complex
 #> [1] 1+1i 2+2i 3+3i 4+4i
-#> 
+#>
 #> $character
-#> [1] "alpha" "beta"  NA     
-#> 
+#> [1] "alpha" "beta"  NA
+#>
 #> $list_first
 #> [1] 1 2
 ```
@@ -233,19 +255,19 @@ local({
 })
 #> $a_head
 #> [1] 1 2 3 4 5
-#> 
+#>
 #> $b_head
 #> [1]  6  7  8  9 10
-#> 
+#>
 #> $sum_head
 #> [1]  7  9 11 13 15
-#> 
+#>
 #> $sum_length
 #> [1] 10000000
-#> 
+#>
 #> $sum_managed
 #> [1] TRUE
-#> 
+#>
 #> $allocations_delta
 #> [1] 3
 ```
@@ -288,53 +310,53 @@ local({
 #> $add
 #> [1] 11 22 33 NA 55
 #> attr(,"class")
-#> [1] "fmalloc_vector" "fmalloc"        "integer"       
-#> 
+#> [1] "fmalloc_vector" "fmalloc"        "integer"
+#>
 #> $sub
 #> [1]  9 18 27 NA 45
 #> attr(,"class")
-#> [1] "fmalloc_vector" "fmalloc"        "integer"       
-#> 
+#> [1] "fmalloc_vector" "fmalloc"        "integer"
+#>
 #> $mul
 #> [1]  10  40  90  NA 250
 #> attr(,"class")
-#> [1] "fmalloc_vector" "fmalloc"        "integer"       
-#> 
+#> [1] "fmalloc_vector" "fmalloc"        "integer"
+#>
 #> $div
 #> [1] 10 10 10 NA 10
 #> attr(,"class")
-#> [1] "fmalloc_vector" "fmalloc"        "numeric"       
-#> 
+#> [1] "fmalloc_vector" "fmalloc"        "numeric"
+#>
 #> $idiv
 #> [1] 10 10 10 NA 10
 #> attr(,"class")
-#> [1] "fmalloc_vector" "fmalloc"        "integer"       
-#> 
+#> [1] "fmalloc_vector" "fmalloc"        "integer"
+#>
 #> $mod
 #> [1]  0  0  0 NA  0
 #> attr(,"class")
-#> [1] "fmalloc_vector" "fmalloc"        "integer"       
-#> 
+#> [1] "fmalloc_vector" "fmalloc"        "integer"
+#>
 #> $pow
 #> [1]  100  400  900   NA 2500
 #> attr(,"class")
-#> [1] "fmalloc_vector" "fmalloc"        "numeric"       
-#> 
+#> [1] "fmalloc_vector" "fmalloc"        "numeric"
+#>
 #> $cmp_eq
 #> [1] FALSE FALSE FALSE    NA FALSE
 #> attr(,"class")
-#> [1] "fmalloc_vector" "fmalloc"        "logical"       
-#> 
+#> [1] "fmalloc_vector" "fmalloc"        "logical"
+#>
 #> $cmp_lt
 #> [1]  TRUE FALSE FALSE    NA FALSE
 #> attr(,"class")
-#> [1] "fmalloc_vector" "fmalloc"        "logical"       
-#> 
+#> [1] "fmalloc_vector" "fmalloc"        "logical"
+#>
 #> $unary_neg
 #> [1] -10 -20 -30  NA -50
 #> attr(,"class")
-#> [1] "fmalloc_vector" "fmalloc"        "integer"       
-#> 
+#> [1] "fmalloc_vector" "fmalloc"        "integer"
+#>
 #> $unary_not
 #> [1]  TRUE  TRUE FALSE    NA FALSE
 #> attr(,"class")
@@ -367,28 +389,28 @@ local({
 #> $fm_plus_scalar
 #> [1] 11.5 12.5 13.5 14.5
 #> attr(,"class")
-#> [1] "fmalloc_vector" "fmalloc"        "numeric"       
-#> 
+#> [1] "fmalloc_vector" "fmalloc"        "numeric"
+#>
 #> $scalar_plus_fm
 #> [1] 11.5 12.5 13.5 14.5
 #> attr(,"class")
-#> [1] "fmalloc_vector" "fmalloc"        "numeric"       
-#> 
+#> [1] "fmalloc_vector" "fmalloc"        "numeric"
+#>
 #> $fm_plus_base
 #> [1] 101.5 202.5 303.5 404.5
 #> attr(,"class")
-#> [1] "fmalloc_vector" "fmalloc"        "numeric"       
-#> 
+#> [1] "fmalloc_vector" "fmalloc"        "numeric"
+#>
 #> $base_plus_fm
 #> [1] 2.5 4.5 6.5 8.5
 #> attr(,"class")
-#> [1] "fmalloc_vector" "fmalloc"        "numeric"       
-#> 
+#> [1] "fmalloc_vector" "fmalloc"        "numeric"
+#>
 #> $recycling_ok
 #> [1] 11.5 22.5 13.5 24.5
 #> attr(,"class")
-#> [1] "fmalloc_vector" "fmalloc"        "numeric"       
-#> 
+#> [1] "fmalloc_vector" "fmalloc"        "numeric"
+#>
 #> $logical_op
 #> [1] FALSE  TRUE  TRUE  TRUE
 #> attr(,"class")
@@ -426,10 +448,10 @@ local({
 })
 #> $dims
 #> [1] 200  30
-#> 
+#>
 #> $fmalloc_backed
 #> [1] TRUE
-#> 
+#>
 #> $matches_base
 #> [1] TRUE
 ```
@@ -478,17 +500,17 @@ local({
 })
 #> <fmalloc_tensor alp [20000 x 10], 279720 payload bytes>
 #> $codecs
-#> [1] "f64"    "f32"    "f16"    "bf16"   "alp"    "sparse"
-#> 
+#> [1] "f64"    "f32"    "f16"    "bf16"   "alp"    "sparse" "bed"    "dosage"
+#>
 #> $compression_ratio
 #> [1] 0.174825
-#> 
+#>
 #> $lossless
 #> [1] TRUE
-#> 
+#>
 #> $product_fmalloc_backed
 #> [1] TRUE
-#> 
+#>
 #> $product_matches_base
 #> [1] TRUE
 ```
@@ -521,13 +543,13 @@ local({
 })
 #> $dtype
 #> [1] "sparse"
-#> 
+#>
 #> $compression_ratio
 #> [1] 0.1522
-#> 
+#>
 #> $lossless
 #> [1] TRUE
-#> 
+#>
 #> $product_matches_base
 #> [1] TRUE
 ```
@@ -574,10 +596,10 @@ local({
 })
 #> $gram_matches_base
 #> [1] TRUE
-#> 
+#>
 #> $gram_is_fmalloc_backed
 #> [1] TRUE
-#> 
+#>
 #> $auto_routed_matches
 #> [1] TRUE
 ```
@@ -612,7 +634,7 @@ local({
 })
 #> $x
 #> [1] 22 38 22 38 22 22
-#> 
+#>
 #> $alias_y
 #> [1] 22 38 22 38 22 22
 ```
@@ -680,7 +702,7 @@ local({
 })
 #> $destroy_rejected_with_parent
 #> [1] TRUE
-#> 
+#>
 #> $destroy_succeeded_after_unset
 #> [1] TRUE
 ```
@@ -724,7 +746,7 @@ local({
 })
 #> $keep_recovered_ok
 #> [1] TRUE
-#> 
+#>
 #> $drop_recover_fails
 #> [1] TRUE
 ```
@@ -780,14 +802,14 @@ local({
   inspect_vec[] <- 1:4
   .Internal(inspect(inspect_vec))
 })
-#> @61b0e667a468 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x7f1b0d4023e8 mode=persistent runtime=open offset=9192 uuid=2e66609e226ea0edbc65a25c831e8d37 file=/tmp/Rtmp3rxYYx/file155444f317dea.bin
+#> @5f9cd7135778 13 INTSXP g0c0 [OBJ,REF(1),ATT] fmalloc_altrep type=integer length=4 bytes=16 data=0x7578d90023e8 mode=persistent runtime=open offset=9192 uuid=40cd4dfc3dc27c04a2658d6de13be5ef file=/tmp/RtmpmwFJ51/file39e868326cc9ac.bin
 #> ATTRIB:
-#>   @61b0e66794a8 02 LISTSXP g0c0 [REF(1)] 
-#>     TAG: @61b0e20c7e40 01 SYMSXP g1c0 [MARK,REF(38399),LCK,gp=0x6000] "class" (has value)
-#>     @61b0e7224e98 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)
-#>       @61b0e75f28c8 09 CHARSXP g0c2 [MARK,REF(58),gp=0x60] [ASCII] [cached] "fmalloc_vector"
-#>       @61b0e6fa2cc0 09 CHARSXP g0c1 [MARK,REF(210),gp=0x60] [ASCII] [cached] "fmalloc"
-#>       @61b0e20fadf8 09 CHARSXP g1c1 [MARK,REF(623),gp=0x61] [ASCII] [cached] "integer"
+#>   @5f9cd71385e8 02 LISTSXP g0c0 [REF(1)]
+#>     TAG: @5f9cd2b50550 01 SYMSXP g1c0 [MARK,REF(38567),LCK,gp=0x6000] "class" (has value)
+#>     @5f9cd7c36948 16 STRSXP g0c3 [REF(65535)] (len=3, tl=0)
+#>       @5f9cd81150f8 09 CHARSXP g0c2 [MARK,REF(58),gp=0x60] [ASCII] [cached] "fmalloc_vector"
+#>       @5f9cd7a972c8 09 CHARSXP g0c1 [MARK,REF(210),gp=0x60] [ASCII] [cached] "fmalloc"
+#>       @5f9cd2b83508 09 CHARSXP g1c1 [MARK,REF(623),gp=0x61] [ASCII] [cached] "integer"
 ```
 
 `inspect()` output is an internal R diagnostic, so exact formatting can
@@ -824,7 +846,7 @@ local({
 })
 #> $chars
 #> [1] "one"   NA      "three"
-#> 
+#>
 #> $from_integer
 #> [1] "1" "2" "3"
 ```
@@ -872,13 +894,13 @@ local({
 })
 #> $matrix_dims
 #> [1] 2 3
-#> 
+#>
 #> $metadata_shares_payload
 #> [1] 13 88
-#> 
+#>
 #> $array_dims
 #> [1] 2 1 3
-#> 
+#>
 #> $df_columns
 #> [1] "a" "b"
 ```
@@ -935,19 +957,19 @@ local({
 })
 #> $default_row_sums_in_memory
 #> [1] FALSE
-#> 
+#>
 #> $compact_row_sums_filebacked
 #> [1] TRUE
-#> 
+#>
 #> $default_range_in_memory
 #> [1] FALSE
-#> 
+#>
 #> $compact_range_filebacked
 #> [1] TRUE
-#> 
+#>
 #> $rowSums_values
 #> [1] 28 32 36 40
-#> 
+#>
 #> $expected_rowSums
 #> [1] 28 32 36 40
 ```
@@ -990,7 +1012,7 @@ local({
 #>   vector value
 #> 1  vec_a   101
 #> 2  vec_b   202
-#> 
+#>
 #> $vec_a_after_cleanup
 #> [1] 101
 ```
@@ -1054,10 +1076,10 @@ local({
 #>   record_offset generation      type length
 #> 1          9440          2 character      3
 #> 2          9224          1   integer      4
-#> 
+#>
 #> $integers
 #> [1] 101 102 103 104
-#> 
+#>
 #> $characters
 #> [1] "alpha" NA      "gamma"
 ```
@@ -1093,19 +1115,19 @@ local({
 })
 #> $mode
 #> [1] "persistent"
-#> 
+#>
 #> $pre_records
 #> [1] 2
-#> 
+#>
 #> $pre_committed
 #> [1] 2
-#> 
+#>
 #> $post_records
 #> [1] 2
-#> 
+#>
 #> $post_tombstones
 #> [1] 1
-#> 
+#>
 #> $compaction_implemented
 #> [1] FALSE
 ```
@@ -1179,7 +1201,7 @@ local({
 })
 #> $same_runtime_child
 #> [1] 1 2
-#> 
+#>
 #> $rejected_non_fmalloc_payload
 #> [1] TRUE
 ```
@@ -1219,7 +1241,7 @@ local({
 })
 #> $recovered_nested
 #> [1] 1 2
-#> 
+#>
 #> $recovered_labels
 #> [1] "alpha" "beta"
 ```
@@ -1325,14 +1347,14 @@ perf_result
 #> # A tibble: 8 × 5
 #>   expression               median `itr/sec` mem_alloc `gc/sec`
 #>   <bch:expr>             <bch:tm>     <dbl> <bch:byt>    <dbl>
-#> 1 base_sequential_sum     38.74µs    25035.        0B        0
-#> 2 fmalloc_sequential_sum  47.35µs    20462.        0B        0
-#> 3 base_scalar_read        36.99µs    24770.        0B        0
-#> 4 fmalloc_scalar_read      1.02ms      953.   24.55KB        0
-#> 5 base_subset_copy         4.82µs   189354.    7.86KB        0
-#> 6 fmalloc_subset_copy     21.93µs    39509.        0B        0
-#> 7 base_indexed_write      27.04µs    35321.  390.67KB        0
-#> 8 fmalloc_indexed_write  206.74µs     4782.        0B        0
+#> 1 base_sequential_sum     40.84µs    23444.        0B        0
+#> 2 fmalloc_sequential_sum   52.2µs    19566.        0B        0
+#> 3 base_scalar_read        34.56µs    27289.   24.55KB        0
+#> 4 fmalloc_scalar_read    772.05µs     1292.        0B        0
+#> 5 base_subset_copy         3.55µs   246030.    7.86KB        0
+#> 6 fmalloc_subset_copy     19.16µs    45433.        0B        0
+#> 7 base_indexed_write      27.63µs    34469.  390.67KB        0
+#> 8 fmalloc_indexed_write  189.24µs     5222.        0B        0
 ```
 
 ## Native C API for Other Packages
@@ -1342,10 +1364,10 @@ entry points with `R_RegisterCCallable()`. Downstream packages can add
 Rfmalloc to `LinkingTo` and `Imports`, include the header, and use the
 inline wrappers.
 
-The current native surface (API version 5) exposes runtime open/cleanup,
-vector creation, default-runtime lookup and synchronization, catalog
-listing, runtime/vector introspection, vector destruction, an
-API-version query, and the two extension registries:
+The native surface exposes runtime open/cleanup, vector creation,
+default-runtime lookup and synchronization, catalog listing,
+runtime/vector introspection, vector destruction, typed tensor access,
+the record-panel transfer context, and two extension registries:
 `Rfmalloc_register_tensor_codec` (plug an element encoding into the
 panel-streamed matrix products -
 [Rgguf](https://github.com/sounkou-bioinfo/Rgguf) uses this for the

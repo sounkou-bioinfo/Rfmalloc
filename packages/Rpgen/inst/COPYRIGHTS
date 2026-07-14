@@ -1,7 +1,8 @@
-Rpgen vendors PLINK 2's pgenlib read library as third-party C++ source,
-built into a static library (src/libPLINK2.a, produced at install time by
-src/Makevars) and exposed through Rpgen's own C-callable API. This file
-documents what was vendored, from where, and under what license.
+Rpgen vendors PLINK 2's pgenlib library and genotype format-import closure as
+third-party C++ source, built into a static library (src/libPLINK2.a, produced
+at install time by src/Makevars) and exposed through Rpgen's own C-callable
+API. This file documents what was vendored, from where, and under what
+license.
 
 Why Rpgen is GPL-3 (not GPL (>= 2) like the rest of this monorepo)
 --------------------------------------------------------------------
@@ -31,14 +32,16 @@ LGPL (>= 3) licensed), which already vendors exactly the pgenlib *read*
 subset plus zstd, libdeflate and simde, and builds them into libPLINK2.a
 for CRAN. Specifically:
 
-    configure, configure.ac, cleanup     = (SHA-pinned pgenlibr 0.6.2 CRAN tarball), verbatim
-    src/Makevars.ucrt, pvar.cpp, pvar.h  = (same tarball), verbatim
-    src/Makevars.in, src/Makevars.win    = (same tarball), one edited line (OBJECTS=)
+    configure, configure.ac              = (SHA-pinned pgenlibr 0.6.2 CRAN tarball), verbatim
+    cleanup                              = generated base plus vendored-object cleanup
+    src/Makevars.ucrt                    = (same tarball), verbatim
+    src/Makevars.in, src/Makevars.win    = generated base plus Rpgen import/shim wiring
     tools/*_version.cpp                  = (same tarball), verbatim
     tools/include/**                     = (same tarball), verbatim, entire subtree
 
-`Rscript tools/vendor-pgenlib/vendorpgen.R check` re-derives the tree and
-asserts it still equals this recipe.
+`Rscript tools/vendor-pgenlib/vendorpgen.R check` re-derives the base manifest
+and asserts it still equals this recipe. Makevars carry the additional
+hand-maintained importer shim described by the second recipe below.
 
 What was vendored
 -------------------
@@ -58,28 +61,20 @@ Under tools/include/ (built into src/libPLINK2.a):
   Bundled SIMDe (tools/include/simde/), MIT licensed, portable SIMD
     intrinsics shims pgenlib's own vectorized code is written against.
 
-  src/pvar.cpp and src/pvar.h are also vendored (a minimal .pvar loader)
-  but are NOT compiled into Rpgen: they depend on Rcpp (`#include <Rcpp.h>`,
-  `Rcpp::String`, `Rcpp::stop()`), which Rpgen does not use - its own
-  src/rpgen.cpp talks to pgenlib through R's plain C API instead. They are
-  kept in the vendored tree for provenance and as a starting point for a
-  future milestone's variant-metadata reader; src/Makevars.in/.win's
-  OBJECTS= line deliberately omits them (see PROVENANCE.md).
+  pgenlibr's Rcpp-facing pvar.cpp/pvar.h, pgenlibr.cpp, and RcppExports.cpp
+  are not vendored. Rpgen talks to pgenlib through R's plain C API and does
+  not declare or require Rcpp. See PROVENANCE.md.
 
-Deliberately NOT vendored (pgenlib write path, out of scope for a reader):
+Not present in the pgenlibr-derived subset:
   pgenlib's variant *writer* (PgenWriter and friends) is not part of the
-  pgenlibr 0.6.2 vendored subset either, so it is not present to vendor.
-  (Milestone 4a below adds this after all - pgenlib_write.cc/.h - because
-  VcfToPgen() needs a writer; it comes from the second vendoring source
-  documented next, not from pgenlibr.)
+  pgenlibr 0.6.2 vendored subset. pgenlib_write.cc/.h is supplied by the
+  second recipe below because PLINK 2's format importers require it.
 
-Milestone 4a: plink2's VCF/BCF/BGEN/Oxford import closure (VcfToPgen())
---------------------------------------------------------------------------
-Reads a VCF by calling plink2's own importer rather than a from-scratch
-htslib-based reader, so the same vendored closure also covers BCF/BGEN/
-Oxford for a later milestone. Vendored from a second, independent source
-(NOT the pgenlibr tarball above, which is read-only): plink-ng itself, at a
-pinned commit.
+PLINK 2's genotype format-import closure
+----------------------------------------
+Rpgen calls PLINK 2's own format importers rather than maintaining separate
+parsers. This closure is vendored from a second, independent source, plink-ng
+itself at a pinned commit, rather than the pgenlibr tarball above.
 
 Upstream project (same project as pgenlib above, different subset)
   plink-ng, https://github.com/chrchang/plink-ng
@@ -105,28 +100,38 @@ subset above):
   tools/include/include/, since plink2's program files #include each other
   without an "include/" prefix - see the vendoring tool's PROVENANCE.md):
     plink2_import.cc/.h (VcfToPgen(), BcfToPgen(), OxGenToPgen(),
-    OxBgenToPgen(), OxHapslegendToPgen()), plink2_common.cc/.h,
+    OxBgenToPgen(), OxHapslegendToPgen(), Plink1DosageToPgen(),
+    EigfileToPgen()), plink2_common.cc/.h,
     plink2_cmdline.cc/.h (patched, see below), plink2_pvar.cc/.h,
     plink2_psam.cc/.h, plink2_compress_stream.cc/.h,
-    plink2_import_legacy.cc/.h, plink2_random.cc/.h, plink2_decompress.cc/.h,
-    plink2_data.cc/.h, plink2_family.cc/.h.
+    plink2_import_legacy.cc/.h (PedmapToPgen(), TpedToPgen()),
+    plink2_random.cc/.h, plink2_decompress.cc/.h, plink2_data.cc/.h,
+    plink2_family.cc/.h.
 
   Library-level additions (tools/include/include/, joining the pgenlib read
   subset above):
     pgenlib_write.cc/.h - the .pgen writer VcfToPgen() calls. LGPL (>= 3),
-      same license and upstream notice as the read subset above.
+      same license and upstream notice as the read subset above. A local
+      compile-time hook redirects decoded writer records during direct
+      Rfmalloc ingestion; ordinary file-producing imports remain upstream.
     SFMT.c/.h - the SIMD-oriented Fast Mersenne Twister PRNG
       plink2_random.h wraps. BSD-3-Clause (Mutsuo Saito, Makoto Matsumoto,
       Hiroshima University, University of Tokyo) - see "Verbatim upstream
       BSD-3-Clause notice (SFMT)" below.
 
-  Local patch (tools/vendor-plink2-import/patches/plink2_cmdline.cc.patch):
+  Local patches:
+    tools/vendor-plink2-import/patches/pgenlib_write_direct_sink.patch adds
+    the optional terminal record hook described above. The hook glue in
+    src/rpgen_direct_sink.cpp/.h is Rpgen code under GPL-3.
+
+    tools/vendor-plink2-import/patches/plink2_cmdline.cc.patch
     replaces plink2_cmdline.cc's logputs_silent()/logputs()/logerrputs()/
     logputsb()/logerrputsb() to route through R's Rprintf()/REprintf()
     instead of a log FILE*/stdout/stderr - required, not cosmetic: Rpgen
     never opens a log file, so upstream's version (which unconditionally
-    fputs()s to it) would segfault; see that tool's PROVENANCE.md for the
-    full rationale.
+    fputs()s to it) would segfault. During direct ingestion it also reports
+    record transfer instead of falsely claiming that a PGEN was written; see
+    that tool's PROVENANCE.md for the full rationale.
 
 Rpgen's own code
 ------------------
@@ -141,8 +146,8 @@ Licensing summary
   pgenlib_write.cc/.h (tools/vendor-plink2-import): LGPL (>= 3).
 - pgenlibr (Christopher Chang), the CRAN package the read subset is vendored
   from: LGPL (>= 3).
-- plink2's program code (Shaun Purcell, Christopher Chang), the
-  VcfToPgen()-and-friends import closure (tools/vendor-plink2-import): GPL-3.
+- plink2's program code (Shaun Purcell, Christopher Chang), the genotype
+  format-import closure (tools/vendor-plink2-import): GPL-3.
 - Zstd (Yann Collet, Przemyslaw Skibinski, Nick Terrell; copyright Meta
   Platforms, Inc.): BSD.
 - libdeflate (Eric Biggers): MIT.

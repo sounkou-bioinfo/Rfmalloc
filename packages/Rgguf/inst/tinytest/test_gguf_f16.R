@@ -4,9 +4,8 @@ library(Rgguf)
 message("Testing F16 dequantization against a hand-built GGUF file...")
 
 # gguf_write_tensors() only ever emits f32 tensors (see ?gguf_write_tensors),
-# so to exercise the F16 read path (fp16.c's from_half(), wired up in
-# src/rgguf_read.c) this test hand-builds a minimal GGUF file byte-for-byte,
-# following the format documented in the vendored src/gguflib.h/.c:
+# so to exercise the official GGML F16 read path this test hand-builds a
+# minimal GGUF file byte-for-byte, following the format specification:
 #   header:        magic "GGUF", uint32 version, uint64 tensor_count,
 #                   uint64 metadata_kv_count
 #   tensor info:    uint64 namelen, name bytes, uint32 ndim,

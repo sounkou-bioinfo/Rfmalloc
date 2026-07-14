@@ -1,6 +1,5 @@
-## rpgen_read_bed_hardcalls(): milestone 3's correctness contract, for a
-## PLINK 1 .bed fileset rather than a .pgen. There is no plink2 CLI and no
-## .bed fixture available in this environment, so the fixture is generated
+## PLINK 1 BED reader and bounded-ingestion contract. There is no external
+## .bed fixture required: the fixture is generated
 ## right here: a small known genotype matrix (0/1/2/NA) is packed into a
 ## byte-exact PLINK 1 .bed by hand (magic bytes, 2-bit SNP-major encoding,
 ## samples packed low-to-high within each byte, each variant padded to a
