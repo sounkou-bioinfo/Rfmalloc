@@ -50,10 +50,17 @@
 
         <dt>
 
+          <code><a href="rllm_embed.html">rllm_embed()</a></code>
+
+        </dt>
+        <dd>Compute one pooled sequence embedding</dd>
+
+        <dt>
+
           <code><a href="rllm_forward.html">rllm_forward()</a></code>
 
         </dt>
-        <dd>Run a transformer forward pass and return the logits</dd>
+        <dd>Lower a semantic model plan and return its logits</dd>
 
         <dt>
 
@@ -67,14 +74,42 @@
           <code><a href="rllm_gguf_model.html">rllm_gguf_model()</a></code>
 
         </dt>
-        <dd>Load a llama-architecture GGUF model for forward passes</dd>
+        <dd>Load a GGUF model as a semantic execution plan and borrowed weights</dd>
+
+        <dt>
+
+          <code><a href="rllm_input.html">rllm_input()</a></code> <code><a href="rllm_input.html">rllm_parameter()</a></code> <code><a href="rllm_input.html">rllm_module()</a></code> <code><a href="rllm_input.html">rllm_op()</a></code> <code><a href="rllm_input.html">rllm_program()</a></code>
+
+        </dt>
+        <dd>Build a typed model program with ordinary R functions and pipes</dd>
 
         <dt>
 
           <code><a href="rllm_kv_cache.html">rllm_kv_cache()</a></code>
 
         </dt>
-        <dd>Create a KV cache for incremental decoding</dd>
+        <dd>Create plan-shaped state for incremental decoding</dd>
+
+        <dt>
+
+          <code><a href="rllm_linear.html">rllm_linear()</a></code> <code><a href="rllm_linear.html">rllm_norm()</a></code> <code><a href="rllm_linear.html">rllm_attention()</a></code> <code><a href="rllm_linear.html">rllm_pool()</a></code>
+
+        </dt>
+        <dd>Typed linear, normalization, attention and pooling operators</dd>
+
+        <dt>
+
+          <code><a href="rllm_loop.html">rllm_loop()</a></code>
+
+        </dt>
+        <dd>Trace a structured, shared recurrence</dd>
+
+        <dt>
+
+          <code><a href="rllm_plan.html">rllm_plan()</a></code>
+
+        </dt>
+        <dd>Inspect the semantic execution plan of a GGUF model</dd>
 
         <dt>
 
@@ -82,6 +117,20 @@
 
         </dt>
         <dd>Quantize a matrix into an Rfmalloc-backed quantized tensor</dd>
+
+        <dt>
+
+          <code><a href="rllm_residual.html">rllm_residual()</a></code>
+
+        </dt>
+        <dd>Trace a residual branch</dd>
+
+        <dt>
+
+          <code><a href="rllm_tap.html">rllm_tap()</a></code>
+
+        </dt>
+        <dd>Name an intermediate program output</dd>
 
         <dt>
 

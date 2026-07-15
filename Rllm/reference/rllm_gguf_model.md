@@ -1,17 +1,15 @@
-# Load a llama-architecture GGUF model for forward passes
+# Load a GGUF model as a semantic execution plan and borrowed weights
 
-Reads the hyperparameters and weights of a llama-architecture 'GGUF'
-file into an `rllm_model` object usable with
-[`rllm_forward()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_forward.md).
-Every weight is a borrowed view over its exact read-only span in the
-original GGUF mapping. Quantized and floating-point payloads keep their
-on-disk encoding, and the forward pass points GGML tensors at those
-bytes without copying them into a second backing file.
+Normalizes the model-family metadata into a typed
+[`rllm_plan()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_plan.md),
+validates every tensor role and shape, then borrows each required weight
+from the original GGUF mapping. Quantized and floating-point payloads
+keep their on-disk encoding; no second weight store is created.
 
 ## Usage
 
 ``` r
-rllm_gguf_model(path, runtime = NULL, rope_mode = 0L)
+rllm_gguf_model(path, runtime = NULL, rope_mode = NULL)
 ```
 
 ## Arguments
@@ -22,16 +20,17 @@ rllm_gguf_model(path, runtime = NULL, rope_mode = 0L)
 
 - runtime:
 
-  Optional
   [`Rfmalloc::open_fmalloc()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/open_fmalloc.html)
-  runtime attached to the borrowed tensor views. It supplies the
-  allocation context for operations which produce fmalloc results; the
-  weight bytes remain in the GGUF mapping.
+  runtime attached to the borrowed tensor views, or `NULL` to use the
+  default established by
+  [`Rfmalloc::init_fmalloc()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rfmalloc/reference/init_fmalloc.html).
+  It supplies the allocation context for operations which produce
+  fmalloc results; the weight bytes remain in the GGUF mapping.
 
 - rope_mode:
 
-  RoPE flavour: `0` (normal/interleaved, llama) or `2` (NEOX-style, e.g.
-  qwen2). Defaults to `0`.
+  Optional RoPE override: `0` for normal/interleaved or `2` for NEOX.
+  The architecture plan supplies the default.
 
 ## Value
 
@@ -42,11 +41,10 @@ created lazily by
 
 ## Details
 
-The loader expects the standard llama tensor names (`token_embd.weight`,
-`blk.<i>.attn_q.weight`, ..., `output_norm.weight`) and hyperparameter
-keys (`<arch>.block_count`, `<arch>.embedding_length`, ...). Models with
-tied embeddings (no `output.weight`) reuse `token_embd.weight` as the
-output projection.
+Architecture definitions are data ASTs rather than native model-family
+branches. The registered plans cover llama, LFM2MoE and EmbeddingGemma.
+Models with tied embeddings reuse `token_embd.weight` as the output
+projection.
 
 ## See also
 

@@ -15,15 +15,18 @@ from disk, and are never decoded to double on the compute path.
 The first composition is a codec-aware matrix-product backend:
 `dense %*% quantized_fmalloc_tensor` contracts the encoded blocks
 directly through GGML after registering with Rfmalloc’s backend
-registry. The second is a llama-architecture inference engine: GGUF
-loading, a forward graph, KV caching and byte-level generation over the
-same typed storage.
+registry. The second normalizes GGUF metadata into semantic plans and
+composes those plans into forward graphs, state, embeddings and
+byte-level generation over the same typed storage. Llama, LFM2MoE and
+EmbeddingGemma are model probes of the operator vocabulary rather than
+C++ subclasses.
 
 ## Quantized products, zero-copy
 
 ``` r
 
 library(Rllm)   # registers + selects the ggml backend
+#> Rllm: ggml quantized matmul backend registered and active for Rfmalloc typed tensors (disable with rllm_use_ggml(FALSE)).
 
 rt <- Rfmalloc::open_fmalloc(tempfile(fileext = ".bin"))
 set.seed(1)
@@ -50,33 +53,91 @@ pure-codec models later.
 
 local({
   backing <- tempfile(fileext = ".bin")
-  rt <- Rfmalloc::open_fmalloc(backing, mode = "scratch", size_gb = 0.1)
+  rt <- Rfmalloc::open_fmalloc(backing, mode = "scratch", size_gb = 2)
   on.exit({
     Rfmalloc::cleanup_fmalloc(rt)
     unlink(backing)
   }, add = TRUE)
 
-  model_path <- system.file(
-    "extdata", "tiny-byte-model.gguf", package = "Rllm", mustWork = TRUE
+  model_path <- Sys.getenv(
+    "RLLM_README_GGUF",
+    "LFM2.5-8B-A1B-Q4_K_M.gguf"
   )
   model <- rllm_gguf_model(model_path, runtime = rt)
-  probe <- charToRaw("systems-path probe")
   gen <- rllm_generate(
     model,
-    probe,
+    charToRaw("The capital of France is"),
     n_new = 16L,
     runtime = rt
   )
   rawToChar(gen$raw)
 })
-#> [1] "!!!!!!!!!!!!!!!!"
+#> [1] " the city of Paris. city of Paris is the capital of France. Both statements"
 ```
 
-The bundled model is deliberately tiny and deterministic. It emits `!`
-as a sentinel while driving the real GGUF loader, borrowed weight spans,
-transformer graph, KV cache, generation loop and raw-byte decoder
-without downloading a model. Its output is a systems check rather than a
-language-quality claim.
+The evaluated transcript comes from LFM2.5-8B-A1B `Q4_K_M`. Set
+`RLLM_README_GGUF` when rendering the Rmd. An absent model skips
+evaluation; the document does not substitute a toy model or recorded
+success text. The knitr cache is keyed by the model file’s size and
+modification time.
+
+## Architecture programs are R
+
+An architecture is described with ordinary R functions.
+[`rllm_module()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_input.md)
+gives a `forward` function a persistent identity, the base pipe records
+dataflow,
+[`rllm_residual()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_residual.md)
+records branches,
+[`rllm_tap()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_tap.md)
+names intermediate outputs and
+[`rllm_loop()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_loop.md)
+preserves shared recurrence instead of unrolling it. Freezing the trace
+with
+[`rllm_program()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_input.md)
+removes the builder environment and leaves only serializable data.
+
+``` r
+
+d <- "hidden"
+norm <- rllm_parameter("encoder.norm.weight", d)
+
+encoder_block <- rllm_module("encoder.block", function(x) {
+  x |>
+    rllm_residual(function(branch) {
+      branch |>
+        rllm_norm(norm) |>
+        rllm_op(
+          "attention",
+          mask = list(type = "bidirectional")
+        )
+    })
+})
+
+program <- rllm_input(
+  "embedding", c(feature = d, sequence = "n_token")
+) |>
+  encoder_block() |>
+  rllm_tap("per_token") |>
+  rllm_pool("mean") |>
+  rllm_program("encoder")
+
+program
+#> <rllm_program encoder: 5 nodes, 1 parameters, 2 outputs; add=1/attention=1/input=1/pool=1/rms_norm=1>
+```
+
+The language does not pretend that every recorded operator executes. The
+native lowerer implements the operators exercised by llama, LFM2MoE and
+EmbeddingGemma. ESM, Evo 2 and Tiny Recursive Models are structural
+stress tests for padding masks and representation taps, stateful long
+convolutions, and nested shared recurrence. A missing lowering is
+reported as such; it is not another architecture branch hidden in C++.
+
+[Rtinycc](https://github.com/sounkou-bioinfo/Rtinycc) is a plausible
+prototype target for generated C reference operators and ABI glue. It
+can compile a lowering in memory and test it against the R semantics
+before hot operators are promoted into Rggml. It is not treated as a
+substitute for GGML’s tuned tensor kernels.
 
 A recorded run with SmolLM2-135M `Q4_K_M` (30 layers, grouped-query
 attention, a `q5_0`-dominant quantization mix) used a 12-token prompt
@@ -102,19 +163,23 @@ time.
 
 ## Correctness discipline
 
-The forward pass is pinned to a pure-R implementation of the same
-arithmetic: about 1e-6 relative on the f32 twin of a real model and
-below 1e-4 on hermetic MHA and GQA models, with separate causality
-probes. Incremental cache logits must equal whole-batch logits at every
-position. Every codec decoder must be bit-identical to GGML’s
+The forward pass is pinned to pure-R implementations of the same
+arithmetic for llama, LFM2MoE and EmbeddingGemma. Hermetic f32 models
+require incremental state to equal whole-batch execution at every
+position. On a real quantized MoE, changing batch width can select a
+different GGML GEMV or GEMM kernel; tiny router-score rounding may cross
+the top-k boundary, so the real-file test pins the chosen token and
+logit direction while generation is checked against the upstream
+continuation. Every codec decoder must be bit-identical to GGML’s
 type-traits `to_float`, the cross-validation that caught the Q4_K bug in
 the earlier partial C port. At the byte boundary,
 `rllm_decode(rllm_encode(x))` must always equal `x`.
 
 The hermetic tests write their synthetic GGUF models at test time with
-[Rgguf](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf)’s own writer;
-an opt-in smoke test (`RLLM_TEST_GGUF=<path to a llama-arch GGUF>`)
-exercises real files.
+[Rgguf](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf)’s own writer.
+`RLLM_TEST_GGUF=<path>` exercises a real generation model, while
+`RLLM_EMBEDDING_GGUF=<path>` compares the 300M EmbeddingGemma Q8_0 probe
+with an upstream llama.cpp reference.
 
 ## Compute follows residency
 

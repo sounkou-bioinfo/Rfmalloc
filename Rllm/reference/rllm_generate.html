@@ -79,7 +79,9 @@ temperature-scaled sampling, optionally narrowed by <code>top_k</code> and/or <c
 <dt id="arg-prompt">prompt<a class="anchor" aria-label="anchor" href="#arg-prompt"></a></dt>
 <dd><p>Integer vector of 0-based token ids, or a raw vector
 (encoded with <code><a href="rllm_decode.html">rllm_encode()</a></code>; a single string is converted via
-<code><a href="https://rdrr.io/r/base/rawConversion.html" class="external-link">charToRaw()</a></code> as a convenience).</p></dd>
+<code><a href="https://rdrr.io/r/base/rawConversion.html" class="external-link">charToRaw()</a></code> as a convenience). A textual prompt at the start of a
+sequence receives the GGUF tokenizer's BOS token when one is declared.
+Integer prompts remain exact and are never modified.</p></dd>
 
 
 <dt id="arg-n-new">n_new<a class="anchor" aria-label="anchor" href="#arg-n-new"></a></dt>

@@ -39,7 +39,9 @@ rllm_generate(
   [`rllm_encode()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_decode.md);
   a single string is converted via
   [`charToRaw()`](https://rdrr.io/r/base/rawConversion.html) as a
-  convenience).
+  convenience). A textual prompt at the start of a sequence receives the
+  GGUF tokenizer's BOS token when one is declared. Integer prompts
+  remain exact and are never modified.
 
 - n_new:
 

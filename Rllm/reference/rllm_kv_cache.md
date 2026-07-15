@@ -1,14 +1,9 @@
-# Create a KV cache for incremental decoding
+# Create plan-shaped state for incremental decoding
 
-Allocates the per-layer key/value cache slabs an incremental
-[`rllm_forward()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_forward.md)
-writes into and attends over. Each slab is a raw vector of
-`n_ctx * (n_embd / n_head) * n_head_kv` f32 values - plain R memory by
-default, or Rfmalloc-backed (file-backed, memory-mapped) when a
-`runtime` is given, which makes the cache a disk citizen: it survives in
-the runtime's file and its pages are evictable like any other fmalloc
-payload. (A quantized cache codec in the TurboQuant/PolarQuant vein can
-later replace the f32 slabs without touching the graph.)
+Allocates the persistent state declared by the model plan. Attention
+layers receive key/value slabs sized by their own KV width;
+short-convolution layers receive their fixed causal history. State is
+plain R memory by default or Rfmalloc-backed when `runtime` is supplied.
 
 ## Usage
 
@@ -35,8 +30,8 @@ rllm_kv_cache(model, n_ctx = 512L, runtime = NULL)
 
 ## Value
 
-An environment of class `rllm_kv_cache` with fields `k`, `v` (per-layer
-lists of raw vectors), `n_ctx`, and `n_past`.
+An environment of class `rllm_kv_cache` with per-layer `k`, `v` and
+`conv` state, plus `n_ctx` and `n_past`.
 
 ## Details
 

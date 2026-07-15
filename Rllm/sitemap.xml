@@ -6,11 +6,18 @@
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/Rllm-package.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/index.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_decode.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_embed.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_forward.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_generate.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_gguf_model.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_input.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_kv_cache.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_linear.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_loop.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_plan.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_quantize_tensor.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_residual.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_tap.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_use_ggml.html</loc></url>
 </urlset>
 

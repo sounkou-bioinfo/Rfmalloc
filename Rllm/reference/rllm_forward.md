@@ -1,14 +1,16 @@
-# Run a transformer forward pass and return the logits
+# Lower a semantic model plan and return its logits
 
-Assembles the GGML compute graph for a llama-architecture forward pass
-(RMSNorm, RoPE, causal self-attention, SwiGLU feed-forward) over the
-model's memory-mapped weights and computes it on a chosen GGML backend.
-Quantized weights are contracted natively in their encoded form - they
-are never decoded to double. The CPU backend borrows the mapped bytes
-directly. On its first use, the CUDA backend creates a model-owned
-context and uploads the codec-native weights once. Later passes reuse
-those resident weights; mutable inputs, cache slabs and logits move
-through Rggml's transfer API.
+Lowers the model's inspectable
+[`rllm_plan()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_plan.md)
+to a GGML graph over its memory-mapped weights and computes it on a
+chosen backend. The operator vocabulary includes attention, gated short
+convolution, dense gated products and sparse routed experts. Quantized
+weights are contracted natively in their encoded form - they are never
+decoded to double. The CPU backend borrows the mapped bytes directly. On
+its first use, the CUDA backend creates a model-owned context and
+uploads the codec-native weights once. Later passes reuse those resident
+weights; mutable inputs, cache slabs and logits move through Rggml's
+transfer API.
 
 ## Usage
 

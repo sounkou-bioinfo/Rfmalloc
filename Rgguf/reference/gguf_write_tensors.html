@@ -72,9 +72,9 @@ arrays. Names become tensor names and must be unique and non-empty.</p></dd>
 
 <dt id="arg-metadata">metadata<a class="anchor" aria-label="anchor" href="#arg-metadata"></a></dt>
 <dd><p>A named list of metadata key-value pairs to write. Values
-may be non-missing character vectors or single non-missing numeric
-values. Character vectors of length other than one are written as GGUF
-string arrays; numeric values are written as 64-bit floats (<code>FLOAT64</code>).
+may be non-missing character or numeric vectors. Vectors of length one
+are written as scalar strings or 64-bit floats; other lengths become GGUF
+arrays of the corresponding type.
 Defaults to <code><a href="https://rdrr.io/r/base/list.html" class="external-link">list()</a></code> (no metadata).</p></dd>
 
 </dl></div>

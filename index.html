@@ -372,7 +372,7 @@ without being rewritten around a new container.</p>
 <span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>  <span class="at">peak_mmap_MB =</span> peak_mapped</span>
 <span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>))</span>
 <span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   payload_MB peak_heap_MB peak_mmap_MB </span></span>
-<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;          610          697           86</span></span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;          610          697           87</span></span>
 <span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a><span class="fu">identical</span>(sv_mapped, sv_heap)</span>
 <span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
 <p>The payload never enters the R heap, and <code>pcaone</code> never
@@ -433,31 +433,31 @@ state require new storage.</p>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="fu">local</span>({</span>
 <span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>  backing <span class="ot">&lt;-</span> <span class="fu">tempfile</span>(<span class="at">fileext =</span> <span class="st">&quot;.bin&quot;</span>)</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>  rt <span class="ot">&lt;-</span> Rfmalloc<span class="sc">::</span><span class="fu">open_fmalloc</span>(backing, <span class="at">mode =</span> <span class="st">&quot;scratch&quot;</span>, <span class="at">size_gb =</span> <span class="fl">0.1</span>)</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>  rt <span class="ot">&lt;-</span> Rfmalloc<span class="sc">::</span><span class="fu">open_fmalloc</span>(backing, <span class="at">mode =</span> <span class="st">&quot;scratch&quot;</span>, <span class="at">size_gb =</span> <span class="dv">2</span>)</span>
 <span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">on.exit</span>({</span>
 <span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    Rfmalloc<span class="sc">::</span><span class="fu">cleanup_fmalloc</span>(rt)</span>
 <span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    <span class="fu">unlink</span>(backing)</span>
 <span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>  }, <span class="at">add =</span> <span class="cn">TRUE</span>)</span>
 <span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>  model_path <span class="ot">&lt;-</span> <span class="fu">system.file</span>(</span>
-<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;extdata&quot;</span>, <span class="st">&quot;tiny-byte-model.gguf&quot;</span>, <span class="at">package =</span> <span class="st">&quot;Rllm&quot;</span>, <span class="at">mustWork =</span> <span class="cn">TRUE</span></span>
-<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>  )</span>
-<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>  model <span class="ot">&lt;-</span> <span class="fu">rllm_gguf_model</span>(model_path, <span class="at">runtime =</span> rt)</span>
-<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>  probe <span class="ot">&lt;-</span> <span class="fu">charToRaw</span>(<span class="st">&quot;systems-path probe&quot;</span>)</span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>  model_path <span class="ot">&lt;-</span> <span class="fu">Sys.getenv</span>(</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;RLLM_README_GGUF&quot;</span>,</span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;LFM2.5-8B-A1B-Q4_K_M.gguf&quot;</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>  model <span class="ot">&lt;-</span> <span class="fu">rllm_gguf_model</span>(model_path, <span class="at">runtime =</span> rt)</span>
 <span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>  gen <span class="ot">&lt;-</span> <span class="fu">rllm_generate</span>(</span>
 <span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>    probe,</span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>    <span class="fu">charToRaw</span>(<span class="st">&quot;The capital of France is&quot;</span>),</span>
 <span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>    <span class="at">n_new =</span> <span class="dv">16</span><span class="dt">L</span>,</span>
 <span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>    <span class="at">runtime =</span> rt</span>
 <span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>  )</span>
 <span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rawToChar</span>(gen<span class="sc">$</span>raw)</span>
 <span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>})</span>
-<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] &quot;!!!!!!!!!!!!!!!!&quot;</span></span></code></pre></div>
-<p>The bundled model is deliberately tiny and deterministic: it emits
-<code>!</code> as a sentinel. The evaluated example traverses the real
-GGUF loader, borrowed weight spans, transformer graph, KV cache,
-generation loop and byte decoder without a model download. Its output is
-a systems check, not a language-quality claim.</p>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] &quot; the city of Paris. city of Paris is the capital of France. Both statements&quot;</span></span></code></pre></div>
+<p>The evaluated run uses LFM2.5-8B-A1B <code>Q4_K_M</code>, not a toy
+model shaped to emit a convenient answer. Set
+<code>RLLM_README_GGUF</code> when rendering the Rmd. If the file is
+absent, the chunk is not evaluated and no transcript is invented. Knitr
+keys its cache by the model file’s size and modification time.</p>
 <p>The I/O boundary is bytes, not a hidden theory of text. The tokenizer
 is an edge codec built from GGUF metadata, generation returns raw
 output, and <code>rawToChar()</code> is the caller’s interpretation. On
@@ -478,6 +478,30 @@ occupies 4.5 bits and its GGML product takes 0.30 ms. The LLM version of
 the lossless-compressed bet has to earn its way back through ALP-RD,
 SIMD decode or a fused compressed dot kernel. The failed form is
 evidence, not an API to preserve.</p>
+<p>The graph description follows the same separation. GGUF metadata is
+first normalized into named tensor roles, shapes, operators, state and
+outputs. An R architecture program then expresses modules, residual
+branches, representation taps and structured recurrence with ordinary
+functions and the base pipe. The frozen program is data only. C does not
+need another model-family class; it needs reusable lowerings for
+attention, normalization, convolution, routing and whatever operators
+survive the next model stress test.</p>
+<p>This language is intentionally closer to
+<code>torch::nn_module()</code> and luz’s pipe cadence than to a C++
+architecture switch. EmbeddingGemma forces non-causal and
+symmetric-window attention, post-branch normalization, pooling and
+projection. ESM forces padding masks and multiple representation
+outputs. Evo 2 forces scheduled stateful long convolutions. Tiny
+Recursive Models force shared modules and nested carried state.
+Unsupported operators remain explicit in the program until a backend can
+lower them; representing an idea is not presented as executing it.</p>
+<p><a href="https://github.com/sounkou-bioinfo/Rtinycc">Rtinycc</a>
+gives this separation a useful experimental path. A data-only program
+can generate a small C reference lowering or ABI adapter, compile it in
+memory and compare it with the R oracle before any operator is promoted
+into Rggml. TinyCC is not thereby declared a tensor compiler, and it
+does not replace tuned GGML kernels. It shortens the distance between a
+semantic operator and a falsifiable native prototype.</p>
 <h2 id="compute-follows-storage">Compute follows storage</h2>
 <p>The storage representation does not dictate one machine. Dense
 products use R’s BLAS. Quantized CPU products use GGML kernels, with
@@ -526,8 +550,9 @@ href="https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/">Rgguf</a> turns
 GGUF metadata and tensor spans into an R-facing storage layer without
 maintaining another parser. <a
 href="https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/">Rllm</a>
-composes those pieces into quantized products, a llama graph, KV caching
-and byte-level generation.</p>
+composes those pieces into quantized products, semantic architecture
+programs, persistent model state, embeddings and byte-level
+generation.</p>
 <p>The statistical genetics side pushes the same contracts in directions
 an LLM does not. <a
 href="https://github.com/sounkou-bioinfo/Rfmalloc/tree/main/packages/Rpgen">Rpgen</a>
@@ -549,12 +574,16 @@ that movement visible and testable.</p>
 <p>Every quantized decoder is checked bit-for-bit against GGML’s own
 <code>to_float</code> reference through fixtures in Rgguf and live
 cross-validation in Rllm. That discipline caught a real Q4_K
-dequantization bug in the earlier C port. The inference graph is checked
-against a pure-R forward; incremental KV-cache logits must equal
-whole-batch logits at every position; lossless codecs must round-trip
-exactly; and every specialized backend must be free to decline into the
-decode-and-BLAS reference path. Performance claims come from measured
-paths, not from the presence of a backend name in a build.</p>
+dequantization bug in the earlier C port. The inference graphs are
+checked against pure-R forwards; hermetic f32 state must equal
+whole-batch execution at every position. A real quantized MoE adds a
+discontinuous top-k router after batch-width-dependent kernels, so its
+real-file invariant is the selected token, logit direction and upstream
+continuation rather than bitwise equality across GEMV and GEMM
+geometries. Lossless codecs must round-trip exactly, and every
+specialized backend must be free to decline into the decode-and-BLAS
+reference path. Performance claims come from measured paths, not from
+the presence of a backend name in a build.</p>
 <h2 id="install-and-provenance">Install and provenance</h2>
 <p>The packages are available from <a
 href="https://sounkou-bioinfo.r-universe.dev">r-universe</a>. Installing
