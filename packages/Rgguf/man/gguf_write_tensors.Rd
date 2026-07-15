@@ -13,9 +13,9 @@ gguf_write_tensors(path, tensors, metadata = list())
 arrays. Names become tensor names and must be unique and non-empty.}
 
 \item{metadata}{A named list of metadata key-value pairs to write. Values
-may be non-missing character vectors or single non-missing numeric
-values. Character vectors of length other than one are written as GGUF
-string arrays; numeric values are written as 64-bit floats (\code{FLOAT64}).
+may be non-missing character or numeric vectors. Vectors of length one
+are written as scalar strings or 64-bit floats; other lengths become GGUF
+arrays of the corresponding type.
 Defaults to \code{list()} (no metadata).}
 }
 \value{

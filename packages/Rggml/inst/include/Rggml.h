@@ -98,6 +98,10 @@ typedef void (*Rggml_build_forward_expand_fun)(struct ggml_cgraph *cgraph, struc
 
 typedef struct ggml_tensor *(*Rggml_mul_mat_fun)(struct ggml_context *ctx, struct ggml_tensor *a,
                                                   struct ggml_tensor *b);
+typedef struct ggml_tensor *(*Rggml_mul_mat_id_fun)(struct ggml_context *ctx,
+                                                     struct ggml_tensor *as,
+                                                     struct ggml_tensor *b,
+                                                     struct ggml_tensor *ids);
 typedef int (*Rggml_compute_mul_mat_fun)(struct ggml_context *ctx, ggml_backend_t backend,
                                          struct ggml_tensor *a, struct ggml_tensor *b,
                                          float *out_f32, double *out_f64);
@@ -170,6 +174,9 @@ typedef int (*Rggml_gguf_writer_set_strings_fun)(
     const char **values, size_t n);
 typedef int (*Rggml_gguf_writer_set_f64_fun)(struct Rggml_gguf_writer *ctx,
                                              const char *key, double value);
+typedef int (*Rggml_gguf_writer_set_f64s_fun)(
+    struct Rggml_gguf_writer *ctx, const char *key,
+    const double *values, size_t n);
 typedef int (*Rggml_gguf_writer_add_f32_fun)(
     struct Rggml_gguf_writer *ctx, const char *name, int n_dims,
     const int64_t *ne, const double *data);
@@ -194,12 +201,40 @@ typedef struct ggml_tensor *(*Rggml_mul_fun)(struct ggml_context *ctx,
 typedef struct ggml_tensor *(*Rggml_add_fun)(struct ggml_context *ctx,
                                               struct ggml_tensor *a,
                                               struct ggml_tensor *b);
+typedef struct ggml_tensor *(*Rggml_div_fun)(struct ggml_context *ctx,
+                                              struct ggml_tensor *a,
+                                              struct ggml_tensor *b);
 typedef struct ggml_tensor *(*Rggml_silu_fun)(struct ggml_context *ctx,
                                                struct ggml_tensor *a);
+typedef struct ggml_tensor *(*Rggml_geglu_fun)(struct ggml_context *ctx,
+                                                struct ggml_tensor *gate,
+                                                struct ggml_tensor *up);
+typedef struct ggml_tensor *(*Rggml_sigmoid_fun)(struct ggml_context *ctx,
+                                                  struct ggml_tensor *a);
 typedef struct ggml_tensor *(*Rggml_scale_fun)(struct ggml_context *ctx,
                                                 struct ggml_tensor *a, double s);
+typedef struct ggml_tensor *(*Rggml_sum_rows_fun)(struct ggml_context *ctx,
+                                                   struct ggml_tensor *a);
+typedef struct ggml_tensor *(*Rggml_clamp_fun)(struct ggml_context *ctx,
+                                                struct ggml_tensor *a,
+                                                double min, double max);
+typedef struct ggml_tensor *(*Rggml_argsort_top_k_fun)(struct ggml_context *ctx,
+                                                        struct ggml_tensor *a,
+                                                        int k);
+typedef struct ggml_tensor *(*Rggml_concat_fun)(struct ggml_context *ctx,
+                                                 struct ggml_tensor *a,
+                                                 struct ggml_tensor *b,
+                                                 int dim);
+typedef struct ggml_tensor *(*Rggml_ssm_conv_fun)(struct ggml_context *ctx,
+                                                   struct ggml_tensor *sx,
+                                                   struct ggml_tensor *kernel);
 typedef struct ggml_tensor *(*Rggml_soft_max_fun)(struct ggml_context *ctx,
                                                    struct ggml_tensor *a);
+typedef struct ggml_tensor *(*Rggml_soft_max_ext_fun)(struct ggml_context *ctx,
+                                                       struct ggml_tensor *a,
+                                                       struct ggml_tensor *mask,
+                                                       double scale,
+                                                       double max_bias);
 typedef struct ggml_tensor *(*Rggml_diag_mask_inf_fun)(struct ggml_context *ctx,
                                                         struct ggml_tensor *a,
                                                         int n_past);
@@ -378,6 +413,11 @@ static inline Rggml_mul_mat_fun Rggml_mul_mat_ptr(void)
     return (Rggml_mul_mat_fun) R_GetCCallable("Rggml", "Rggml_mul_mat");
 }
 
+static inline Rggml_mul_mat_id_fun Rggml_mul_mat_id_ptr(void)
+{
+    return (Rggml_mul_mat_id_fun) R_GetCCallable("Rggml", "Rggml_mul_mat_id");
+}
+
 static inline Rggml_compute_mul_mat_fun Rggml_compute_mul_mat_ptr(void)
 {
     return (Rggml_compute_mul_mat_fun) R_GetCCallable("Rggml", "Rggml_compute_mul_mat");
@@ -413,9 +453,24 @@ static inline Rggml_add_fun Rggml_add_ptr(void)
     return (Rggml_add_fun) R_GetCCallable("Rggml", "Rggml_add");
 }
 
+static inline Rggml_div_fun Rggml_div_ptr(void)
+{
+    return (Rggml_div_fun) R_GetCCallable("Rggml", "Rggml_div");
+}
+
 static inline Rggml_silu_fun Rggml_silu_ptr(void)
 {
     return (Rggml_silu_fun) R_GetCCallable("Rggml", "Rggml_silu");
+}
+
+static inline Rggml_geglu_fun Rggml_geglu_ptr(void)
+{
+    return (Rggml_geglu_fun) R_GetCCallable("Rggml", "Rggml_geglu");
+}
+
+static inline Rggml_sigmoid_fun Rggml_sigmoid_ptr(void)
+{
+    return (Rggml_sigmoid_fun) R_GetCCallable("Rggml", "Rggml_sigmoid");
 }
 
 static inline Rggml_scale_fun Rggml_scale_ptr(void)
@@ -423,9 +478,41 @@ static inline Rggml_scale_fun Rggml_scale_ptr(void)
     return (Rggml_scale_fun) R_GetCCallable("Rggml", "Rggml_scale");
 }
 
+static inline Rggml_sum_rows_fun Rggml_sum_rows_ptr(void)
+{
+    return (Rggml_sum_rows_fun) R_GetCCallable("Rggml", "Rggml_sum_rows");
+}
+
+static inline Rggml_clamp_fun Rggml_clamp_ptr(void)
+{
+    return (Rggml_clamp_fun) R_GetCCallable("Rggml", "Rggml_clamp");
+}
+
+static inline Rggml_argsort_top_k_fun Rggml_argsort_top_k_ptr(void)
+{
+    return (Rggml_argsort_top_k_fun)
+        R_GetCCallable("Rggml", "Rggml_argsort_top_k");
+}
+
+static inline Rggml_concat_fun Rggml_concat_ptr(void)
+{
+    return (Rggml_concat_fun) R_GetCCallable("Rggml", "Rggml_concat");
+}
+
+static inline Rggml_ssm_conv_fun Rggml_ssm_conv_ptr(void)
+{
+    return (Rggml_ssm_conv_fun) R_GetCCallable("Rggml", "Rggml_ssm_conv");
+}
+
 static inline Rggml_soft_max_fun Rggml_soft_max_ptr(void)
 {
     return (Rggml_soft_max_fun) R_GetCCallable("Rggml", "Rggml_soft_max");
+}
+
+static inline Rggml_soft_max_ext_fun Rggml_soft_max_ext_ptr(void)
+{
+    return (Rggml_soft_max_ext_fun)
+        R_GetCCallable("Rggml", "Rggml_soft_max_ext");
 }
 
 static inline Rggml_diag_mask_inf_fun Rggml_diag_mask_inf_ptr(void)
@@ -644,6 +731,11 @@ static inline Rggml_gguf_writer_set_f64_fun Rggml_gguf_writer_set_f64_ptr(void)
 {
     return (Rggml_gguf_writer_set_f64_fun)
         R_GetCCallable("Rggml", "Rggml_gguf_writer_set_f64");
+}
+static inline Rggml_gguf_writer_set_f64s_fun Rggml_gguf_writer_set_f64s_ptr(void)
+{
+    return (Rggml_gguf_writer_set_f64s_fun)
+        R_GetCCallable("Rggml", "Rggml_gguf_writer_set_f64s");
 }
 static inline Rggml_gguf_writer_add_f32_fun Rggml_gguf_writer_add_f32_ptr(void)
 {

@@ -7,6 +7,11 @@ knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>"
 )
+llm_path <- Sys.getenv(
+  "RLLM_README_GGUF",
+  "LFM2.5-8B-A1B-Q4_K_M.gguf"
+)
+llm_available <- file.exists(llm_path)
 ```
 
 # Rfmalloc: out-of-core arrays for R
@@ -160,25 +165,25 @@ span from the original mapping. The model keeps quantized weights quantized;
 GGML consumes those blocks directly; only the KV cache and transient graph
 state require new storage.
 
-```{r llm}
+```{r llm, eval = llm_available, cache = TRUE, cache.path = "README_cache/llm/", cache.extra = if (llm_available) unname(file.info(llm_path)[c("size", "mtime")])}
 library(Rllm)
 
 local({
   backing <- tempfile(fileext = ".bin")
-  rt <- Rfmalloc::open_fmalloc(backing, mode = "scratch", size_gb = 0.1)
+  rt <- Rfmalloc::open_fmalloc(backing, mode = "scratch", size_gb = 2)
   on.exit({
     Rfmalloc::cleanup_fmalloc(rt)
     unlink(backing)
   }, add = TRUE)
 
-  model_path <- system.file(
-    "extdata", "tiny-byte-model.gguf", package = "Rllm", mustWork = TRUE
+  model_path <- Sys.getenv(
+    "RLLM_README_GGUF",
+    "LFM2.5-8B-A1B-Q4_K_M.gguf"
   )
   model <- rllm_gguf_model(model_path, runtime = rt)
-  probe <- charToRaw("systems-path probe")
   gen <- rllm_generate(
     model,
-    probe,
+    charToRaw("The capital of France is"),
     n_new = 16L,
     runtime = rt
   )
@@ -186,10 +191,10 @@ local({
 })
 ```
 
-The bundled model is deliberately tiny and deterministic: it emits `!` as a
-sentinel. The evaluated example traverses the real GGUF loader, borrowed weight
-spans, transformer graph, KV cache, generation loop and byte decoder without a
-model download. Its output is a systems check, not a language-quality claim.
+The evaluated run uses LFM2.5-8B-A1B `Q4_K_M`, not a toy model shaped to emit a
+convenient answer. Set `RLLM_README_GGUF` when rendering the Rmd. If the file is
+absent, the chunk is not evaluated and no transcript is invented. Knitr keys
+its cache by the model file's size and modification time.
 
 The I/O boundary is bytes, not a hidden theory of text. The tokenizer is an
 edge codec built from GGUF metadata, generation returns raw output, and
@@ -210,6 +215,30 @@ plus BLAS takes 20.75 ms for batch one. Native Q4_K occupies 4.5 bits and its
 GGML product takes 0.30 ms. The LLM version of the lossless-compressed bet has
 to earn its way back through ALP-RD, SIMD decode or a fused compressed dot
 kernel. The failed form is evidence, not an API to preserve.
+
+The graph description follows the same separation. GGUF metadata is first
+normalized into named tensor roles, shapes, operators, state and outputs. An R
+architecture program then expresses modules, residual branches, representation
+taps and structured recurrence with ordinary functions and the base pipe. The
+frozen program is data only. C does not need another model-family class; it
+needs reusable lowerings for attention, normalization, convolution, routing
+and whatever operators survive the next model stress test.
+
+This language is intentionally closer to `torch::nn_module()` and luz's pipe
+cadence than to a C++ architecture switch. EmbeddingGemma forces non-causal and
+symmetric-window attention, post-branch normalization, pooling and projection.
+ESM forces padding masks and multiple representation outputs. Evo 2 forces
+scheduled stateful long convolutions. Tiny Recursive Models force shared
+modules and nested carried state. Unsupported operators remain explicit in the
+program until a backend can lower them; representing an idea is not presented
+as executing it.
+
+[Rtinycc](https://github.com/sounkou-bioinfo/Rtinycc) gives this separation a
+useful experimental path. A data-only program can generate a small C reference
+lowering or ABI adapter, compile it in memory and compare it with the R oracle
+before any operator is promoted into Rggml. TinyCC is not thereby declared a
+tensor compiler, and it does not replace tuned GGML kernels. It shortens the
+distance between a semantic operator and a falsifiable native prototype.
 
 ## Compute follows storage
 
@@ -256,8 +285,8 @@ GGUF implementation, CPU kernels, BLAS and optional device backends.
 [Rgguf](https://sounkou-bioinfo.github.io/Rfmalloc/Rgguf/) turns GGUF metadata
 and tensor spans into an R-facing storage layer without maintaining another
 parser. [Rllm](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/) composes those
-pieces into quantized products, a llama graph, KV caching and byte-level
-generation.
+pieces into quantized products, semantic architecture programs, persistent
+model state, embeddings and byte-level generation.
 
 The statistical genetics side pushes the same contracts in directions an LLM
 does not. [Rpgen](https://github.com/sounkou-bioinfo/Rfmalloc/tree/main/packages/Rpgen)
@@ -280,11 +309,14 @@ movement visible and testable.
 Every quantized decoder is checked bit-for-bit against GGML's own `to_float`
 reference through fixtures in Rgguf and live cross-validation in Rllm. That
 discipline caught a real Q4_K dequantization bug in the earlier C port. The
-inference graph is checked against a pure-R forward; incremental KV-cache
-logits must equal whole-batch logits at every position; lossless codecs must
-round-trip exactly; and every specialized backend must be free to decline into
-the decode-and-BLAS reference path. Performance claims come from measured
-paths, not from the presence of a backend name in a build.
+inference graphs are checked against pure-R forwards; hermetic f32 state must
+equal whole-batch execution at every position. A real quantized MoE adds a
+discontinuous top-k router after batch-width-dependent kernels, so its
+real-file invariant is the selected token, logit direction and upstream
+continuation rather than bitwise equality across GEMV and GEMM geometries.
+Lossless codecs must round-trip exactly, and every specialized backend must be
+free to decline into the decode-and-BLAS reference path. Performance claims
+come from measured paths, not from the presence of a backend name in a build.
 
 ## Install and provenance
 

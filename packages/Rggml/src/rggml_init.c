@@ -73,6 +73,7 @@ static void register_c_callables(DllInfo *dll)
     R_RegisterCCallable("Rggml", "Rggml_build_forward_expand",   (DL_FUNC) Rggml_build_forward_expand);
 
     R_RegisterCCallable("Rggml", "Rggml_mul_mat",                (DL_FUNC) Rggml_mul_mat);
+    R_RegisterCCallable("Rggml", "Rggml_mul_mat_id",             (DL_FUNC) Rggml_mul_mat_id);
     R_RegisterCCallable("Rggml", "Rggml_compute_mul_mat",        (DL_FUNC) Rggml_compute_mul_mat);
 
     R_RegisterCCallable("Rggml", "Rggml_quantize",              (DL_FUNC) Rggml_quantize);
@@ -95,6 +96,7 @@ static void register_c_callables(DllInfo *dll)
     R_RegisterCCallable("Rggml", "Rggml_gguf_writer_set_string", (DL_FUNC) Rggml_gguf_writer_set_string);
     R_RegisterCCallable("Rggml", "Rggml_gguf_writer_set_strings", (DL_FUNC) Rggml_gguf_writer_set_strings);
     R_RegisterCCallable("Rggml", "Rggml_gguf_writer_set_f64",   (DL_FUNC) Rggml_gguf_writer_set_f64);
+    R_RegisterCCallable("Rggml", "Rggml_gguf_writer_set_f64s",  (DL_FUNC) Rggml_gguf_writer_set_f64s);
     R_RegisterCCallable("Rggml", "Rggml_gguf_writer_add_f32",   (DL_FUNC) Rggml_gguf_writer_add_f32);
     R_RegisterCCallable("Rggml", "Rggml_gguf_writer_write",     (DL_FUNC) Rggml_gguf_writer_write);
 
@@ -102,9 +104,18 @@ static void register_c_callables(DllInfo *dll)
     R_RegisterCCallable("Rggml", "Rggml_rms_norm",              (DL_FUNC) Rggml_rms_norm);
     R_RegisterCCallable("Rggml", "Rggml_mul",                   (DL_FUNC) Rggml_mul);
     R_RegisterCCallable("Rggml", "Rggml_add",                   (DL_FUNC) Rggml_add);
+    R_RegisterCCallable("Rggml", "Rggml_div",                   (DL_FUNC) Rggml_div);
     R_RegisterCCallable("Rggml", "Rggml_silu",                  (DL_FUNC) Rggml_silu);
+    R_RegisterCCallable("Rggml", "Rggml_geglu",                 (DL_FUNC) Rggml_geglu);
+    R_RegisterCCallable("Rggml", "Rggml_sigmoid",               (DL_FUNC) Rggml_sigmoid);
     R_RegisterCCallable("Rggml", "Rggml_scale",                 (DL_FUNC) Rggml_scale);
+    R_RegisterCCallable("Rggml", "Rggml_sum_rows",              (DL_FUNC) Rggml_sum_rows);
+    R_RegisterCCallable("Rggml", "Rggml_clamp",                 (DL_FUNC) Rggml_clamp);
+    R_RegisterCCallable("Rggml", "Rggml_argsort_top_k",         (DL_FUNC) Rggml_argsort_top_k);
+    R_RegisterCCallable("Rggml", "Rggml_concat",                (DL_FUNC) Rggml_concat);
+    R_RegisterCCallable("Rggml", "Rggml_ssm_conv",              (DL_FUNC) Rggml_ssm_conv);
     R_RegisterCCallable("Rggml", "Rggml_soft_max",              (DL_FUNC) Rggml_soft_max);
+    R_RegisterCCallable("Rggml", "Rggml_soft_max_ext",          (DL_FUNC) Rggml_soft_max_ext);
     R_RegisterCCallable("Rggml", "Rggml_diag_mask_inf",         (DL_FUNC) Rggml_diag_mask_inf);
     R_RegisterCCallable("Rggml", "Rggml_rope",                  (DL_FUNC) Rggml_rope);
     R_RegisterCCallable("Rggml", "Rggml_reshape_2d",            (DL_FUNC) Rggml_reshape_2d);

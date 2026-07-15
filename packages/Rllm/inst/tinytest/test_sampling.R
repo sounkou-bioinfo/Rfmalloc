@@ -61,6 +61,19 @@ Rgguf::gguf_write_tensors(path, tensors, metadata = list(
     "llama.rope.freq_base" = 10000, "llama.rope.dimension_count" = 8))
 model <- rllm_gguf_model(path, runtime = rt)
 
+# A fresh textual prompt receives the model's BOS token. Integer ids are the
+# low-level boundary and remain byte-for-byte under caller control.
+model$tok_model <- "gpt2"
+model$vocab <- c("a", paste0("token", 1:63))
+model$merges <- character()
+model$bos_id <- 4L
+text_gen <- rllm_generate(model, "a", n_new = 1L)
+expect_equal(text_gen$ids[1:2], c(4L, 0L))
+model$tok_model <- NULL
+model$vocab <- NULL
+model$merges <- NULL
+model$bos_id <- NULL
+
 # greedy is deterministic (seed irrelevant)
 g1 <- rllm_generate(model, c(3L, 1L), n_new = 6L)
 g2 <- rllm_generate(model, c(3L, 1L), n_new = 6L)

@@ -2,19 +2,21 @@
 % Please edit documentation in R/rllm_model.R
 \name{rllm_gguf_model}
 \alias{rllm_gguf_model}
-\title{Load a llama-architecture GGUF model for forward passes}
+\title{Load a GGUF model as a semantic execution plan and borrowed weights}
 \usage{
-rllm_gguf_model(path, runtime = NULL, rope_mode = 0L)
+rllm_gguf_model(path, runtime = NULL, rope_mode = NULL)
 }
 \arguments{
 \item{path}{Path to a GGUF file.}
 
-\item{runtime}{Optional \code{\link[Rfmalloc:open_fmalloc]{Rfmalloc::open_fmalloc()}} runtime attached to the
-borrowed tensor views. It supplies the allocation context for operations
-which produce fmalloc results; the weight bytes remain in the GGUF mapping.}
+\item{runtime}{\code{\link[Rfmalloc:open_fmalloc]{Rfmalloc::open_fmalloc()}} runtime attached to the borrowed
+tensor views, or \code{NULL} to use the default established by
+\code{\link[Rfmalloc:init_fmalloc]{Rfmalloc::init_fmalloc()}}. It supplies the allocation context for
+operations which produce fmalloc results; the weight bytes remain in the
+GGUF mapping.}
 
-\item{rope_mode}{RoPE flavour: \code{0} (normal/interleaved, llama) or \code{2}
-(NEOX-style, e.g. qwen2). Defaults to \code{0}.}
+\item{rope_mode}{Optional RoPE override: \code{0} for normal/interleaved or \code{2}
+for NEOX. The architecture plan supplies the default.}
 }
 \value{
 An object of class \code{rllm_model} containing its hyperparameters,
@@ -22,18 +24,15 @@ borrowed weight payloads, tokenizer metadata, and model-owned backend
 contexts created lazily by \code{\link[=rllm_forward]{rllm_forward()}}.
 }
 \description{
-Reads the hyperparameters and weights of a llama-architecture 'GGUF' file
-into an \code{rllm_model} object usable with \code{\link[=rllm_forward]{rllm_forward()}}. Every weight is a
-borrowed view over its exact read-only span in the original GGUF mapping.
-Quantized and floating-point payloads keep their on-disk encoding, and the
-forward pass points GGML tensors at those bytes without copying them into a
-second backing file.
+Normalizes the model-family metadata into a typed \code{\link[=rllm_plan]{rllm_plan()}}, validates
+every tensor role and shape, then borrows each required weight from the
+original GGUF mapping. Quantized and floating-point payloads keep their
+on-disk encoding; no second weight store is created.
 }
 \details{
-The loader expects the standard llama tensor names (\code{token_embd.weight},
-\verb{blk.<i>.attn_q.weight}, ..., \code{output_norm.weight}) and hyperparameter keys
-(\verb{<arch>.block_count}, \verb{<arch>.embedding_length}, ...). Models with tied
-embeddings (no \code{output.weight}) reuse \code{token_embd.weight} as the output
+Architecture definitions are data ASTs rather than native model-family
+branches. The registered plans cover llama, LFM2MoE and EmbeddingGemma.
+Models with tied embeddings reuse \code{token_embd.weight} as the output
 projection.
 }
 \seealso{

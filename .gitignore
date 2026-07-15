@@ -9,6 +9,8 @@ packages/*/inst/ggml/libggml.a
 .RData
 README.html
 packages/*/README.html
+README_cache/
+packages/*/README_cache/
 tools/vendor-ggml/cache/
 tools/vendor-pgenlib/cache/
 tools/vendor-plink2-import/cache/

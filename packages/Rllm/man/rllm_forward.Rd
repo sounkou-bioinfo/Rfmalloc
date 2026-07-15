@@ -2,7 +2,7 @@
 % Please edit documentation in R/rllm_model.R
 \name{rllm_forward}
 \alias{rllm_forward}
-\title{Run a transformer forward pass and return the logits}
+\title{Lower a semantic model plan and return its logits}
 \usage{
 rllm_forward(model, tokens, cache = NULL, backend = c("cpu", "cuda"))
 }
@@ -22,9 +22,10 @@ A numeric matrix of logits, dim \code{c(n_vocab, length(tokens))}:
 column \code{i} scores the token following position \code{i}.
 }
 \description{
-Assembles the GGML compute graph for a llama-architecture forward pass
-(RMSNorm, RoPE, causal self-attention, SwiGLU feed-forward) over the
-model's memory-mapped weights and computes it on a chosen GGML backend.
+Lowers the model's inspectable \code{\link[=rllm_plan]{rllm_plan()}} to a GGML graph over its
+memory-mapped weights and computes it on a chosen backend. The operator
+vocabulary includes attention, gated short convolution, dense gated
+products and sparse routed experts.
 Quantized weights are contracted natively in their encoded form - they are
 never decoded to double. The CPU backend borrows the mapped bytes directly.
 On its first use, the CUDA backend creates a model-owned context and uploads

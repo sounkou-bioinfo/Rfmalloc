@@ -64,6 +64,10 @@ struct ggml_cgraph *Rggml_new_graph(struct ggml_context *ctx, size_t size);
 void Rggml_build_forward_expand(struct ggml_cgraph *cgraph, struct ggml_tensor *tensor);
 
 struct ggml_tensor *Rggml_mul_mat(struct ggml_context *ctx, struct ggml_tensor *a, struct ggml_tensor *b);
+struct ggml_tensor *Rggml_mul_mat_id(struct ggml_context *ctx,
+                                      struct ggml_tensor *as,
+                                      struct ggml_tensor *b,
+                                      struct ggml_tensor *ids);
 int Rggml_compute_mul_mat(struct ggml_context *ctx, ggml_backend_t backend,
                            struct ggml_tensor *a, struct ggml_tensor *b,
                            float *out_f32, double *out_f64);
@@ -119,6 +123,8 @@ int Rggml_gguf_writer_set_strings(struct Rggml_gguf_writer *ctx,
                                   size_t n);
 int Rggml_gguf_writer_set_f64(struct Rggml_gguf_writer *ctx, const char *key,
                               double value);
+int Rggml_gguf_writer_set_f64s(struct Rggml_gguf_writer *ctx, const char *key,
+                               const double *values, size_t n);
 int Rggml_gguf_writer_add_f32(struct Rggml_gguf_writer *ctx, const char *name,
                               int n_dims, const int64_t *ne,
                               const double *data);
@@ -133,10 +139,30 @@ struct ggml_tensor *Rggml_mul(struct ggml_context *ctx, struct ggml_tensor *a,
                                struct ggml_tensor *b);
 struct ggml_tensor *Rggml_add(struct ggml_context *ctx, struct ggml_tensor *a,
                                struct ggml_tensor *b);
+struct ggml_tensor *Rggml_div(struct ggml_context *ctx, struct ggml_tensor *a,
+                               struct ggml_tensor *b);
 struct ggml_tensor *Rggml_silu(struct ggml_context *ctx, struct ggml_tensor *a);
+struct ggml_tensor *Rggml_geglu(struct ggml_context *ctx, struct ggml_tensor *gate,
+                                struct ggml_tensor *up);
+struct ggml_tensor *Rggml_sigmoid(struct ggml_context *ctx, struct ggml_tensor *a);
 struct ggml_tensor *Rggml_scale(struct ggml_context *ctx, struct ggml_tensor *a,
                                  double s);
+struct ggml_tensor *Rggml_sum_rows(struct ggml_context *ctx, struct ggml_tensor *a);
+struct ggml_tensor *Rggml_clamp(struct ggml_context *ctx, struct ggml_tensor *a,
+                                 double min, double max);
+struct ggml_tensor *Rggml_argsort_top_k(struct ggml_context *ctx,
+                                         struct ggml_tensor *a, int k);
+struct ggml_tensor *Rggml_concat(struct ggml_context *ctx,
+                                  struct ggml_tensor *a,
+                                  struct ggml_tensor *b, int dim);
+struct ggml_tensor *Rggml_ssm_conv(struct ggml_context *ctx,
+                                    struct ggml_tensor *sx,
+                                    struct ggml_tensor *kernel);
 struct ggml_tensor *Rggml_soft_max(struct ggml_context *ctx, struct ggml_tensor *a);
+struct ggml_tensor *Rggml_soft_max_ext(struct ggml_context *ctx,
+                                       struct ggml_tensor *a,
+                                       struct ggml_tensor *mask,
+                                       double scale, double max_bias);
 struct ggml_tensor *Rggml_diag_mask_inf(struct ggml_context *ctx, struct ggml_tensor *a,
                                          int n_past);
 struct ggml_tensor *Rggml_rope(struct ggml_context *ctx, struct ggml_tensor *a,

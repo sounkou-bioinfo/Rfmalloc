@@ -150,7 +150,8 @@ if (.Platform$OS.type != "windows") (function() {
             scalar = "one",
             strings = c("alpha", "beta", "gamma"),
             empty = character(),
-            number = 2.5
+            number = 2.5,
+            schedule = c(0, 0, 8, 0, 8)
         )
     )
     metadata <- gguf_metadata(tmp)
@@ -158,6 +159,7 @@ if (.Platform$OS.type != "windows") (function() {
     expect_identical(metadata$strings, c("alpha", "beta", "gamma"))
     expect_identical(metadata$empty, character())
     expect_equal(metadata$number, 2.5)
+    expect_equal(metadata$schedule, c(0, 0, 8, 0, 8))
 
     message("  Metadata-shape round-trip test passed")
 })()

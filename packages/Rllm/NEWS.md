@@ -1,9 +1,19 @@
 # Rllm 0.1.0 (unreleased)
 
-- Added a small deterministic tokenizer-bearing GGUF model for evaluated
-  README inference. Its reproducible recipe exercises the real loader, borrowed
-  weight spans, transformer graph, KV cache, generation loop, and raw-byte
-  decoder without a download or a success-shaped unevaluated transcript.
+- Added a data-only architecture program traced from ordinary R modules and
+  base pipes. Typed parameter identities, residual branches, named
+  representation taps, multiple carried states and structured shared loops
+  remain inspectable and serializable. ESM, StripedHyena2 and Tiny Recursive
+  Model sketches stress those forms without claiming unsupported execution.
+
+- GGUF metadata is normalized into semantic plans for llama, LFM2MoE and
+  EmbeddingGemma before any weight is borrowed. The model-neutral lowerer
+  covers causal, bidirectional and symmetric-window attention, normal and NEOX
+  RoPE, post-branch RMS normalization, SwiGLU, GEGLU, short convolution, sparse
+  routed experts, mean pooling and dense embedding projections.
+
+- Added `rllm_embed()` and pinned EmbeddingGemma against both a pure-R f32
+  oracle and a real 300M Q8_0 model compared with upstream GGML execution.
 
 - Added the CUDA transformer path over Rggml's official backend. A model-owned
   context uploads codec-native weights once and reuses them; mutable inputs,

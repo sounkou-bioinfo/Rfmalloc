@@ -19,9 +19,9 @@
 #' @param tensors A non-empty named list of numeric vectors, matrices, or
 #'   arrays. Names become tensor names and must be unique and non-empty.
 #' @param metadata A named list of metadata key-value pairs to write. Values
-#'   may be non-missing character vectors or single non-missing numeric
-#'   values. Character vectors of length other than one are written as GGUF
-#'   string arrays; numeric values are written as 64-bit floats (`FLOAT64`).
+#'   may be non-missing character or numeric vectors. Vectors of length one
+#'   are written as scalar strings or 64-bit floats; other lengths become GGUF
+#'   arrays of the corresponding type.
 #'   Defaults to `list()` (no metadata).
 #'
 #' @return `path`, invisibly.
@@ -70,12 +70,11 @@ gguf_write_tensors <- function(path, tensors, metadata = list()) {
         for (nm in metadata_names) {
             value <- metadata[[nm]]
             valid_string <- is.character(value) && !anyNA(value)
-            valid_number <- is.numeric(value) && length(value) == 1L && !is.na(value)
+            valid_number <- is.numeric(value) && !anyNA(value)
             if (!valid_string && !valid_number) {
                 stop(
                     "metadata entry '", nm,
-                    "' must be a non-missing character vector or a single ",
-                    "non-missing numeric value"
+                    "' must be a non-missing character or numeric vector"
                 )
             }
         }

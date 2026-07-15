@@ -1,107 +1,72 @@
-#' Load a llama-architecture GGUF model for forward passes
+#' Load a GGUF model as a semantic execution plan and borrowed weights
 #'
-#' Reads the hyperparameters and weights of a llama-architecture 'GGUF' file
-#' into an `rllm_model` object usable with [rllm_forward()]. Every weight is a
-#' borrowed view over its exact read-only span in the original GGUF mapping.
-#' Quantized and floating-point payloads keep their on-disk encoding, and the
-#' forward pass points GGML tensors at those bytes without copying them into a
-#' second backing file.
+#' Normalizes the model-family metadata into a typed [rllm_plan()], validates
+#' every tensor role and shape, then borrows each required weight from the
+#' original GGUF mapping. Quantized and floating-point payloads keep their
+#' on-disk encoding; no second weight store is created.
 #'
-#' The loader expects the standard llama tensor names (`token_embd.weight`,
-#' `blk.<i>.attn_q.weight`, ..., `output_norm.weight`) and hyperparameter keys
-#' (`<arch>.block_count`, `<arch>.embedding_length`, ...). Models with tied
-#' embeddings (no `output.weight`) reuse `token_embd.weight` as the output
+#' Architecture definitions are data ASTs rather than native model-family
+#' branches. The registered plans cover llama, LFM2MoE and EmbeddingGemma.
+#' Models with tied embeddings reuse `token_embd.weight` as the output
 #' projection.
 #'
 #' @param path Path to a GGUF file.
-#' @param runtime Optional [Rfmalloc::open_fmalloc()] runtime attached to the
-#'   borrowed tensor views. It supplies the allocation context for operations
-#'   which produce fmalloc results; the weight bytes remain in the GGUF mapping.
-#' @param rope_mode RoPE flavour: `0` (normal/interleaved, llama) or `2`
-#'   (NEOX-style, e.g. qwen2). Defaults to `0`.
+#' @param runtime [Rfmalloc::open_fmalloc()] runtime attached to the borrowed
+#'   tensor views, or `NULL` to use the default established by
+#'   [Rfmalloc::init_fmalloc()]. It supplies the allocation context for
+#'   operations which produce fmalloc results; the weight bytes remain in the
+#'   GGUF mapping.
+#' @param rope_mode Optional RoPE override: `0` for normal/interleaved or `2`
+#'   for NEOX. The architecture plan supplies the default.
 #'
 #' @return An object of class `rllm_model` containing its hyperparameters,
 #'   borrowed weight payloads, tokenizer metadata, and model-owned backend
 #'   contexts created lazily by [rllm_forward()].
 #' @seealso [rllm_forward()]
 #' @export
-rllm_gguf_model <- function(path, runtime = NULL, rope_mode = 0L) {
+rllm_gguf_model <- function(path, runtime = NULL, rope_mode = NULL) {
     ctx <- Rgguf::gguf_open(path)
     md <- Rgguf::gguf_metadata(ctx)
     tt <- Rgguf::gguf_tensors(ctx)
-
-    arch <- md[["general.architecture"]]
-    if (is.null(arch)) {
-        stop("GGUF file has no 'general.architecture' metadata key")
-    }
-    h <- function(key, default = NULL) {
-        v <- md[[paste0(arch, ".", key)]]
-        if (is.null(v)) {
-            if (is.null(default)) {
-                stop("missing GGUF hyperparameter '", paste0(arch, ".", key), "'")
-            }
-            return(default)
-        }
-        as.numeric(v)
-    }
-
-    n_layer <- h("block_count")
-    n_embd  <- h("embedding_length")
-    n_head  <- h("attention.head_count")
-    n_head_kv <- h("attention.head_count_kv", n_head)
-    n_ff    <- h("feed_forward_length")
-    rms_eps <- h("attention.layer_norm_rms_epsilon", 1e-5)
-    rope_base <- h("rope.freq_base", 10000)
-    head_dim <- n_embd / n_head
-    rope_dims <- h("rope.dimension_count", head_dim)
-
-    emb_row <- tt[tt$name == "token_embd.weight", ]
-    if (nrow(emb_row) != 1L) stop("GGUF file has no 'token_embd.weight' tensor")
-    n_vocab <- emb_row$dims[[1L]][2L]
-
-    needed <- c(
-        "token_embd.weight", "output_norm.weight",
-        if ("output.weight" %in% tt$name) "output.weight",
-        as.vector(t(outer(
-            paste0("blk.", seq_len(n_layer) - 1L, "."),
-            c("attn_norm.weight", "attn_q.weight", "attn_k.weight",
-              "attn_v.weight", "attn_output.weight", "ffn_norm.weight",
-              "ffn_gate.weight", "ffn_up.weight", "ffn_down.weight"),
-            paste0)))
-    )
-    missing <- setdiff(needed, tt$name)
-    if (length(missing) > 0L) {
-        stop("GGUF file is missing tensors: ", paste(missing, collapse = ", "))
-    }
+    plan <- .rllm_plan_from_gguf(md, tt, rope_mode)
+    needed <- names(plan$tensors)
 
     tensors <- vector("list", length(needed))
     names(tensors) <- needed
     for (nm in needed) {
-        row <- tt[tt$name == nm, ]
-        dims <- row$dims[[1L]]
         nt <- Rgguf::gguf_tensor(ctx, nm, runtime = runtime, as = "view")
         tensors[[nm]] <- list(
             payload = nt,
             type = Rfmalloc::fmalloc_tensor_dtype(nt),
-            dims = as.integer(dims)
+            dims = plan$tensors[[nm]]$shape
         )
     }
 
+    hparams <- plan$symbols
+    if (length(unique(hparams$n_head_kv)) == 1L) {
+        hparams$n_head_kv <- hparams$n_head_kv[[1L]]
+    }
+    attention <- which(vapply(plan$layers, function(layer) {
+        identical(layer$operator$op, "attention")
+    }, logical(1)))[1L]
+    resolved_rope_mode <- if (is.na(attention)) 0L else
+        plan$layers[[attention]]$operator$rope$mode
+
     structure(list(
-        hparams = list(
-            n_layer = n_layer, n_embd = n_embd, n_head = n_head,
-            n_head_kv = n_head_kv, n_ff = n_ff, n_vocab = n_vocab,
-            rms_eps = rms_eps, rope_base = rope_base, rope_dims = rope_dims
-        ),
+        plan = plan,
+        hparams = hparams,
         tensors = tensors,
-        rope_mode = as.integer(rope_mode),
-        arch = arch,
+        rope_mode = resolved_rope_mode,
+        arch = plan$architecture,
         # Tokenizer material for the ids <-> bytes edge codecs (rllm_encode/
         # rllm_decode); NULL when the file carries none (synthetic models).
         tok_model = md[["tokenizer.ggml.model"]],
         vocab = md[["tokenizer.ggml.tokens"]],
         merges = md[["tokenizer.ggml.merges"]],
+        bos_id = md[["tokenizer.ggml.bos_token_id"]],
         eos_id = md[["tokenizer.ggml.eos_token_id"]],
+        tokenizer_pre = md[["tokenizer.ggml.pre"]],
+        chat_template = md[["tokenizer.chat_template"]],
         .contexts = new.env(parent = emptyenv())
     ), class = "rllm_model")
 }
@@ -110,25 +75,24 @@ rllm_gguf_model <- function(path, runtime = NULL, rope_mode = 0L) {
 print.rllm_model <- function(x, ...) {
     hp <- x$hparams
     types <- vapply(x$tensors, function(t) t$type, character(1))
+    operators <- vapply(x$plan$layers, function(layer) layer$operator$op,
+                        character(1))
     cat(sprintf(
-        "<rllm_model %s: %d layers, n_embd %d, %d/%d heads, n_ff %d, vocab %d; %d tensors (%s)>\n",
-        x$arch, hp$n_layer, hp$n_embd, hp$n_head, hp$n_head_kv, hp$n_ff,
+        "<rllm_model %s: %d layers, n_embd %d, %d heads, n_ff %d, vocab %d; %d tensors (%s); %s>\n",
+        x$arch, hp$n_layer, hp$n_embd, hp$n_head, hp$n_ff,
         hp$n_vocab, length(x$tensors),
-        paste(names(sort(table(types), decreasing = TRUE)), collapse = "/")
+        paste(names(sort(table(types), decreasing = TRUE)), collapse = "/"),
+        .rllm_plan_counts(operators)
     ))
     invisible(x)
 }
 
-#' Create a KV cache for incremental decoding
+#' Create plan-shaped state for incremental decoding
 #'
-#' Allocates the per-layer key/value cache slabs an incremental
-#' [rllm_forward()] writes into and attends over. Each slab is a raw vector of
-#' `n_ctx * (n_embd / n_head) * n_head_kv` f32 values - plain R memory by
-#' default, or \pkg{Rfmalloc}-backed (file-backed, memory-mapped) when a
-#' `runtime` is given, which makes the cache a disk citizen: it survives in
-#' the runtime's file and its pages are evictable like any other fmalloc
-#' payload. (A quantized cache codec in the TurboQuant/PolarQuant vein can
-#' later replace the f32 slabs without touching the graph.)
+#' Allocates the persistent state declared by the model plan. Attention layers
+#' receive key/value slabs sized by their own KV width; short-convolution
+#' layers receive their fixed causal history. State is plain R memory by
+#' default or \pkg{Rfmalloc}-backed when `runtime` is supplied.
 #'
 #' The returned object is an environment, so [rllm_forward()] can advance its
 #' `n_past` by reference.
@@ -137,31 +101,48 @@ print.rllm_model <- function(x, ...) {
 #' @param n_ctx Maximum number of positions the cache can hold.
 #' @param runtime Optional [Rfmalloc::open_fmalloc()] runtime for the slabs.
 #'
-#' @return An environment of class `rllm_kv_cache` with fields `k`, `v`
-#'   (per-layer lists of raw vectors), `n_ctx`, and `n_past`.
+#' @return An environment of class `rllm_kv_cache` with per-layer `k`, `v` and
+#'   `conv` state, plus `n_ctx` and `n_past`.
 #' @seealso [rllm_forward()], [rllm_generate()]
 #' @export
 rllm_kv_cache <- function(model, n_ctx = 512L, runtime = NULL) {
     if (!inherits(model, "rllm_model")) {
         stop("model must be an rllm_model from rllm_gguf_model()")
     }
-    hp <- model$hparams
+    if (!identical(model$plan$output$op, "projection")) {
+        stop("this model produces embeddings and has no incremental decode state")
+    }
     n_ctx <- as.integer(n_ctx)
-    if (n_ctx < 1L) stop("n_ctx must be positive")
-    slab_bytes <- as.double(n_ctx) * (hp$n_embd / hp$n_head) * hp$n_head_kv * 4
+    if (length(n_ctx) != 1L || is.na(n_ctx) || n_ctx < 1L) {
+        stop("n_ctx must be positive")
+    }
 
-    new_slab <- function() {
+    new_slab <- function(bytes) {
+        if (bytes == 0) return(raw())
         if (is.null(runtime)) {
-            raw(slab_bytes)
+            raw(bytes)
         } else {
-            Rfmalloc::create_fmalloc_vector("raw", length = slab_bytes,
+            Rfmalloc::create_fmalloc_vector("raw", length = bytes,
                                             runtime = runtime,
                                             zero_initialize = TRUE)
         }
     }
+    states <- lapply(model$plan$layers, `[[`, "state")
+    k_bytes <- vapply(states, function(state) {
+        if (state$op == "kv") as.double(n_ctx) * state$width * 4 else 0
+    }, numeric(1))
+    conv_bytes <- vapply(states, function(state) {
+        if (state$op == "conv") as.double(state$width) * state$history * 4 else 0
+    }, numeric(1))
+    if (any(!is.finite(c(k_bytes, conv_bytes))) ||
+        any(c(k_bytes, conv_bytes) > .Machine$integer.max)) {
+        stop("requested model state is too large for an R raw vector")
+    }
     cache <- new.env(parent = emptyenv())
-    cache$k <- replicate(hp$n_layer, new_slab(), simplify = FALSE)
-    cache$v <- replicate(hp$n_layer, new_slab(), simplify = FALSE)
+    cache$k <- lapply(k_bytes, new_slab)
+    cache$v <- lapply(k_bytes, new_slab)
+    cache$conv <- lapply(conv_bytes, new_slab)
+    cache$plan <- model$plan
     cache$n_ctx <- n_ctx
     cache$n_past <- 0L
     class(cache) <- "rllm_kv_cache"
@@ -170,17 +151,25 @@ rllm_kv_cache <- function(model, n_ctx = 512L, runtime = NULL) {
 
 #' @export
 print.rllm_kv_cache <- function(x, ...) {
-    cat(sprintf("<rllm_kv_cache: %d/%d positions used, %d layers, %s slabs>\n",
-                x$n_past, x$n_ctx, length(x$k),
-                if (Rfmalloc::is_fmalloc_vector(x$k[[1L]])) "fmalloc" else "R"))
+    state <- c(x$k, x$conv)
+    state <- state[vapply(state, length, numeric(1)) > 0]
+    storage <- if (length(state) && Rfmalloc::is_fmalloc_vector(state[[1L]])) {
+        "fmalloc"
+    } else {
+        "R"
+    }
+    kinds <- vapply(x$plan$layers, function(layer) layer$state$op, character(1))
+    cat(sprintf("<rllm_kv_cache: %d/%d positions, %s, %s state>\n",
+                x$n_past, x$n_ctx, .rllm_plan_counts(kinds), storage))
     invisible(x)
 }
 
-#' Run a transformer forward pass and return the logits
+#' Lower a semantic model plan and return its logits
 #'
-#' Assembles the GGML compute graph for a llama-architecture forward pass
-#' (RMSNorm, RoPE, causal self-attention, SwiGLU feed-forward) over the
-#' model's memory-mapped weights and computes it on a chosen GGML backend.
+#' Lowers the model's inspectable [rllm_plan()] to a GGML graph over its
+#' memory-mapped weights and computes it on a chosen backend. The operator
+#' vocabulary includes attention, gated short convolution, dense gated
+#' products and sparse routed experts.
 #' Quantized weights are contracted natively in their encoded form - they are
 #' never decoded to double. The CPU backend borrows the mapped bytes directly.
 #' On its first use, the CUDA backend creates a model-owned context and uploads
@@ -208,6 +197,9 @@ rllm_forward <- function(model, tokens, cache = NULL,
     if (!inherits(model, "rllm_model")) {
         stop("model must be an rllm_model from rllm_gguf_model()")
     }
+    if (!identical(model$plan$output$op, "projection")) {
+        stop("this model produces embeddings; use rllm_embed()")
+    }
     tokens <- as.integer(tokens)
     if (length(tokens) < 1L || anyNA(tokens)) {
         stop("tokens must be a non-empty vector of 0-based token ids")
@@ -229,16 +221,84 @@ rllm_forward <- function(model, tokens, cache = NULL,
         }
     }
     if (is.null(cache)) {
-        return(.Call("RC_rllm_llama_forward", model$hparams, model$tensors,
-                     tokens, model$rope_mode, NULL, NULL, 0L, backend_code,
+        return(.Call("RC_rllm_plan_forward", model$plan, model$tensors,
+                     tokens, NULL, NULL, NULL, 0L, 0L, backend_code,
                      backend_context, PACKAGE = "Rllm"))
     }
     if (!inherits(cache, "rllm_kv_cache")) {
         stop("cache must be an rllm_kv_cache from rllm_kv_cache()")
     }
-    out <- .Call("RC_rllm_llama_forward", model$hparams, model$tensors,
-                 tokens, model$rope_mode, cache$k, cache$v, cache$n_past,
-                 backend_code, backend_context, PACKAGE = "Rllm")
+    if (!identical(cache$plan, model$plan)) {
+        stop("cache belongs to a different model plan")
+    }
+    out <- .Call("RC_rllm_plan_forward", model$plan, model$tensors,
+                 tokens, cache$k, cache$v, cache$conv, cache$n_ctx,
+                 cache$n_past, backend_code, backend_context, PACKAGE = "Rllm")
     cache$n_past <- cache$n_past + length(tokens)
+    out
+}
+
+#' Compute one pooled sequence embedding
+#'
+#' Lowers an embedding model's semantic plan over a complete token sequence.
+#' Bidirectional and symmetric-window attention are evaluated without a decode
+#' cache, then the plan's pooling and projection pipeline produces one vector.
+#' Quantized weights remain encoded in the mapped GGUF file.
+#'
+#' Tokenization is deliberately separate from model execution. Supply the
+#' model's 0-based token ids, including any BOS or EOS tokens required by its
+#' tokenizer.
+#'
+#' @param model An embedding `rllm_model` from [rllm_gguf_model()].
+#' @param tokens Integer vector of 0-based token ids.
+#' @param normalize Whether to return a unit-length vector.
+#' @param backend Compute backend. `"cpu"` uses mapped weights directly;
+#'   `"cuda"` requires a CUDA-enabled Rggml installation.
+#'
+#' @return A numeric vector whose length is `model$plan$output$dimension`.
+#' @export
+rllm_embed <- function(model, tokens, normalize = TRUE,
+                       backend = c("cpu", "cuda")) {
+    if (!inherits(model, "rllm_model")) {
+        stop("model must be an rllm_model from rllm_gguf_model()")
+    }
+    if (!identical(model$plan$output$op, "embedding")) {
+        stop("this model produces token logits; use rllm_forward()")
+    }
+    tokens <- as.integer(tokens)
+    if (length(tokens) < 1L || anyNA(tokens)) {
+        stop("tokens must be a non-empty vector of 0-based token ids")
+    }
+    if (!is.logical(normalize) || length(normalize) != 1L || is.na(normalize)) {
+        stop("normalize must be TRUE or FALSE")
+    }
+    backend <- match.arg(backend)
+    backend_code <- c(cpu = 0L, cuda = 3L)[[backend]]
+    backend_context <- NULL
+    if (backend == "cuda") {
+        if (!is.environment(model$.contexts)) {
+            stop("model has no backend-context environment")
+        }
+        backend_context <- model$.contexts$cuda
+        if (is.null(backend_context)) {
+            backend_context <- .Call(
+                "RC_rllm_cuda_model_context", model$tensors,
+                PACKAGE = "Rllm"
+            )
+            model$.contexts$cuda <- backend_context
+        }
+    }
+    out <- .Call(
+        "RC_rllm_plan_forward", model$plan, model$tensors, tokens,
+        NULL, NULL, NULL, 0L, 0L, backend_code, backend_context,
+        PACKAGE = "Rllm"
+    )[, 1L]
+    if (normalize) {
+        magnitude <- sqrt(sum(out * out))
+        if (!is.finite(magnitude) || magnitude == 0) {
+            stop("model produced an embedding with no finite magnitude")
+        }
+        out <- out / magnitude
+    }
     out
 }

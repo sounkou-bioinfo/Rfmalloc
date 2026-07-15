@@ -1,8 +1,8 @@
 /*
- * rllm_graph.c - a llama-architecture forward pass assembled from Rggml's
- * C-callable graph ops over borrowed GGUF weight spans. Quantized and float
- * weights point directly into the model's read-only mapping. The graph handles
- * a whole causal batch or appends to an optional KV cache.
+ * rllm_graph.c - lower a semantic model plan through Rggml's C-callable graph
+ * ops over borrowed GGUF weight spans. Quantized and float weights point
+ * directly into the model's read-only mapping. Generative plans may append to
+ * persistent state; embedding plans consume a complete sequence.
  *
  * CPU passes use a no_alloc weight context whose tensors point at R-owned
  * payloads. CUDA creates that context once per model, uploads the encoded
@@ -52,6 +52,66 @@ static double rllm_hparam(SEXP hparams, const char *name)
     if (v == R_NilValue) Rf_error("missing hyperparameter '%s'", name);
     return Rf_asReal(v);
 }
+
+static const char *rllm_string(SEXP list, const char *name)
+{
+    SEXP v = rllm_list_elt(list, name);
+    if (TYPEOF(v) != STRSXP || XLENGTH(v) != 1 ||
+        STRING_ELT(v, 0) == NA_STRING) {
+        Rf_error("plan field '%s' must be one string", name);
+    }
+    return CHAR(STRING_ELT(v, 0));
+}
+
+static const char *rllm_optional_string(SEXP list, const char *name)
+{
+    SEXP v = rllm_list_elt(list, name);
+    if (v == R_NilValue) return NULL;
+    if (TYPEOF(v) != STRSXP || XLENGTH(v) != 1 ||
+        STRING_ELT(v, 0) == NA_STRING) {
+        Rf_error("plan field '%s' must be NULL or one string", name);
+    }
+    return CHAR(STRING_ELT(v, 0));
+}
+
+static int rllm_integer(SEXP list, const char *name)
+{
+    SEXP v = rllm_list_elt(list, name);
+    int out = Rf_asInteger(v);
+    if (v == R_NilValue || out == NA_INTEGER) {
+        Rf_error("plan field '%s' must be one integer", name);
+    }
+    return out;
+}
+
+static double rllm_number(SEXP list, const char *name)
+{
+    SEXP v = rllm_list_elt(list, name);
+    double out = Rf_asReal(v);
+    if (v == R_NilValue || !R_FINITE(out)) {
+        Rf_error("plan field '%s' must be one finite number", name);
+    }
+    return out;
+}
+
+static int rllm_boolean(SEXP list, const char *name)
+{
+    SEXP v = rllm_list_elt(list, name);
+    if (TYPEOF(v) != LGLSXP || XLENGTH(v) != 1 ||
+        LOGICAL(v)[0] == NA_LOGICAL) {
+        Rf_error("plan field '%s' must be TRUE or FALSE", name);
+    }
+    return LOGICAL(v)[0];
+}
+
+struct rllm_upload;
+struct rllm_cuda_context;
+
+static struct ggml_tensor *rllm_named_weight(
+    struct ggml_context *wctx, SEXP tensors, const char *name,
+    Rggml_new_tensor_fun new_tensor, Rfmalloc_storage_data_fun storage_data,
+    struct rllm_upload *uploads, int *n_uploads, int max_uploads,
+    struct rllm_cuda_context *cuda_ctx);
 
 struct rllm_upload {
     struct ggml_tensor *tensor;
@@ -161,15 +221,17 @@ static struct ggml_tensor *rllm_weight(struct ggml_context *wctx, SEXP tensors,
     }
 
     int n_dims = (int) XLENGTH(dims_s);
-    if (n_dims < 1 || n_dims > 2) {
-        Rf_error("weight '%s': expected 1 or 2 dims, got %d", name, n_dims);
+    if (n_dims < 1 || n_dims > GGML_MAX_DIMS) {
+        Rf_error("weight '%s': expected 1 to %d dims, got %d",
+                 name, GGML_MAX_DIMS, n_dims);
     }
     for (int i = 0; i < n_dims; ++i) {
         if (INTEGER(dims_s)[i] == NA_INTEGER || INTEGER(dims_s)[i] <= 0) {
             Rf_error("weight '%s': dimensions must be positive", name);
         }
     }
-    int64_t ne[2] = { INTEGER(dims_s)[0], n_dims == 2 ? INTEGER(dims_s)[1] : 1 };
+    int64_t ne[GGML_MAX_DIMS] = { 1, 1, 1, 1 };
+    for (int i = 0; i < n_dims; ++i) ne[i] = INTEGER(dims_s)[i];
 
     const void *payload_data;
     size_t payload_bytes;
@@ -178,8 +240,15 @@ static struct ggml_tensor *rllm_weight(struct ggml_context *wctx, SEXP tensors,
     }
     Rggml_row_size_fun row_size = Rggml_row_size_ptr();
     const size_t one_row = row_size(type, ne[0]);
-    if (one_row == 0 || (uint64_t)ne[1] > SIZE_MAX / one_row ||
-        payload_bytes < one_row * (size_t)ne[1]) {
+    if (one_row == 0) Rf_error("weight '%s': invalid row size", name);
+    size_t required = one_row;
+    for (int i = 1; i < n_dims; ++i) {
+        if ((uint64_t)ne[i] > SIZE_MAX / required) {
+            Rf_error("weight '%s': payload size overflows size_t", name);
+        }
+        required *= (size_t)ne[i];
+    }
+    if (payload_bytes < required) {
         Rf_error("weight '%s': payload too short", name);
     }
 
@@ -187,21 +256,8 @@ static struct ggml_tensor *rllm_weight(struct ggml_context *wctx, SEXP tensors,
                                        uploads ? NULL : (void *)payload_data);
     if (!t) Rf_error("failed to wrap weight '%s'", name);
     rllm_add_upload(uploads, n_uploads, max_uploads, t, payload_data,
-                    one_row * (size_t)ne[1]);
+                    required);
     return t;
-}
-
-static struct ggml_tensor *rllm_layer_weight(struct ggml_context *wctx, SEXP tensors,
-                                             int il, const char *suffix,
-                                             Rggml_new_tensor_fun new_tensor,
-                                             Rfmalloc_storage_data_fun storage_data,
-                                             struct rllm_upload *uploads,
-                                             int *n_uploads, int max_uploads)
-{
-    char name[128];
-    snprintf(name, sizeof(name), "blk.%d.%s", il, suffix);
-    return rllm_weight(wctx, tensors, name, new_tensor, storage_data,
-                       uploads, n_uploads, max_uploads);
 }
 
 static struct ggml_tensor *rllm_cuda_weight(struct rllm_cuda_context *ctx,
@@ -219,12 +275,16 @@ static struct ggml_tensor *rllm_cuda_weight(struct rllm_cuda_context *ctx,
     return NULL;
 }
 
-static struct ggml_tensor *rllm_cuda_layer_weight(
-    struct rllm_cuda_context *ctx, SEXP tensors, int il, const char *suffix)
+static struct ggml_tensor *rllm_named_weight(
+    struct ggml_context *wctx, SEXP tensors, const char *name,
+    Rggml_new_tensor_fun new_tensor, Rfmalloc_storage_data_fun storage_data,
+    struct rllm_upload *uploads, int *n_uploads, int max_uploads,
+    struct rllm_cuda_context *cuda_ctx)
 {
-    char name[128];
-    snprintf(name, sizeof(name), "blk.%d.%s", il, suffix);
-    return rllm_cuda_weight(ctx, tensors, name);
+    return cuda_ctx
+        ? rllm_cuda_weight(cuda_ctx, tensors, name)
+        : rllm_weight(wctx, tensors, name, new_tensor, storage_data,
+                      uploads, n_uploads, max_uploads);
 }
 
 /* Upload the immutable, codec-native model weights once. The external
@@ -266,7 +326,8 @@ SEXP RC_rllm_cuda_model_context(SEXP tensors)
 
     ctx->backend = cuda_init(0);
     if (!ctx->backend) {
-        Rf_error("CUDA backend unavailable: install Rggml with --with-cuda and use a visible NVIDIA device");
+        Rf_error("CUDA backend unavailable: install Rggml with --with-cuda "
+                 "and use a visible NVIDIA device");
     }
     ctx->wctx = ctx_create((size_t)(ctx->n_weights + 8) * t_over() + 4096,
                            /*no_alloc=*/1);
@@ -294,105 +355,127 @@ SEXP RC_rllm_cuda_model_context(SEXP tensors)
     return ext;
 }
 
-/*
- * RC_rllm_llama_forward(hparams, tensors, tokens, rope_mode, kcache, vcache,
- *                       n_past, backend, backend_context)
- *
- * hparams: named list with n_layer, n_embd, n_head, n_head_kv, n_ff,
- *          rms_eps, rope_base, rope_dims, n_vocab (all numeric).
- * tensors: named list of weights (GGUF names) as described above; output
- *          projection falls back to "token_embd.weight" when there is no
- *          "output.weight" (tied embeddings).
- * tokens:  integer vector of 0-based token ids.
- * rope_mode: 0 (GGML_ROPE_TYPE_NORMAL, llama) or 2 (NEOX).
- * kcache/vcache: NULL for a cache-less whole-batch pass, or per-layer lists
- *          of raw vectors (plain or fmalloc-backed) holding f32 cache slabs,
- *          each of n_ctx * n_embd_gqa floats. Classic llama.cpp layout: K is
- *          appended flat (position-major, [hd x head x pos]); V is stored
- *          transposed ([pos x dim], row stride n_ctx) so the attention's
- *          V^T x KQ product reads it without a runtime transpose. The graph
- *          writes rows n_past..n_past+S and attends over rows 0..n_past+S.
- * n_past:  number of positions already in the cache (0 without a cache).
- * backend: 0 for CPU, 3 for CUDA. CUDA owns both contexts' buffers and all
- *          movement goes through Rggml's backend-neutral transfer API.
- * backend_context: model-owned CUDA context, NULL for CPU.
- *
- * Returns the logits as a double matrix, dim c(n_vocab, n_tokens).
- */
-SEXP RC_rllm_llama_forward(SEXP hparams, SEXP tensors, SEXP tokens_sexp,
-                           SEXP rope_mode_sexp, SEXP kcache, SEXP vcache,
-                           SEXP n_past_sexp, SEXP backend_sexp,
-                           SEXP backend_context)
+/* Lower a validated semantic plan to one GGML graph. The native code knows
+ * operator tags, not model-family names: attention, causal short convolution,
+ * gated feed-forward products and routed experts are reusable vocabulary. */
+SEXP RC_rllm_plan_forward(SEXP plan, SEXP tensors, SEXP tokens_sexp,
+                          SEXP kcache, SEXP vcache, SEXP convcache,
+                          SEXP n_ctx_sexp, SEXP n_past_sexp,
+                          SEXP backend_sexp, SEXP backend_context)
 {
-    if (TYPEOF(hparams) != VECSXP || TYPEOF(tensors) != VECSXP) {
-        Rf_error("hparams and tensors must be named lists");
+    if (TYPEOF(plan) != VECSXP || TYPEOF(tensors) != VECSXP) {
+        Rf_error("plan and tensors must be named lists");
     }
     if (TYPEOF(tokens_sexp) != INTSXP || XLENGTH(tokens_sexp) < 1 ||
         XLENGTH(tokens_sexp) > INT_MAX) {
         Rf_error("tokens must be a non-empty integer vector of 0-based ids");
     }
 
-    const int n_layer   = (int) rllm_hparam(hparams, "n_layer");
-    const int n_embd    = (int) rllm_hparam(hparams, "n_embd");
-    const int n_head    = (int) rllm_hparam(hparams, "n_head");
-    const int n_head_kv = (int) rllm_hparam(hparams, "n_head_kv");
-    const int n_ff      = (int) rllm_hparam(hparams, "n_ff");
-    const int n_vocab   = (int) rllm_hparam(hparams, "n_vocab");
-    const double rms_eps   = rllm_hparam(hparams, "rms_eps");
-    const double rope_base = rllm_hparam(hparams, "rope_base");
-    const int rope_dims    = (int) rllm_hparam(hparams, "rope_dims");
-    const int rope_mode    = Rf_asInteger(rope_mode_sexp);
+    SEXP hparams = rllm_list_elt(plan, "symbols");
+    SEXP layers = rllm_list_elt(plan, "layers");
+    SEXP input_spec = rllm_list_elt(plan, "input");
+    SEXP output_spec = rllm_list_elt(plan, "output");
+    if (TYPEOF(hparams) != VECSXP || TYPEOF(layers) != VECSXP ||
+        TYPEOF(input_spec) != VECSXP || TYPEOF(output_spec) != VECSXP) {
+        Rf_error("plan must contain symbols, input, layers and output lists");
+    }
+    const char *input_op = rllm_string(input_spec, "op");
+    if (strcmp(input_op, "embedding")) {
+        Rf_error("unknown input operator '%s'", input_op);
+    }
+    const int n_layer = (int) rllm_hparam(hparams, "n_layer");
+    const int n_embd  = (int) rllm_hparam(hparams, "n_embd");
+    const int n_head  = (int) rllm_hparam(hparams, "n_head");
+    const int n_ff    = (int) rllm_hparam(hparams, "n_ff");
+    const int n_vocab = (int) rllm_hparam(hparams, "n_vocab");
+    const double rms_eps = rllm_hparam(hparams, "rms_eps");
     const int backend_code = Rf_asInteger(backend_sexp);
     const int use_device   = backend_code == 3;
+    const int S = (int) XLENGTH(tokens_sexp);
 
     if (backend_code != 0 && backend_code != 3) {
         Rf_error("backend must be 0 (cpu) or 3 (cuda)");
     }
-
-    if (n_layer < 1 || n_embd < 1 || n_head < 1 || n_head_kv < 1 ||
-        n_ff < 1 || n_vocab < 1) {
-        Rf_error("invalid hyperparameters");
+    if (n_layer < 1 || n_embd < 1 || n_head < 1 || n_ff < 1 ||
+        n_vocab < 1 || XLENGTH(layers) != n_layer || rms_eps <= 0) {
+        Rf_error("invalid plan symbols or layer count");
     }
-    if (n_embd % n_head != 0 || n_head % n_head_kv != 0) {
-        Rf_error("n_embd must divide by n_head, and n_head by n_head_kv");
-    }
-    const int head_dim   = n_embd / n_head;
-    const int n_embd_gqa = head_dim * n_head_kv;
-    const int S          = (int) XLENGTH(tokens_sexp);
 
-    /* -- KV cache arguments -------------------------------------------------- */
+    int has_shortconv = 0;
+    int max_ff = n_ff;
+    for (int il = 0; il < n_layer; ++il) {
+        SEXP layer = VECTOR_ELT(layers, il);
+        SEXP op = rllm_list_elt(layer, "operator");
+        SEXP ffn = rllm_list_elt(layer, "feed_forward");
+        const char *op_name = rllm_string(op, "op");
+        const char *ffn_name = rllm_string(ffn, "op");
+        if (!strcmp(op_name, "shortconv")) has_shortconv = 1;
+        else if (strcmp(op_name, "attention"))
+            Rf_error("layer %d has unknown operator '%s'", il, op_name);
+        if (strcmp(ffn_name, "swiglu") && strcmp(ffn_name, "geglu") &&
+            strcmp(ffn_name, "moe_swiglu"))
+            Rf_error("layer %d has unknown feed-forward operator '%s'", il, ffn_name);
+        int width = rllm_integer(ffn, "width");
+        if (width < 1) Rf_error("layer %d has invalid feed-forward width", il);
+        if (width > max_ff) max_ff = width;
+    }
+    if (use_device && has_shortconv) {
+        Rf_error("CUDA lowering for short-convolution state is not implemented");
+    }
+
+    /* -- plan-shaped persistent state -------------------------------------- */
     const int use_cache = kcache != R_NilValue;
+    const int n_ctx = Rf_asInteger(n_ctx_sexp);
     const int n_past    = Rf_asInteger(n_past_sexp);
-    int64_t n_ctx = 0;
-    if (n_past == NA_INTEGER || n_past < 0) {
-        Rf_error("n_past must be a non-negative integer");
+    if (n_ctx == NA_INTEGER || n_ctx < 0 || n_past == NA_INTEGER || n_past < 0) {
+        Rf_error("n_ctx and n_past must be non-negative integers");
     }
     if (use_cache) {
         if (TYPEOF(kcache) != VECSXP || TYPEOF(vcache) != VECSXP ||
-            XLENGTH(kcache) != n_layer || XLENGTH(vcache) != n_layer) {
-            Rf_error("kcache/vcache must be lists of one raw vector per layer");
+            TYPEOF(convcache) != VECSXP || XLENGTH(kcache) != n_layer ||
+            XLENGTH(vcache) != n_layer || XLENGTH(convcache) != n_layer) {
+            Rf_error("k, v and conv state must be per-layer lists");
         }
-        R_xlen_t slab = XLENGTH(VECTOR_ELT(kcache, 0));
-        R_xlen_t row_bytes = (R_xlen_t)n_embd_gqa * (R_xlen_t)sizeof(float);
-        if (slab % row_bytes != 0) {
-            Rf_error("KV cache byte length is not a whole number of rows");
-        }
-        n_ctx = slab / row_bytes;
         if (n_ctx < 1 || (int64_t) n_past + S > n_ctx) {
             Rf_error("KV cache too small: n_past %d + %d tokens > n_ctx %lld",
                      n_past, S, (long long) n_ctx);
         }
         for (int il = 0; il < n_layer; il++) {
+            SEXP state = rllm_list_elt(VECTOR_ELT(layers, il), "state");
+            const char *state_op = rllm_string(state, "op");
+            R_xlen_t klen = XLENGTH(VECTOR_ELT(kcache, il));
+            R_xlen_t vlen = XLENGTH(VECTOR_ELT(vcache, il));
+            R_xlen_t clen = XLENGTH(VECTOR_ELT(convcache, il));
             if (TYPEOF(VECTOR_ELT(kcache, il)) != RAWSXP ||
                 TYPEOF(VECTOR_ELT(vcache, il)) != RAWSXP ||
-                XLENGTH(VECTOR_ELT(kcache, il)) != slab ||
-                XLENGTH(VECTOR_ELT(vcache, il)) != slab) {
-                Rf_error("KV cache layer %d: expected raw vectors of %lld bytes",
-                         il, (long long) slab);
+                TYPEOF(VECTOR_ELT(convcache, il)) != RAWSXP) {
+                Rf_error("state layer %d must contain raw vectors", il);
+            }
+            if (!strcmp(state_op, "kv")) {
+                int width = rllm_integer(state, "width");
+                double bytes = (double)n_ctx * width * sizeof(float);
+                if (bytes > R_XLEN_T_MAX || klen != (R_xlen_t)bytes ||
+                    vlen != (R_xlen_t)bytes || clen != 0) {
+                    Rf_error("KV state layer %d has the wrong extent", il);
+                }
+            } else if (!strcmp(state_op, "conv")) {
+                int width = rllm_integer(state, "width");
+                int history = rllm_integer(state, "history");
+                double bytes = (double)width * history * sizeof(float);
+                if (bytes > R_XLEN_T_MAX || clen != (R_xlen_t)bytes ||
+                    klen != 0 || vlen != 0) {
+                    Rf_error("convolution state layer %d has the wrong extent", il);
+                }
+            } else if (!strcmp(state_op, "none")) {
+                if (klen != 0 || vlen != 0 || clen != 0) {
+                    Rf_error("stateless layer %d has non-empty state", il);
+                }
+            } else {
+                Rf_error("layer %d has unknown state operator '%s'", il, state_op);
             }
         }
-    } else if (n_past != 0) {
-        Rf_error("n_past must be 0 without a KV cache");
+    } else if (n_ctx != 0 || n_past != 0) {
+        Rf_error("n_ctx and n_past must be 0 without persistent state");
     }
     const int64_t n_kv = n_past + S;   /* positions attended over */
 
@@ -414,14 +497,22 @@ SEXP RC_rllm_llama_forward(SEXP hparams, SEXP tensors, SEXP tokens_sexp,
     Rggml_backend_tensor_set_fun tensor_set = Rggml_backend_tensor_set_ptr();
     Rggml_backend_tensor_get_fun tensor_get = Rggml_backend_tensor_get_ptr();
     Rggml_mul_mat_fun            mul_mat    = Rggml_mul_mat_ptr();
+    Rggml_mul_mat_id_fun         mul_mat_id = Rggml_mul_mat_id_ptr();
     Rggml_get_rows_fun           get_rows   = Rggml_get_rows_ptr();
     Rggml_rms_norm_fun           rms_norm   = Rggml_rms_norm_ptr();
     Rggml_mul_fun                mul        = Rggml_mul_ptr();
     Rggml_add_fun                add        = Rggml_add_ptr();
+    Rggml_div_fun                divide     = Rggml_div_ptr();
     Rggml_silu_fun               silu       = Rggml_silu_ptr();
+    Rggml_geglu_fun              geglu      = Rggml_geglu_ptr();
+    Rggml_sigmoid_fun            sigmoid    = Rggml_sigmoid_ptr();
     Rggml_scale_fun              scale      = Rggml_scale_ptr();
-    Rggml_soft_max_fun           soft_max   = Rggml_soft_max_ptr();
-    Rggml_diag_mask_inf_fun      diag_mask  = Rggml_diag_mask_inf_ptr();
+    Rggml_sum_rows_fun           sum_rows   = Rggml_sum_rows_ptr();
+    Rggml_clamp_fun              clamp      = Rggml_clamp_ptr();
+    Rggml_argsort_top_k_fun      top_k      = Rggml_argsort_top_k_ptr();
+    Rggml_concat_fun             concat     = Rggml_concat_ptr();
+    Rggml_ssm_conv_fun           ssm_conv   = Rggml_ssm_conv_ptr();
+    Rggml_soft_max_ext_fun       soft_max_ext = Rggml_soft_max_ext_ptr();
     Rggml_rope_fun               rope       = Rggml_rope_ptr();
     Rggml_reshape_2d_fun         reshape_2d = Rggml_reshape_2d_ptr();
     Rggml_reshape_3d_fun         reshape_3d = Rggml_reshape_3d_ptr();
@@ -441,7 +532,11 @@ SEXP RC_rllm_llama_forward(SEXP hparams, SEXP tensors, SEXP tokens_sexp,
 
     /* CPU tensors borrow the mapped GGUF bytes directly. CUDA tensors already
      * occupy the model-owned context created on the first device call. */
-    const int n_weight_slots = 2 + 2 + n_layer * (9 + 2);
+    if (XLENGTH(tensors) > INT_MAX - 2 * n_layer - 16) {
+        if (!use_device) bfree(backend);
+        Rf_error("model has too many tensors");
+    }
+    const int n_weight_slots = (int)XLENGTH(tensors) + 2 * n_layer + 16;
     const int max_uploads = n_weight_slots + 8;
     int n_uploads = 0;
     int n_downloads = 0;
@@ -460,13 +555,47 @@ SEXP RC_rllm_llama_forward(SEXP hparams, SEXP tensors, SEXP tokens_sexp,
     }
 
     /* -- compute context: structured size estimate, 2x slack ---------------- */
-    const size_t graph_sz = (size_t) n_layer * 40 + 16;
+    const char *output_op = rllm_string(output_spec, "op");
+    int output_rows;
+    int output_cols;
+    if (!strcmp(output_op, "projection")) {
+        output_rows = n_vocab;
+        output_cols = S;
+    } else if (!strcmp(output_op, "embedding")) {
+        const char *pooling = rllm_string(output_spec, "pooling");
+        output_rows = rllm_integer(output_spec, "dimension");
+        if (!strcmp(pooling, "mean")) output_cols = 1;
+        else if (!strcmp(pooling, "none")) output_cols = S;
+        else {
+            if (!use_device) {
+                ctx_free(wctx);
+                bfree(backend);
+            }
+            Rf_error("unknown embedding pooling operator '%s'", pooling);
+        }
+        if (output_rows < 1) {
+            if (!use_device) {
+                ctx_free(wctx);
+                bfree(backend);
+            }
+            Rf_error("embedding output dimension must be positive");
+        }
+    } else {
+        if (!use_device) {
+            ctx_free(wctx);
+            bfree(backend);
+        }
+        Rf_error("unknown output operator '%s'", output_op);
+    }
+
+    const size_t graph_sz = (size_t) n_layer * 128 + 96;
     double est =
-        (double) n_layer * (4.0 * S * (16.0 * n_embd + 6.0 * n_embd_gqa + 4.0 * n_ff)
+        (double) n_layer * (4.0 * S * (28.0 * n_embd + 16.0 * max_ff)
                             + 4.0 * 3.5 * (double) n_head * S * (double) n_kv)
-        + 4.0 * S * 6.0 * n_embd + 4.0 * 2.5 * (double) n_vocab * S;
+        + 4.0 * S * 6.0 * n_embd
+        + 4.0 * 2.5 * (double) output_rows * output_cols;
     size_t cmem = (size_t)(2.0 * est)
-        + ((size_t) n_layer * 40 + 32) * t_over()
+        + ((size_t) n_layer * 128 + 96) * t_over()
         + g_over(graph_sz) + (1u << 20);
     struct ggml_context *cctx = ctx_create(cmem, /*no_alloc=*/use_device ? 1 : 0);
     if (!cctx) {
@@ -512,21 +641,18 @@ SEXP RC_rllm_llama_forward(SEXP hparams, SEXP tensors, SEXP tokens_sexp,
     }
 
     /* -- weights ------------------------------------------------------------ */
-    struct ggml_tensor *tok_embd = use_device
-        ? rllm_cuda_weight(cuda_ctx, tensors, "token_embd.weight")
-        : rllm_weight(wctx, tensors, "token_embd.weight", new_tensor,
-                      storage_data, NULL, &n_uploads, max_uploads);
-    struct ggml_tensor *out_norm = use_device
-        ? rllm_cuda_weight(cuda_ctx, tensors, "output_norm.weight")
-        : rllm_weight(wctx, tensors, "output_norm.weight", new_tensor,
-                      storage_data, NULL, &n_uploads, max_uploads);
-    struct ggml_tensor *output_w =
-        rllm_list_elt(tensors, "output.weight") != R_NilValue
-            ? (use_device
-                ? rllm_cuda_weight(cuda_ctx, tensors, "output.weight")
-                : rllm_weight(wctx, tensors, "output.weight", new_tensor,
-                              storage_data, NULL, &n_uploads, max_uploads))
-            : tok_embd;   /* tied embeddings */
+    struct ggml_tensor *tok_embd = rllm_named_weight(
+        wctx, tensors, rllm_string(input_spec, "weight"), new_tensor,
+        storage_data, NULL, &n_uploads, max_uploads, cuda_ctx);
+    struct ggml_tensor *out_norm = rllm_named_weight(
+        wctx, tensors, rllm_string(output_spec, "norm"), new_tensor,
+        storage_data, NULL, &n_uploads, max_uploads, cuda_ctx);
+    struct ggml_tensor *output_w = NULL;
+    if (!strcmp(output_op, "projection")) {
+        output_w = rllm_named_weight(
+            wctx, tensors, rllm_string(output_spec, "weight"), new_tensor,
+            storage_data, NULL, &n_uploads, max_uploads, cuda_ctx);
+    }
 
     /* -- the graph ----------------------------------------------------------- */
     /* Created before the layer loop: with a cache, the per-layer cpy nodes
@@ -538,167 +664,420 @@ SEXP RC_rllm_llama_forward(SEXP hparams, SEXP tensors, SEXP tokens_sexp,
 
     struct ggml_tensor *inpL = get_rows(cctx, tok_embd, tok);   /* [n_embd, S] */
     RLLM_CHECK(inpL);
+    const double input_scale = rllm_number(input_spec, "scale");
+    if (input_scale != 1.0) inpL = scale(cctx, inpL, input_scale);
+    RLLM_CHECK(inpL);
 
-#define RLLM_LAYER_WEIGHT(suffix) (use_device ? \
-    rllm_cuda_layer_weight(cuda_ctx, tensors, il, suffix) : \
-    rllm_layer_weight(wctx, tensors, il, suffix, new_tensor, storage_data, \
-                      NULL, &n_uploads, max_uploads))
+#define RLLM_WEIGHT(spec, field) rllm_named_weight( \
+    wctx, tensors, rllm_string((spec), (field)), new_tensor, storage_data, \
+    NULL, &n_uploads, max_uploads, cuda_ctx)
 
     for (int il = 0; il < n_layer; il++) {
-        struct ggml_tensor *attn_norm = RLLM_LAYER_WEIGHT("attn_norm.weight");
-        struct ggml_tensor *wq        = RLLM_LAYER_WEIGHT("attn_q.weight");
-        struct ggml_tensor *wk        = RLLM_LAYER_WEIGHT("attn_k.weight");
-        struct ggml_tensor *wv        = RLLM_LAYER_WEIGHT("attn_v.weight");
-        struct ggml_tensor *wo        = RLLM_LAYER_WEIGHT("attn_output.weight");
-        struct ggml_tensor *ffn_norm  = RLLM_LAYER_WEIGHT("ffn_norm.weight");
-        struct ggml_tensor *w_gate    = RLLM_LAYER_WEIGHT("ffn_gate.weight");
-        struct ggml_tensor *w_up      = RLLM_LAYER_WEIGHT("ffn_up.weight");
-        struct ggml_tensor *w_down    = RLLM_LAYER_WEIGHT("ffn_down.weight");
+        SEXP layer = VECTOR_ELT(layers, il);
+        SEXP op = rllm_list_elt(layer, "operator");
+        SEXP ffn = rllm_list_elt(layer, "feed_forward");
+        const char *op_name = rllm_string(op, "op");
+        const char *ffn_name = rllm_string(ffn, "op");
 
-        /* attention */
-        struct ggml_tensor *cur = mul(cctx, rms_norm(cctx, inpL, rms_eps), attn_norm);
+        struct ggml_tensor *operator_norm = rllm_named_weight(
+            wctx, tensors, rllm_string(layer, "operator_norm"), new_tensor,
+            storage_data, NULL, &n_uploads, max_uploads, cuda_ctx);
+        struct ggml_tensor *cur = mul(
+            cctx, rms_norm(cctx, inpL, rms_eps), operator_norm);
         RLLM_CHECK(cur);
 
-        struct ggml_tensor *Q = mul_mat(cctx, wq, cur);   /* [n_embd, S]     */
-        struct ggml_tensor *K = mul_mat(cctx, wk, cur);   /* [n_embd_gqa, S] */
-        struct ggml_tensor *V = mul_mat(cctx, wv, cur);   /* [n_embd_gqa, S] */
-        RLLM_CHECK(Q && K && V);
+        struct ggml_tensor *operator_out = NULL;
+        if (!strcmp(op_name, "attention")) {
+            const int layer_n_head = rllm_integer(op, "n_head");
+            const int layer_n_head_kv = rllm_integer(op, "n_head_kv");
+            const int head_dim = rllm_integer(op, "head_dim");
+            const int n_embd_gqa = head_dim * layer_n_head_kv;
+            SEXP rope_spec = rllm_list_elt(op, "rope");
+            const int rope_dims = rllm_integer(rope_spec, "dims");
+            const int rope_mode = rllm_integer(rope_spec, "mode");
+            const double rope_base = rllm_number(rope_spec, "base");
+            SEXP scale_spec = rllm_list_elt(op, "scale");
+            const char *scale_at = rllm_string(scale_spec, "at");
+            const double attention_scale = rllm_number(scale_spec, "value");
+            SEXP mask_spec = rllm_list_elt(op, "mask");
+            const char *mask_type = rllm_string(mask_spec, "type");
+            if (layer_n_head < 1 || layer_n_head_kv < 1 || head_dim < 1 ||
+                layer_n_head * head_dim != n_embd ||
+                layer_n_head % layer_n_head_kv != 0 || rope_dims > head_dim) {
+                RLLM_FAIL("layer %d has inconsistent attention dimensions", il);
+            }
+            if (use_cache && strcmp(mask_type, "causal")) {
+                RLLM_FAIL("layer %d uses %s attention, which cannot use incremental state",
+                          il, mask_type);
+            }
 
-        Q = rope(cctx, reshape_3d(cctx, Q, head_dim, n_head, S), pos,
-                 rope_dims, rope_mode, rope_base);
-        K = rope(cctx, reshape_3d(cctx, K, head_dim, n_head_kv, S), pos,
-                 rope_dims, rope_mode, rope_base);
-        RLLM_CHECK(Q && K);
+            struct ggml_tensor *wq = RLLM_WEIGHT(op, "query");
+            struct ggml_tensor *wk = RLLM_WEIGHT(op, "key");
+            struct ggml_tensor *wv = RLLM_WEIGHT(op, "value");
+            struct ggml_tensor *wo = RLLM_WEIGHT(op, "output");
+            struct ggml_tensor *Q = mul_mat(cctx, wq, cur);
+            struct ggml_tensor *K = mul_mat(cctx, wk, cur);
+            struct ggml_tensor *V = mul_mat(cctx, wv, cur);
+            RLLM_CHECK(Q && K && V);
 
-        struct ggml_tensor *Qp = permute(cctx, Q, 0, 2, 1, 3);  /* [hd, S, n_head] */
-        RLLM_CHECK(Qp);
+            Q = reshape_3d(cctx, Q, head_dim, layer_n_head, S);
+            K = reshape_3d(cctx, K, head_dim, layer_n_head_kv, S);
+            const char *qnorm_name = rllm_optional_string(op, "query_norm");
+            const char *knorm_name = rllm_optional_string(op, "key_norm");
+            if (qnorm_name) {
+                struct ggml_tensor *qnorm = rllm_named_weight(
+                    wctx, tensors, qnorm_name, new_tensor, storage_data,
+                    NULL, &n_uploads, max_uploads, cuda_ctx);
+                Q = mul(cctx, rms_norm(cctx, Q, rms_eps), qnorm);
+            }
+            if (knorm_name) {
+                struct ggml_tensor *knorm = rllm_named_weight(
+                    wctx, tensors, knorm_name, new_tensor, storage_data,
+                    NULL, &n_uploads, max_uploads, cuda_ctx);
+                K = mul(cctx, rms_norm(cctx, K, rms_eps), knorm);
+            }
+            Q = rope(cctx, Q, pos, rope_dims, rope_mode, rope_base);
+            K = rope(cctx, K, pos, rope_dims, rope_mode, rope_base);
+            if (!strcmp(scale_at, "query")) {
+                Q = scale(cctx, Q, attention_scale);
+            } else if (strcmp(scale_at, "logits")) {
+                RLLM_FAIL("layer %d has unknown attention scale position '%s'",
+                          il, scale_at);
+            }
+            RLLM_CHECK(Q && K);
 
-        struct ggml_tensor *Kall, *Vall;   /* what attention reads */
-        if (use_cache) {
-            /* CPU borrows the host slabs. CUDA puts transient mirrors in the
-             * compute context, separate from the persistent weights. K has the
-             * same position-major layout on host and device. The CPU-friendly
-             * host V slab is transposed, but the CUDA append kernel only honors
-             * a contiguous destination, so its mirror is position-major and is
-             * made contiguous in the attention layout after the append. */
-            int64_t ne_slab[1] = { n_ctx * n_embd_gqa };
-            void *kraw = RAW(VECTOR_ELT(kcache, il));
-            void *vraw = RAW(VECTOR_ELT(vcache, il));
-            struct ggml_context *cache_ctx = use_device ? cctx : wctx;
-            struct ggml_tensor *kc = new_tensor(cache_ctx, GGML_TYPE_F32, 1, ne_slab,
-                                                use_device ? NULL : kraw);
-            struct ggml_tensor *vc = new_tensor(cache_ctx, GGML_TYPE_F32, 1, ne_slab,
-                                                use_device ? NULL : vraw);
-            RLLM_CHECK(kc && vc);
-            if (use_device) {
-                const size_t prefix_elems =
-                    (size_t)n_past * (size_t)n_embd_gqa;
-                if (prefix_elems > 0) {
-                    float *vprefix = (float *)R_alloc(prefix_elems, fsz);
-                    const float *vhost = (const float *)vraw;
-                    for (int64_t p = 0; p < n_past; p++) {
-                        for (int64_t d = 0; d < n_embd_gqa; d++) {
-                            vprefix[p * n_embd_gqa + d] =
-                                vhost[p + d * n_ctx];
+            struct ggml_tensor *Qp = permute(cctx, Q, 0, 2, 1, 3);
+            struct ggml_tensor *Kall = NULL;
+            struct ggml_tensor *Vall = NULL;
+            RLLM_CHECK(Qp);
+            if (use_cache) {
+                int64_t ne_slab[1] = { (int64_t)n_ctx * n_embd_gqa };
+                void *kraw = RAW(VECTOR_ELT(kcache, il));
+                void *vraw = RAW(VECTOR_ELT(vcache, il));
+                struct ggml_context *cache_ctx = use_device ? cctx : wctx;
+                struct ggml_tensor *kc = new_tensor(
+                    cache_ctx, GGML_TYPE_F32, 1, ne_slab,
+                    use_device ? NULL : kraw);
+                struct ggml_tensor *vc = new_tensor(
+                    cache_ctx, GGML_TYPE_F32, 1, ne_slab,
+                    use_device ? NULL : vraw);
+                RLLM_CHECK(kc && vc);
+                if (use_device) {
+                    const size_t prefix_elems =
+                        (size_t)n_past * (size_t)n_embd_gqa;
+                    if (prefix_elems > 0) {
+                        float *vprefix = (float *)R_alloc(prefix_elems, fsz);
+                        const float *vhost = (const float *)vraw;
+                        for (int64_t p = 0; p < n_past; p++) {
+                            for (int64_t d = 0; d < n_embd_gqa; d++) {
+                                vprefix[p * n_embd_gqa + d] =
+                                    vhost[p + d * n_ctx];
+                            }
                         }
+                        rllm_add_upload(uploads, &n_uploads, max_uploads, kc,
+                                        kraw, prefix_elems * fsz);
+                        rllm_add_upload(uploads, &n_uploads, max_uploads, vc,
+                                        vprefix, prefix_elems * fsz);
                     }
-                    rllm_add_upload(uploads, &n_uploads, max_uploads, kc,
-                                    kraw, prefix_elems * fsz);
-                    rllm_add_upload(uploads, &n_uploads, max_uploads, vc,
-                                    vprefix, prefix_elems * fsz);
+                }
+
+                struct ggml_tensor *k_dst = view_1d(
+                    cctx, kc, (int64_t)S * n_embd_gqa,
+                    (size_t)n_past * n_embd_gqa * fsz);
+                struct ggml_tensor *v_dst = use_device
+                    ? view_1d(cctx, vc, (int64_t)S * n_embd_gqa,
+                              (size_t)n_past * n_embd_gqa * fsz)
+                    : view_2d(cctx, vc, S, n_embd_gqa,
+                              (size_t)n_ctx * fsz, (size_t)n_past * fsz);
+                RLLM_CHECK(k_dst && v_dst);
+                expand(gf, cpy(cctx, K, k_dst));
+                expand(gf, cpy(cctx,
+                    use_device ? V : transpose(
+                        cctx, reshape_2d(cctx, V, n_embd_gqa, S)), v_dst));
+
+                if (use_device) {
+                    const size_t block_elems =
+                        (size_t)S * (size_t)n_embd_gqa;
+                    const size_t block_offset =
+                        (size_t)n_past * (size_t)n_embd_gqa * fsz;
+                    float *vblock = (float *)R_alloc(block_elems, fsz);
+                    downloads[n_downloads++] = (struct rllm_download){
+                        kc, (float *)kraw + (size_t)n_past * n_embd_gqa,
+                        block_elems * fsz, block_offset, NULL, 0, 0, 0, 0
+                    };
+                    downloads[n_downloads++] = (struct rllm_download){
+                        vc, vblock, block_elems * fsz, block_offset,
+                        (float *)vraw, n_ctx, n_past, S, n_embd_gqa
+                    };
+                }
+
+                Kall = view_3d(cctx, kc, head_dim, n_kv, layer_n_head_kv,
+                               (size_t)n_embd_gqa * fsz,
+                               (size_t)head_dim * fsz, 0);
+                if (use_device) {
+                    struct ggml_tensor *vseq = view_3d(
+                        cctx, vc, head_dim, layer_n_head_kv, n_kv,
+                        (size_t)head_dim * fsz,
+                        (size_t)n_embd_gqa * fsz, 0);
+                    Vall = cont(cctx, permute(cctx, vseq, 1, 2, 0, 3));
+                } else {
+                    Vall = view_3d(cctx, vc, n_kv, head_dim, layer_n_head_kv,
+                                   (size_t)n_ctx * fsz,
+                                   (size_t)n_ctx * head_dim * fsz, 0);
+                }
+                RLLM_CHECK(Kall && Vall);
+            } else {
+                Kall = permute(cctx, K, 0, 2, 1, 3);
+                Vall = cont(cctx, permute(
+                    cctx, reshape_3d(cctx, V, head_dim, layer_n_head_kv, S),
+                    1, 2, 0, 3));
+                RLLM_CHECK(Kall && Vall);
+            }
+
+            struct ggml_tensor *KQ = mul_mat(cctx, Kall, Qp);
+            int window = 0;
+            if (!strcmp(mask_type, "symmetric_window")) {
+                window = rllm_integer(mask_spec, "window");
+                if (window < 2) {
+                    RLLM_FAIL("layer %d has invalid symmetric attention window", il);
+                }
+            } else if (strcmp(mask_type, "causal") &&
+                       strcmp(mask_type, "bidirectional")) {
+                RLLM_FAIL("layer %d has unknown attention mask '%s'", il,
+                          mask_type);
+            }
+            int64_t ne_mask[2] = { n_kv, S };
+            struct ggml_tensor *mask = new_tensor(
+                cctx, GGML_TYPE_F32, 2, ne_mask, NULL);
+            RLLM_CHECK(mask);
+            float *mp = use_device
+                ? (float *)R_alloc((size_t)n_kv * S, sizeof(*mp))
+                : (float *)tdata(mask);
+            const int half_window = window / 2;
+            for (int q = 0; q < S; q++) {
+                const int64_t qpos = (int64_t)n_past + q;
+                for (int64_t k = 0; k < n_kv; k++) {
+                    int masked = 0;
+                    if (!strcmp(mask_type, "causal")) {
+                        masked = k > qpos;
+                    } else if (!strcmp(mask_type, "symmetric_window")) {
+                        const int64_t d = qpos - k;
+                        masked = d < -half_window || d > half_window;
+                    }
+                    mp[k + (int64_t)q * n_kv] = masked ? -INFINITY : 0.0f;
                 }
             }
-
-            /* Append K at position n_past. CPU writes V into its transposed
-             * host slab. CUDA writes a contiguous position-major V block. */
-            struct ggml_tensor *k_dst =
-                view_1d(cctx, kc, (int64_t) S * n_embd_gqa,
-                        (size_t) n_past * n_embd_gqa * fsz);
-            struct ggml_tensor *v_dst = use_device
-                ? view_1d(cctx, vc, (int64_t)S * n_embd_gqa,
-                          (size_t)n_past * n_embd_gqa * fsz)
-                : view_2d(cctx, vc, S, n_embd_gqa, (size_t)n_ctx * fsz,
-                          (size_t)n_past * fsz);
-            RLLM_CHECK(k_dst && v_dst);
-            expand(gf, cpy(cctx, K, k_dst));
-            expand(gf, cpy(cctx,
-                           use_device ? V :
-                               transpose(cctx, reshape_2d(cctx, V, n_embd_gqa, S)),
-                           v_dst));
-
-            if (use_device) {
-                const size_t block_elems = (size_t)S * (size_t)n_embd_gqa;
-                const size_t block_offset =
-                    (size_t)n_past * (size_t)n_embd_gqa * fsz;
-                float *vblock = (float *)R_alloc(block_elems, fsz);
-                downloads[n_downloads++] = (struct rllm_download){
-                    kc, (float *)kraw + (size_t)n_past * n_embd_gqa,
-                    block_elems * fsz, block_offset, NULL, 0, 0, 0, 0
-                };
-                downloads[n_downloads++] = (struct rllm_download){
-                    vc, vblock, block_elems * fsz, block_offset, (float *)vraw,
-                    n_ctx, n_past, S, n_embd_gqa
-                };
-            }
-
-            /* Attend over everything cached so far (rows 0..n_kv). */
-            Kall = view_3d(cctx, kc, head_dim, n_kv, n_head_kv,
-                           (size_t) n_embd_gqa * fsz, (size_t) head_dim * fsz, 0);
-            if (use_device) {
-                struct ggml_tensor *vseq = view_3d(
-                    cctx, vc, head_dim, n_head_kv, n_kv,
-                    (size_t)head_dim * fsz,
-                    (size_t)n_embd_gqa * fsz, 0);
-                Vall = cont(cctx, permute(cctx, vseq, 1, 2, 0, 3));
-            } else {
-                Vall = view_3d(cctx, vc, n_kv, head_dim, n_head_kv,
-                               (size_t)n_ctx * fsz,
-                               (size_t)n_ctx * head_dim * fsz, 0);
-            }
-            RLLM_CHECK(Kall && Vall);
+            rllm_add_upload(uploads, &n_uploads, max_uploads, mask, mp,
+                            (size_t)n_kv * S * sizeof(*mp));
+            KQ = soft_max_ext(cctx, KQ, mask,
+                !strcmp(scale_at, "logits") ? attention_scale : 1.0, 0.0);
+            RLLM_CHECK(KQ);
+            struct ggml_tensor *KQV = mul_mat(cctx, Vall, KQ);
+            operator_out = reshape_2d(
+                cctx, cont(cctx, permute(cctx, KQV, 0, 2, 1, 3)),
+                n_embd, S);
+            operator_out = mul_mat(cctx, wo, operator_out);
+            RLLM_CHECK(operator_out);
         } else {
-            Kall = permute(cctx, K, 0, 2, 1, 3);                /* [hd, S, kv] */
-            /* V^T per head: [S, hd, n_head_kv], contiguous for the product */
-            Vall = cont(cctx, permute(cctx, reshape_3d(cctx, V, head_dim, n_head_kv, S),
-                                      1, 2, 0, 3));
-            RLLM_CHECK(Kall && Vall);
+            const int width = rllm_integer(op, "width");
+            const int l_cache = rllm_integer(op, "l_cache");
+            const int history = l_cache - 1;
+            if (width != n_embd || history < 1) {
+                RLLM_FAIL("layer %d has inconsistent short-convolution dimensions", il);
+            }
+            struct ggml_tensor *w_in = RLLM_WEIGHT(op, "input");
+            struct ggml_tensor *kernel = RLLM_WEIGHT(op, "kernel");
+            struct ggml_tensor *w_out = RLLM_WEIGHT(op, "output");
+            struct ggml_tensor *bcx = mul_mat(cctx, w_in, cur);
+            RLLM_CHECK(bcx);
+            struct ggml_tensor *b = view_3d(
+                cctx, bcx, n_embd, S, 1, bcx->nb[1], bcx->nb[2], 0);
+            struct ggml_tensor *c = view_3d(
+                cctx, bcx, n_embd, S, 1, bcx->nb[1], bcx->nb[2],
+                (size_t)n_embd * fsz);
+            struct ggml_tensor *x = view_3d(
+                cctx, bcx, n_embd, S, 1, bcx->nb[1], bcx->nb[2],
+                (size_t)2 * n_embd * fsz);
+            struct ggml_tensor *bx = transpose(cctx, mul(cctx, b, x));
+            RLLM_CHECK(b && c && x && bx);
+
+            int64_t ne_state[2] = { history, n_embd };
+            struct ggml_tensor *state;
+            if (use_cache) {
+                state = new_tensor(wctx, GGML_TYPE_F32, 2, ne_state,
+                                   RAW(VECTOR_ELT(convcache, il)));
+            } else {
+                state = new_tensor(cctx, GGML_TYPE_F32, 2, ne_state, NULL);
+                RLLM_CHECK(state);
+                memset(tdata(state), 0,
+                       (size_t)history * n_embd * sizeof(float));
+            }
+            RLLM_CHECK(state);
+            struct ggml_tensor *state3 = reshape_3d(
+                cctx, state, history, n_embd, 1);
+            bx = concat(cctx, state3, bx, 0);
+            RLLM_CHECK(bx);
+            if (use_cache) {
+                struct ggml_tensor *next_state = view_3d(
+                    cctx, bx, history, n_embd, 1, bx->nb[1], bx->nb[2],
+                    (size_t)(bx->ne[0] - history) * fsz);
+                RLLM_CHECK(next_state);
+                expand(gf, cpy(cctx, next_state, state));
+            }
+            struct ggml_tensor *conv_out = ssm_conv(cctx, bx, kernel);
+            operator_out = mul_mat(cctx, w_out, mul(cctx, c, conv_out));
+            operator_out = reshape_2d(cctx, operator_out, n_embd, S);
+            RLLM_CHECK(operator_out);
         }
 
-        /* [n_kv, S, n_head]; ggml broadcasts K's head dim over Q's (GQA) */
-        struct ggml_tensor *KQ = mul_mat(cctx, Kall, Qp);
-        KQ = scale(cctx, KQ, 1.0 / sqrt((double) head_dim));
-        KQ = diag_mask(cctx, KQ, n_past);                       /* causal */
-        KQ = soft_max(cctx, KQ);
-        RLLM_CHECK(KQ);
-
-        struct ggml_tensor *KQV = mul_mat(cctx, Vall, KQ);      /* [hd, S, n_head] */
-        struct ggml_tensor *attn =
-            reshape_2d(cctx, cont(cctx, permute(cctx, KQV, 0, 2, 1, 3)),
-                       n_embd, S);                              /* [n_embd, S] */
-        attn = mul_mat(cctx, wo, attn);
-        RLLM_CHECK(attn);
-
-        inpL = add(cctx, inpL, attn);
+        const char *operator_post_name =
+            rllm_optional_string(layer, "operator_post_norm");
+        if (operator_post_name) {
+            struct ggml_tensor *operator_post = rllm_named_weight(
+                wctx, tensors, operator_post_name, new_tensor, storage_data,
+                NULL, &n_uploads, max_uploads, cuda_ctx);
+            operator_out = mul(
+                cctx, rms_norm(cctx, operator_out, rms_eps), operator_post);
+            RLLM_CHECK(operator_out);
+        }
+        inpL = add(cctx, inpL, operator_out);
         RLLM_CHECK(inpL);
 
-        /* SwiGLU feed-forward */
+        struct ggml_tensor *ffn_norm = rllm_named_weight(
+            wctx, tensors, rllm_string(layer, "ffn_norm"), new_tensor,
+            storage_data, NULL, &n_uploads, max_uploads, cuda_ctx);
         cur = mul(cctx, rms_norm(cctx, inpL, rms_eps), ffn_norm);
         RLLM_CHECK(cur);
-        struct ggml_tensor *gate = silu(cctx, mul_mat(cctx, w_gate, cur));
-        struct ggml_tensor *up   = mul_mat(cctx, w_up, cur);
-        RLLM_CHECK(gate && up);
-        cur = mul_mat(cctx, w_down, mul(cctx, gate, up));
-        RLLM_CHECK(cur);
+        struct ggml_tensor *ffn_out = NULL;
+        if (!strcmp(ffn_name, "swiglu") || !strcmp(ffn_name, "geglu")) {
+            struct ggml_tensor *w_gate = RLLM_WEIGHT(ffn, "gate");
+            struct ggml_tensor *w_up = RLLM_WEIGHT(ffn, "up");
+            struct ggml_tensor *w_down = RLLM_WEIGHT(ffn, "down");
+            struct ggml_tensor *gate = mul_mat(cctx, w_gate, cur);
+            struct ggml_tensor *up = mul_mat(cctx, w_up, cur);
+            RLLM_CHECK(gate && up);
+            struct ggml_tensor *act = !strcmp(ffn_name, "swiglu")
+                ? mul(cctx, silu(cctx, gate), up)
+                : geglu(cctx, gate, up);
+            RLLM_CHECK(act);
+            ffn_out = mul_mat(cctx, w_down, act);
+        } else {
+            const int n_expert = rllm_integer(ffn, "experts");
+            const int n_selected = rllm_integer(ffn, "selected");
+            const char *routing = rllm_string(ffn, "routing");
+            const int normalize_selected =
+                rllm_boolean(ffn, "normalize_selected");
+            const double expert_scale = rllm_number(ffn, "scale");
+            if (n_expert < 1 || n_selected < 1 || n_selected > n_expert) {
+                RLLM_FAIL("layer %d has invalid expert counts", il);
+            }
+            if (strcmp(routing, "sigmoid")) {
+                RLLM_FAIL("layer %d has unknown expert routing '%s'", il,
+                          routing);
+            }
+            struct ggml_tensor *router = RLLM_WEIGHT(ffn, "router");
+            struct ggml_tensor *bias = RLLM_WEIGHT(ffn, "selection_bias");
+            struct ggml_tensor *w_gate = RLLM_WEIGHT(ffn, "gate");
+            struct ggml_tensor *w_up = RLLM_WEIGHT(ffn, "up");
+            struct ggml_tensor *w_down = RLLM_WEIGHT(ffn, "down");
 
-        inpL = add(cctx, inpL, cur);
+            struct ggml_tensor *probs = sigmoid(cctx, mul_mat(cctx, router, cur));
+            struct ggml_tensor *selected = top_k(
+                cctx, add(cctx, probs, bias), n_selected);
+            struct ggml_tensor *probs3 = reshape_3d(
+                cctx, probs, 1, n_expert, S);
+            struct ggml_tensor *weights = get_rows(cctx, probs3, selected);
+            weights = reshape_2d(cctx, weights, n_selected, S);
+            if (normalize_selected) {
+                struct ggml_tensor *denom = clamp(
+                    cctx, sum_rows(cctx, weights), 6.103515625e-5, INFINITY);
+                weights = divide(cctx, weights, denom);
+            }
+            weights = reshape_3d(cctx, weights, 1, n_selected, S);
+            RLLM_CHECK(probs && selected && weights);
+            expand(gf, weights);
+
+            struct ggml_tensor *cur3 = reshape_3d(cctx, cur, n_embd, 1, S);
+            struct ggml_tensor *gate = mul_mat_id(cctx, w_gate, cur3, selected);
+            struct ggml_tensor *up = mul_mat_id(cctx, w_up, cur3, selected);
+            struct ggml_tensor *act = mul(cctx, silu(cctx, gate), up);
+            struct ggml_tensor *experts = mul_mat_id(
+                cctx, w_down, act, selected);
+            experts = mul(cctx, experts, weights);
+            RLLM_CHECK(gate && up && act && experts);
+
+            ffn_out = view_2d(cctx, experts, n_embd, S,
+                              experts->nb[2], 0);
+            RLLM_CHECK(ffn_out);
+            for (int ie = 1; ie < n_selected; ++ie) {
+                struct ggml_tensor *one = view_2d(
+                    cctx, experts, n_embd, S, experts->nb[2],
+                    (size_t)ie * experts->nb[1]);
+                ffn_out = add(cctx, ffn_out, one);
+                RLLM_CHECK(ffn_out);
+            }
+            if (expert_scale != 1.0) {
+                ffn_out = scale(cctx, ffn_out, expert_scale);
+                RLLM_CHECK(ffn_out);
+            }
+        }
+        RLLM_CHECK(ffn_out);
+        const char *ffn_post_name =
+            rllm_optional_string(layer, "feed_forward_post_norm");
+        if (ffn_post_name) {
+            struct ggml_tensor *ffn_post = rllm_named_weight(
+                wctx, tensors, ffn_post_name, new_tensor, storage_data,
+                NULL, &n_uploads, max_uploads, cuda_ctx);
+            ffn_out = mul(cctx, rms_norm(cctx, ffn_out, rms_eps), ffn_post);
+            RLLM_CHECK(ffn_out);
+        }
+        inpL = add(cctx, inpL, ffn_out);
         RLLM_CHECK(inpL);
     }
 
     struct ggml_tensor *cur = mul(cctx, rms_norm(cctx, inpL, rms_eps), out_norm);
-    struct ggml_tensor *logits = mul_mat(cctx, output_w, cur);  /* [n_vocab, S] */
-    RLLM_CHECK(logits);
+    struct ggml_tensor *result = NULL;
+    if (!strcmp(output_op, "projection")) {
+        result = mul_mat(cctx, output_w, cur);  /* [n_vocab, S] */
+    } else {
+        const char *pooling = rllm_string(output_spec, "pooling");
+        if (!strcmp(pooling, "mean")) {
+            int64_t ne_mean[2] = { S, 1 };
+            struct ggml_tensor *mean = new_tensor(
+                cctx, GGML_TYPE_F32, 2, ne_mean, NULL);
+            RLLM_CHECK(mean);
+            float *meanp = use_device
+                ? (float *)R_alloc((size_t)S, sizeof(*meanp))
+                : (float *)tdata(mean);
+            for (int i = 0; i < S; i++) meanp[i] = 1.0f / (float)S;
+            rllm_add_upload(uploads, &n_uploads, max_uploads, mean, meanp,
+                            (size_t)S * sizeof(*meanp));
+            result = mul_mat(cctx, cont(cctx, transpose(cctx, cur)), mean);
+        } else {
+            result = cur;
+        }
 
-    expand(gf, logits);
+        const char *projection_1 =
+            rllm_optional_string(output_spec, "projection_1");
+        const char *projection_2 =
+            rllm_optional_string(output_spec, "projection_2");
+        if ((projection_1 == NULL) != (projection_2 == NULL)) {
+            RLLM_FAIL("embedding output must declare both projections or neither");
+        }
+        if (projection_1) {
+            struct ggml_tensor *dense_2 = rllm_named_weight(
+                wctx, tensors, projection_1, new_tensor, storage_data,
+                NULL, &n_uploads, max_uploads, cuda_ctx);
+            struct ggml_tensor *dense_3 = rllm_named_weight(
+                wctx, tensors, projection_2, new_tensor, storage_data,
+                NULL, &n_uploads, max_uploads, cuda_ctx);
+            result = mul_mat(cctx, dense_2, result);
+            result = mul_mat(cctx, dense_3, result);
+        }
+    }
+    RLLM_CHECK(result);
+
+    expand(gf, result);
 
     if (use_device) {
         /* The model weights are already resident. Allocate only this pass's
@@ -715,14 +1094,15 @@ SEXP RC_rllm_llama_forward(SEXP hparams, SEXP tensors, SEXP tokens_sexp,
         RLLM_FAIL("graph compute failed");
     }
 
-    SEXP out = PROTECT(Rf_allocMatrix(REALSXP, n_vocab, S));
+    SEXP out = PROTECT(Rf_allocMatrix(REALSXP, output_rows, output_cols));
     {
-        R_xlen_t n = (R_xlen_t) n_vocab * S;
+        R_xlen_t n = (R_xlen_t) output_rows * output_cols;
         const float *lp;
         float *device_logits = NULL;
         if (use_device) {
             device_logits = (float *)R_alloc((size_t)n, sizeof(*device_logits));
-            tensor_get(logits, device_logits, 0, (size_t)n * sizeof(*device_logits));
+            tensor_get(result, device_logits, 0,
+                       (size_t)n * sizeof(*device_logits));
             lp = device_logits;
             for (int i = 0; i < n_downloads; ++i) {
                 tensor_get(downloads[i].tensor, downloads[i].data,
@@ -741,7 +1121,7 @@ SEXP RC_rllm_llama_forward(SEXP hparams, SEXP tensors, SEXP tokens_sexp,
                 }
             }
         } else {
-            lp = (const float *)tdata(logits);
+            lp = (const float *)tdata(result);
         }
         double *op = REAL(out);
         for (R_xlen_t i = 0; i < n; i++) op[i] = (double) lp[i];
@@ -759,5 +1139,5 @@ SEXP RC_rllm_llama_forward(SEXP hparams, SEXP tensors, SEXP tokens_sexp,
 
 #undef RLLM_CHECK
 #undef RLLM_FAIL
-#undef RLLM_LAYER_WEIGHT
+#undef RLLM_WEIGHT
 }

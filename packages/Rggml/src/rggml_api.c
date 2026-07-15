@@ -255,6 +255,15 @@ struct ggml_tensor *Rggml_mul_mat(struct ggml_context *ctx, struct ggml_tensor *
     return ggml_mul_mat(ctx, a, b);
 }
 
+struct ggml_tensor *Rggml_mul_mat_id(struct ggml_context *ctx,
+                                      struct ggml_tensor *as,
+                                      struct ggml_tensor *b,
+                                      struct ggml_tensor *ids)
+{
+    if (!ctx || !as || !b || !ids) return NULL;
+    return ggml_mul_mat_id(ctx, as, b, ids);
+}
+
 /*
  * Rggml_compute_mul_mat(): build the one-op graph `ggml_mul_mat(ctx, a, b)`,
  * compute it on `backend`, and copy the F32 result into a caller-provided
@@ -455,10 +464,31 @@ struct ggml_tensor *Rggml_add(struct ggml_context *ctx, struct ggml_tensor *a,
     return ggml_add(ctx, a, b);
 }
 
+struct ggml_tensor *Rggml_div(struct ggml_context *ctx, struct ggml_tensor *a,
+                               struct ggml_tensor *b)
+{
+    if (!ctx || !a || !b) return NULL;
+    return ggml_div(ctx, a, b);
+}
+
 struct ggml_tensor *Rggml_silu(struct ggml_context *ctx, struct ggml_tensor *a)
 {
     if (!ctx || !a) return NULL;
     return ggml_silu(ctx, a);
+}
+
+struct ggml_tensor *Rggml_geglu(struct ggml_context *ctx,
+                                struct ggml_tensor *gate,
+                                struct ggml_tensor *up)
+{
+    if (!ctx || !gate || !up) return NULL;
+    return ggml_geglu_split(ctx, gate, up);
+}
+
+struct ggml_tensor *Rggml_sigmoid(struct ggml_context *ctx, struct ggml_tensor *a)
+{
+    if (!ctx || !a) return NULL;
+    return ggml_sigmoid(ctx, a);
 }
 
 struct ggml_tensor *Rggml_scale(struct ggml_context *ctx, struct ggml_tensor *a,
@@ -468,10 +498,55 @@ struct ggml_tensor *Rggml_scale(struct ggml_context *ctx, struct ggml_tensor *a,
     return ggml_scale(ctx, a, (float) s);
 }
 
+struct ggml_tensor *Rggml_sum_rows(struct ggml_context *ctx, struct ggml_tensor *a)
+{
+    if (!ctx || !a) return NULL;
+    return ggml_sum_rows(ctx, a);
+}
+
+struct ggml_tensor *Rggml_clamp(struct ggml_context *ctx, struct ggml_tensor *a,
+                                 double min, double max)
+{
+    if (!ctx || !a) return NULL;
+    return ggml_clamp(ctx, a, (float) min, (float) max);
+}
+
+struct ggml_tensor *Rggml_argsort_top_k(struct ggml_context *ctx,
+                                         struct ggml_tensor *a, int k)
+{
+    if (!ctx || !a || k < 1 || k > a->ne[0]) return NULL;
+    return ggml_argsort_top_k(ctx, a, k);
+}
+
+struct ggml_tensor *Rggml_concat(struct ggml_context *ctx,
+                                  struct ggml_tensor *a,
+                                  struct ggml_tensor *b, int dim)
+{
+    if (!ctx || !a || !b || dim < 0 || dim >= GGML_MAX_DIMS) return NULL;
+    return ggml_concat(ctx, a, b, dim);
+}
+
+struct ggml_tensor *Rggml_ssm_conv(struct ggml_context *ctx,
+                                    struct ggml_tensor *sx,
+                                    struct ggml_tensor *kernel)
+{
+    if (!ctx || !sx || !kernel) return NULL;
+    return ggml_ssm_conv(ctx, sx, kernel);
+}
+
 struct ggml_tensor *Rggml_soft_max(struct ggml_context *ctx, struct ggml_tensor *a)
 {
     if (!ctx || !a) return NULL;
     return ggml_soft_max(ctx, a);
+}
+
+struct ggml_tensor *Rggml_soft_max_ext(struct ggml_context *ctx,
+                                       struct ggml_tensor *a,
+                                       struct ggml_tensor *mask,
+                                       double scale, double max_bias)
+{
+    if (!ctx || !a) return NULL;
+    return ggml_soft_max_ext(ctx, a, mask, (float)scale, (float)max_bias);
 }
 
 struct ggml_tensor *Rggml_diag_mask_inf(struct ggml_context *ctx, struct ggml_tensor *a,

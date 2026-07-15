@@ -22,7 +22,9 @@ rllm_generate(
 
 \item{prompt}{Integer vector of 0-based token ids, or a raw vector
 (encoded with \code{\link[=rllm_encode]{rllm_encode()}}; a single string is converted via
-\code{charToRaw()} as a convenience).}
+\code{charToRaw()} as a convenience). A textual prompt at the start of a
+sequence receives the GGUF tokenizer's BOS token when one is declared.
+Integer prompts remain exact and are never modified.}
 
 \item{n_new}{Maximum number of tokens to generate.}
 

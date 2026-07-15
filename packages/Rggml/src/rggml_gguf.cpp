@@ -174,6 +174,14 @@ int Rggml_gguf_writer_set_f64(Rggml_gguf_writer *ctx, const char *key,
     return 0;
 }
 
+int Rggml_gguf_writer_set_f64s(Rggml_gguf_writer *ctx, const char *key,
+                                const double *values, size_t n)
+{
+    if (!ctx || !ctx->meta || !key || (n && !values)) return -1;
+    gguf_set_arr_data(ctx->meta, key, GGUF_TYPE_FLOAT64, values, n);
+    return 0;
+}
+
 int Rggml_gguf_writer_add_f32(Rggml_gguf_writer *ctx, const char *name,
                                int n_dims, const int64_t *ne,
                                const double *data)

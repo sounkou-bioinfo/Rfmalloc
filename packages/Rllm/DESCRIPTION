@@ -13,9 +13,10 @@ Description: The composition layer of the 'Rfmalloc' ecosystem: it registers
     exposes 'GGUF' model weights as borrowed typed spans, this lets a
     larger-than-memory model's linear layers be multiplied through 'GGML's
     SIMD-accelerated dot kernels zero-copy from the original model mapping.
-    A llama-architecture graph builder, KV cache, byte-level tokenizer, and
-    generation loop compose these primitives into CPU and optional CUDA
-    inference.
+    Typed semantic plans and an R module-and-pipe architecture language compose
+    these primitives into llama, LFM2MoE and EmbeddingGemma graphs, persistent
+    state, pooled embeddings, byte-level generation, and CPU or optional CUDA
+    execution.
 License: GPL (>= 2)
 Encoding: UTF-8
 Imports:

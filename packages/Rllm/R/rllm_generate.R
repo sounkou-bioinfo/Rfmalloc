@@ -158,7 +158,9 @@ rllm_encode <- function(model, x) {
 #' @param model An `rllm_model` from [rllm_gguf_model()].
 #' @param prompt Integer vector of 0-based token ids, or a raw vector
 #'   (encoded with [rllm_encode()]; a single string is converted via
-#'   `charToRaw()` as a convenience).
+#'   `charToRaw()` as a convenience). A textual prompt at the start of a
+#'   sequence receives the GGUF tokenizer's BOS token when one is declared.
+#'   Integer prompts remain exact and are never modified.
 #' @param n_new Maximum number of tokens to generate.
 #' @param temperature Sampling temperature. `0` (default) is greedy/argmax;
 #'   larger values flatten the distribution (more diverse).
@@ -185,10 +187,20 @@ rllm_generate <- function(model, prompt, n_new = 32L, temperature = 0,
     if (!inherits(model, "rllm_model")) {
         stop("model must be an rllm_model from rllm_gguf_model()")
     }
-    ids <- if (is.raw(prompt) || is.character(prompt)) {
+    if (!identical(model$plan$output$op, "projection")) {
+        stop("this model produces embeddings; use rllm_embed()")
+    }
+    textual_prompt <- is.raw(prompt) || is.character(prompt)
+    ids <- if (textual_prompt) {
         rllm_encode(model, prompt)
     } else {
         as.integer(prompt)
+    }
+    starts_sequence <- is.null(cache) ||
+        (inherits(cache, "rllm_kv_cache") && identical(cache$n_past, 0L))
+    if (textual_prompt && starts_sequence && length(model$bos_id) == 1L &&
+        !is.na(model$bos_id)) {
+        ids <- c(as.integer(model$bos_id), ids)
     }
     if (length(ids) < 1L || anyNA(ids)) stop("empty or invalid prompt")
     n_new <- as.integer(n_new)

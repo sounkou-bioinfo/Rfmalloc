@@ -39,9 +39,18 @@ SEXP RC_gguf_write(SEXP path, SEXP tensors, SEXP metadata)
                 strings[j] = CHAR(STRING_ELT(value, j));
             rc = Rggml_gguf_writer_set_strings_ptr()(
                 writer, key, strings, (size_t)n);
-        } else {
+        } else if (XLENGTH(value) == 1) {
             rc = Rggml_gguf_writer_set_f64_ptr()(
                 writer, key, Rf_asReal(value));
+        } else {
+            const R_xlen_t n = XLENGTH(value);
+            double *numbers = (double *)R_alloc(
+                n ? (size_t)n : 1, sizeof(*numbers));
+            for (R_xlen_t j = 0; j < n; ++j)
+                numbers[j] = TYPEOF(value) == REALSXP
+                    ? REAL(value)[j] : (double)INTEGER(value)[j];
+            rc = Rggml_gguf_writer_set_f64s_ptr()(
+                writer, key, numbers, (size_t)n);
         }
         if (rc != 0) {
             Rggml_gguf_writer_close_ptr()(writer);
