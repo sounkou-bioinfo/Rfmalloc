@@ -42,8 +42,9 @@ jobs:
       - name: Install CRAN tooling
         run: |
           install.packages("pak", repos = sprintf("https://r-lib.github.io/p/pak/stable/%s/%s/%s", .Platform$pkgType, R.Version()$os, R.Version()$arch))
-          pak::pkg_install(c("any::pkgdown", "any::tinytest", "any::bench",
-                             "any::lobstr", "any::knitr", "any::rmarkdown"),
+          pak::pkg_install(c("any::pkgdown", "any::litedown", "any::tinytest",
+                             "any::bench", "any::lobstr", "any::knitr",
+                             "any::rmarkdown"),
                            ask = FALSE)
         shell: Rscript {0}
 
@@ -73,16 +74,19 @@ jobs:
 
       - name: Landing page from the monorepo README
         run: |
-          mkdir -p _site
-          touch _site/.nojekyll
-          pandoc README.md \
-            --standalone \
-            --from=gfm \
-            --metadata title="Rfmalloc: out-of-core arrays for R" \
-            --include-in-header=tools/site/head.html \
-            --output=_site/index.html
-          ls -la _site
-        shell: bash
+          dir.create("_site", recursive = TRUE, showWarnings = FALSE)
+          file.create("_site/.nojekyll")
+          options(litedown.html.template = TRUE)
+          litedown::mark(
+            "README.md",
+            output = "_site/index.html",
+            meta = list(
+              lang = "en",
+              plain_title = "Rfmalloc: out-of-core arrays for R"
+            )
+          )
+          print(list.files("_site", all.files = TRUE))
+        shell: Rscript {0}
 
       - name: Deploy to GitHub pages 🚀
         if: github.event_name != 'pull_request'
