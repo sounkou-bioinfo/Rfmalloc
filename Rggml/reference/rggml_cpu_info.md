@@ -17,21 +17,26 @@ A list with
 
 - `arch_kernels`:
 
-  `"arm"` when GGML's hand-tuned NEON kernels
-  (`ggml-cpu/arch/arm/quants.c`, every quantized type) are compiled in;
-  `"generic"` when the portable reference kernels are.
+  `"arm"` for GGML's hand-tuned NEON kernels, `"wasm"` for its SIMD128
+  kernels, and `"generic"` for the portable reference kernels.
 
 - `simd_dispatch`:
 
   `TRUE` when the runtime CPUID dispatcher is active (x86: the staged
-  AVX2 `q4_K` variant). Always `FALSE` alongside `arch_kernels = "arm"`,
-  which supersedes it.
+  AVX2 `q4_K` variant). Always `FALSE` alongside `arch_kernels = "arm"`
+  or `"wasm"`, which supersede it.
+
+- `blas`:
+
+  `TRUE` when GGML's BLAS backend and R's Fortran bridge are part of
+  this target build. It is `FALSE` on wasm, where webR's hidden
+  character-length ABI is incompatible with the native bridge.
 
 - `sgemm`:
 
   `TRUE` when R's BLAS exports `sgemm_` and GGML's BLAS backend calls it
-  directly; `FALSE` when the shim promotes to `dgemm_`, the only BLAS
-  routine R guarantees.
+  directly; `FALSE` when the shim promotes to `dgemm_` or when `blas` is
+  `FALSE`.
 
 - `vulkan`:
 
@@ -68,6 +73,9 @@ rggml_cpu_info()
 #> [1] "generic"
 #> 
 #> $simd_dispatch
+#> [1] TRUE
+#> 
+#> $blas
 #> [1] TRUE
 #> 
 #> $sgemm

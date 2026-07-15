@@ -1,20 +1,20 @@
 # Rggml
 
 Rggml is a low-level **carrier package** for
-[GGML](https://github.com/ggml-org/ggml). It vendors the core, CPU and
-BLAS backends, optional Vulkan and CUDA backends, and official GGUF
-implementation as one generated static library. It exposes them through
-`R_RegisterCCallable()` so sibling packages can build tensor graphs,
-inspect GGUF files, and compute without separately vendoring or linking
-GGML. Its small R surface provides diagnostics and direct matrix
-multiplication; model composition belongs in Rllm and GGUF’s R-facing
-storage integration belongs in Rgguf.
+[GGML](https://github.com/ggml-org/ggml). It vendors the core, CPU
+backend, native BLAS bridge, optional Vulkan and CUDA backends, and
+official GGUF implementation as one generated static library. It exposes
+them through `R_RegisterCCallable()` so sibling packages can build
+tensor graphs, inspect GGUF files, and compute without separately
+vendoring or linking GGML. Its small R surface provides diagnostics and
+direct matrix multiplication; model composition belongs in Rllm and
+GGUF’s R-facing storage integration belongs in Rgguf.
 
 ``` r
 
 library(Rggml)
 ggml_version()
-#> [1] "0.11.0"
+#> [1] "0.16.0"
 ```
 
 ## What’s vendored
@@ -25,22 +25,31 @@ CPU kernels, the **BLAS backend**, and the opt-in Vulkan and CUDA
 sources. See `inst/COPYRIGHTS` and `tools/vendor-ggml/PROVENANCE.md` for
 the exact recipe.
 
-Dense matrix products do **not** run scalar: GGML’s BLAS backend
-(`-DGGML_USE_BLAS`) offloads F32 `mul_mat` to whatever BLAS the R build
-links against (reference `libRblas`, OpenBLAS, MKL, Accelerate, …) -
-BLAS is universal in R, so this needs no extra system dependency. GGML’s
+On native R targets, GGML’s BLAS backend (`-DGGML_USE_BLAS`) offloads
+F32 `mul_mat` to whatever BLAS the R build links against (reference
+`libRblas`, OpenBLAS, MKL, Accelerate, …) - the BLAS interface is
+universal in native R, so this needs no extra system dependency. GGML’s
 BLAS backend is written against the C `cblas_sgemm` interface, which R
 does *not* guarantee (R guarantees only the Fortran `sgemm_`); Rggml
 bridges the gap with a small portable shim (`inst/ggml/cblas.h` +
 `rggml_cblas.c`) that forwards `cblas_sgemm` to Fortran `sgemm_` via R’s
 `F77_NAME()` convention, linking `$(BLAS_LIBS) $(FLIBS)`.
 
+webR omits that bridge because its flang ABI adds hidden
+character-length arguments which do not match the native R ABI. Dense
+products remain available through GGML’s CPU backend, so this is a
+backend capability difference rather than a missing operation. This is
+GGML’s supported CPU-only WebAssembly shape, using its wasm SIMD kernels
+and requiring no WebGPU backend; see the upstream [WebAssembly
+discussion](https://github.com/ggml-org/llama.cpp/discussions/17237).
+
 The quantized dequant-dot path that BLAS cannot cover is
 architecture-aware. On aarch64, GGML’s complete NEON kernel set is the
-mandatory baseline. On x86, hot kernels are compiled by `configure` into
-ISA-specific variants, beginning with `q4_K x q8_K` under
-`-mavx2 -mfma -O3`; a CPUID dispatcher (`tools/simd/`) picks the best at
-runtime and otherwise uses GGML’s scalar reference. This follows the
+mandatory baseline. wasm uses GGML’s official SIMD128 quant kernels. On
+x86, hot kernels are compiled by `configure` into ISA-specific variants,
+beginning with `q4_K x q8_K` under `-mavx2 -mfma -O3`; a CPUID
+dispatcher (`tools/simd/`) picks the best at runtime and otherwise uses
+GGML’s scalar reference. This follows the
 [RsimdDispatch](https://github.com/sounkou-bioinfo/RsimdDispatch)
 strategy: the ISA flags live in `configure`, never in R’s recorded
 package flags, so R CMD check raises no “non-portable flags” NOTE, and a
@@ -53,8 +62,8 @@ requires `GGML_BACKEND_DL` + separate per-variant shared libraries
 loaded via `dlopen`, which does not fit a single-`.so` CRAN package.)
 
 The GGML tree is **generated, not a mystery copy**: `tools/vendor-ggml/`
-in the monorepo selects 487 files from official GGML v0.11.0 commit
-`1f09c6987071`, verifies their paths and contents, applies the small
+in the monorepo selects 479 files from official GGML v0.16.0 commit
+`524f974bb21a`, verifies their paths and contents, applies the small
 local patch set, and lets CI derive the tree again. Core, BLAS, GGUF,
 CPU, Vulkan and CUDA therefore move as one engine. The only
 ggmlR-derived component left is its MIT-licensed R-safe diagnostic shim.
@@ -91,7 +100,7 @@ reports zero devices rather than failing, so callers can probe and fall
 back. A GPU backend’s tensors must live in device memory, which is what
 the `Rggml_backend_alloc_ctx_tensors`/`tensor_set`/`tensor_get`
 C-callables are for; that path is backend-agnostic, so the same code
-drives CPU, BLAS and Vulkan. Correctness is pinned against the CPU
+drives CPU, BLAS, Vulkan and CUDA. Correctness is pinned against the CPU
 backend and can be exercised without a GPU at all through Mesa’s
 software driver, since `GGML_VK_ALLOW_CPU=1` opts in to the CPU-type
 Vulkan devices upstream refuses.

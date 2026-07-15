@@ -73,8 +73,9 @@ GGML's SIMD-dispatched kernels without ever being decoded to double.</p>
 
 <dt id="arg-dtype">dtype<a class="anchor" aria-label="anchor" href="#arg-dtype"></a></dt>
 <dd><p>Target quantized codec, one of <code>"q4_0"</code>, <code>"q4_1"</code>,
-<code>"q5_0"</code>, <code>"q5_1"</code>, <code>"q8_0"</code>, <code>"q2_k"</code>, <code>"q3_k"</code>,
-<code>"q4_k"</code> (default), <code>"q5_k"</code>, <code>"q6_k"</code>.</p></dd>
+<code>"q5_0"</code>, <code>"q5_1"</code>, <code>"q8_0"</code>, <code>"q2_0"</code>,
+<code>"q2_k"</code>, <code>"q3_k"</code>, <code>"q4_k"</code> (default), <code>"q5_k"</code>,
+<code>"q6_k"</code>.</p></dd>
 
 
 <dt id="arg-runtime">runtime<a class="anchor" aria-label="anchor" href="#arg-runtime"></a></dt>
@@ -94,7 +95,7 @@ runtime is used.</p></dd>
 be a multiple of the codec's block size: 256 for the K-quants
 (<code>"q2_k"</code>, <code>"q3_k"</code>, <code>"q4_k"</code>, <code>"q5_k"</code>, <code>"q6_k"</code>)
 and 32 for <code>"q4_0"</code>, <code>"q4_1"</code>, <code>"q5_0"</code>, <code>"q5_1"</code>,
-<code>"q8_0"</code>.</p>
+<code>"q8_0"</code>; <code>"q2_0"</code> uses GGML's group-64 ternary blocks.</p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>

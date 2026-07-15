@@ -3,13 +3,13 @@
 Rllm registers Rggml as an Rfmalloc codec-aware matrix-multiply backend
 named `"ggml"` and selects it on load. When active, products of
 quantized `fmalloc_tensor`s (types `"q4_0"`, `"q4_1"`, `"q8_0"`,
-`"q2_k"`, `"q4_k"`, `"q6_k"`) where the tensor is the right-hand operand
-(`dense %*% tensor`) are computed by ggml in quantized space,
-contracting each weight row through GGML's SIMD-dispatched dot kernel,
-with the dense operand quantized on the fly. Other products (the tensor
-on the left, non-quantized codecs) are declined and fall back to
-Rfmalloc's decode-then-BLAS path, so results are always correct
-regardless of the selected backend.
+`"q2_0"`, `"q2_k"`, `"q4_k"`, `"q6_k"`) where the tensor is the
+right-hand operand (`dense %*% tensor`) are computed by ggml in
+quantized space, contracting each weight row through GGML's
+SIMD-dispatched dot kernel, with the dense operand quantized on the fly.
+Other products (the tensor on the left, non-quantized codecs) are
+declined and fall back to Rfmalloc's decode-then-BLAS path, so results
+are always correct regardless of the selected backend.
 
 ## Usage
 

@@ -26,7 +26,8 @@ rllm_quantize_tensor(x, dtype = "q4_k", runtime = NULL)
 - dtype:
 
   Target quantized codec, one of `"q4_0"`, `"q4_1"`, `"q5_0"`, `"q5_1"`,
-  `"q8_0"`, `"q2_k"`, `"q3_k"`, `"q4_k"` (default), `"q5_k"`, `"q6_k"`.
+  `"q8_0"`, `"q2_0"`, `"q2_k"`, `"q3_k"`, `"q4_k"` (default), `"q5_k"`,
+  `"q6_k"`.
 
 - runtime:
 
@@ -43,7 +44,8 @@ An `fmalloc_tensor` of the given `dtype` with `dim(x)`.
 The number of rows of `x` is the quantized (per-row) dimension and must
 be a multiple of the codec's block size: 256 for the K-quants (`"q2_k"`,
 `"q3_k"`, `"q4_k"`, `"q5_k"`, `"q6_k"`) and 32 for `"q4_0"`, `"q4_1"`,
-`"q5_0"`, `"q5_1"`, `"q8_0"`.
+`"q5_0"`, `"q5_1"`, `"q8_0"`; `"q2_0"` uses GGML's group-64 ternary
+blocks.
 
 ## See also
 

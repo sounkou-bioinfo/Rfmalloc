@@ -54,19 +54,24 @@ could this machine run".</p>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p>A list with</p><dl><dt><code>arch_kernels</code></dt>
-<dd><p><code>"arm"</code> when GGML's hand-tuned NEON kernels
-(<code>ggml-cpu/arch/arm/quants.c</code>, every quantized type) are compiled in;
-<code>"generic"</code> when the portable reference kernels are.</p></dd>
+<dd><p><code>"arm"</code> for GGML's hand-tuned NEON kernels,
+<code>"wasm"</code> for its SIMD128 kernels, and <code>"generic"</code> for the portable
+reference kernels.</p></dd>
 
 <dt><code>simd_dispatch</code></dt>
 <dd><p><code>TRUE</code> when the runtime CPUID dispatcher is active
 (x86: the staged AVX2 <code>q4_K</code> variant). Always <code>FALSE</code> alongside
-<code>arch_kernels = "arm"</code>, which supersedes it.</p></dd>
+<code>arch_kernels = "arm"</code> or <code>"wasm"</code>, which supersede it.</p></dd>
+
+<dt><code>blas</code></dt>
+<dd><p><code>TRUE</code> when GGML's BLAS backend and R's Fortran bridge
+are part of this target build. It is <code>FALSE</code> on wasm, where webR's
+hidden character-length ABI is incompatible with the native bridge.</p></dd>
 
 <dt><code>sgemm</code></dt>
 <dd><p><code>TRUE</code> when R's BLAS exports <code>sgemm_</code> and GGML's BLAS
-backend calls it directly; <code>FALSE</code> when the shim promotes to <code>dgemm_</code>,
-the only BLAS routine R guarantees.</p></dd>
+backend calls it directly; <code>FALSE</code> when the shim promotes to <code>dgemm_</code>
+or when <code>blas</code> is <code>FALSE</code>.</p></dd>
 
 <dt><code>vulkan</code></dt>
 <dd><p><code>TRUE</code> when built with <code>--with-vulkan</code>. Whether a <em>device</em>
@@ -99,6 +104,9 @@ this list in the test suite turns those silent fallbacks into failures.</p>
 <span class="r-out co"><span class="r-pr">#&gt;</span> [1] "generic"</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> $simd_dispatch</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [1] TRUE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> $blas</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> [1] TRUE</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> $sgemm</span>
