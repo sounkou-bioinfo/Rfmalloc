@@ -1,21 +1,27 @@
 # Rggml 0.1.0 (unreleased)
 
+- Fixed webR and Apple Silicon portability. wasm builds use GGML's official
+  SIMD128 quant kernels and omit the incompatible Fortran BLAS bridge; dense
+  products continue through the CPU backend. Target-macro classification also
+  prevents Apple clang from accepting and then ignoring x86 AVX2 flags on
+  arm64. Default package metadata no longer makes r-universe provision the
+  optional CUDA toolkit for CPU-only builds.
+
+- Updated the generated engine to official GGML v0.16.0. This adds the
+  upstream group-64 `Q2_0` ternary block format while keeping its CPU, Vulkan,
+  CUDA and GGUF semantics on one content-pinned source tree.
+
 - Removed the unused C-callable API counter and its accumulated version strata.
   The installed header is the one current monorepo contract. The official GGUF
   writer service also accepts string-array metadata, which makes hermetic
   tokenizer-bearing model fixtures possible without another writer.
-
-- The generated engine now comes directly from one content-pinned official
-  GGML v0.11.0 source tree. Core, CPU, BLAS, GGUF, Vulkan and CUDA share commit
-  `1f09c6987071`; the unused ggmlR 5D fork and its split translation units are
-  gone. Only ggmlR's R-safe I/O shim remains, with its MIT attribution.
 
 - Corrected the aarch64 fallback map so the generic Q1 dot product keeps its
   `_generic` name while GGML's ARM translation unit owns the canonical NEON
   symbol. Rggml now links cleanly on both Apple Silicon and Linux aarch64.
 
 - Added an opt-in `--with-cuda` build from the content-pinned official GGML
-  v0.11.0 CUDA sources. `rggml_cuda_info()` probes without making CUDA a hard
+  CUDA sources. `rggml_cuda_info()` probes without making CUDA a hard
   dependency, and dense F32 plus Q4_K products use the same backend-owned
   buffer allocation, upload, compute and download path as Vulkan. The build
   accepts `CUDA_HOME` and `RGGML_CUDA_ARCH`; ordinary CPU builds never invoke
@@ -34,8 +40,9 @@
   on the GPU, promoted from the internal test routine.
 
 - Added `rggml_cpu_info()`, reporting what `configure` actually compiled:
-  `arch_kernels` (`"arm"` for GGML's native NEON kernels, `"generic"` for the
-  portable ones), `simd_dispatch`, `sgemm`, `vulkan`. Every branch `configure`
+  `arch_kernels` (`"arm"` for GGML's native NEON kernels, `"wasm"` for its
+  SIMD128 kernels, `"generic"` for the portable ones), `simd_dispatch`,
+  `blas`, `sgemm`, `vulkan`, and `cuda`. Every branch `configure`
   can take is numerically correct, so no numerical test can tell them apart: a
   build that silently fell back from the NEON kernels, or from `sgemm_` to the
   `dgemm_` promotion, passes the whole suite. `test_cpu_info.R` now asserts on
@@ -76,7 +83,7 @@
   never-destroyed-teardown-singleton patches exist precisely because passing
   that POD by value, and running those destructors at exit, crashed on
   Windows/MinGW.
-- Added the **Vulkan GPU backend** (API version 7), vendored from the same
+- Added the **Vulkan GPU backend**, vendored from the same
   pinned official GGML source as the CPU core through `tools/vendor-ggml`. It
   is **opt-in at build time**, never auto-detected:
 
@@ -97,22 +104,22 @@
   `Rggml_backend_vulkan_device_description`; they report zero devices instead
   of failing when the backend was not built, so callers can probe and fall
   back. R-level: `rggml_vulkan_info()`, `rggml_has_vulkan()`.
-- Added the **device-buffer residency C-callables** (API version 7):
+- Added the **device-buffer residency C-callables**:
   `Rggml_backend_alloc_ctx_tensors`, `Rggml_backend_buffer_free`,
   `Rggml_backend_tensor_set`, `Rggml_backend_tensor_get`. The CPU and BLAS
   backends compute on host memory, so pointing a tensor at an R buffer works;
   a GPU backend's tensors must live in device memory. These wrap GGML's
   backend-agnostic path - allocate a no_alloc context's tensors into one
   backend buffer, upload, compute, download - which is identical for CPU, BLAS
-  and Vulkan, and is what `test_vulkan.R` uses to assert the GPU backend
+  Vulkan and CUDA, and is what `test_vulkan.R` uses to assert the GPU backend
   computes the same product as the CPU one.
-- Added **view and copy C-callables** (API version 6): `Rggml_view_1d`/
+- Added **view and copy C-callables**: `Rggml_view_1d`/
   `_2d`/`_3d` (byte offsets/strides, as in ggml) and `Rggml_cpy` - the
   building blocks of a KV cache: cpy nodes write new keys/values into views
   of a persistent cache tensor, expanded into the graph ahead of the
   attention nodes that read other views of the same cache (see Rllm's
   incremental decoding).
-- Added the transformer **graph-op C-callables** (API version 5): the ops a
+- Added the transformer **graph-op C-callables**: the ops a
   forward pass composes - `Rggml_get_rows`, `Rggml_rms_norm`, `Rggml_mul`,
   `Rggml_add`, `Rggml_silu`, `Rggml_scale`, `Rggml_soft_max`,
   `Rggml_diag_mask_inf`, `Rggml_rope` (wrapping `ggml_rope_ext` with YaRN
@@ -120,7 +127,7 @@
   `Rggml_cont`, `Rggml_transpose`. Downstream packages can now assemble and
   compute full transformer graphs (see Rllm's llama forward pass) without
   linking GGML.
-- Added quantization C-callables (API version 4): `Rggml_quantize` wraps
+- Added quantization C-callables: `Rggml_quantize` wraps
   `ggml_quantize_chunk()` so downstream packages can encode f32 rows into any
   GGUF block format (the output is byte-compatible with GGUF tensor payloads),
   and `Rggml_dequantize` wraps GGML's type-traits `to_float` - the

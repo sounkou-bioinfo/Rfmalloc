@@ -20,7 +20,9 @@
 #include <ggml-alloc.h>
 #include <ggml-backend.h>
 #include <ggml-cpu.h>
+#ifdef RGGML_HAVE_BLAS
 #include <ggml-blas.h>
+#endif
 /* RGGML_HAVE_VULKAN is put into PKG_CPPFLAGS by configure only when the package
  * was built with --with-vulkan; libggml.a then contains the Vulkan backend. */
 #ifdef RGGML_HAVE_VULKAN
@@ -122,7 +124,11 @@ int Rggml_backend_graph_compute(ggml_backend_t backend, struct ggml_cgraph *cgra
 
 ggml_backend_t Rggml_backend_blas_init(void)
 {
+#ifdef RGGML_HAVE_BLAS
     return ggml_backend_blas_init();
+#else
+    return NULL;
+#endif
 }
 
 /*
@@ -235,7 +241,12 @@ int Rggml_backend_cuda_device_description(int device, char *buf, size_t buf_size
 
 void Rggml_backend_blas_set_n_threads(ggml_backend_t backend_blas, int n_threads)
 {
+#ifdef RGGML_HAVE_BLAS
     if (backend_blas) ggml_backend_blas_set_n_threads(backend_blas, n_threads);
+#else
+    (void) backend_blas;
+    (void) n_threads;
+#endif
 }
 
 struct ggml_cgraph *Rggml_new_graph(struct ggml_context *ctx, size_t size)

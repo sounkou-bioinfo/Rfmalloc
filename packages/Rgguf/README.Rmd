@@ -116,8 +116,15 @@ bits/weight for `q4_k`) and returned as an `Rfmalloc::fmalloc_tensor`. Matrix
 products against dense operands decode the payload in bounded, block-aligned
 panels streamed through BLAS `dgemm`, so the full double representation is
 never materialized. Rgguf registers GGML-backed codecs for `q4_0`, `q4_1`,
-`q5_0`, `q5_1`, `q8_0`, `q2_k`, `q3_k`, `q4_k`, `q5_k`, and `q6_k`;
+`q5_0`, `q5_1`, `q8_0`, `q2_0`, `q2_k`, `q3_k`, `q4_k`, `q5_k`, and `q6_k`;
 `f32`, `f16`, `bf16`, and `f64` codecs are built into Rfmalloc.
+
+`q2_0` means GGML's official group-64 ternary block: one f16 scale and 16
+packed bytes for 64 values. Files which reuse type id 42 for an older
+group-128 layout are a different format and are deliberately not accepted as
+`q2_0`. A provisional type outside GGML's enum is likewise not guessed from
+its filename. Storage type ids acquire meaning from the pinned upstream GGML
+implementation, not from model-repository naming conventions.
 
 `gguf_tensor(as = "view")` has the same typed-tensor interface but does not
 copy the payload. It is the inference path: Rllm points GGML directly at the

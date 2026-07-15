@@ -5,16 +5,16 @@
 The engine has one upstream source:
 
 ```
-selected ggml-org/ggml v0.11.0 files
+selected ggml-org/ggml v0.16.0 files
 + patches/ and header-patches/
 + overlay/
 ```
 
-The selected source comes from official tag `v0.11.0`, commit
-`1f09c6987071512f9a11189880c0130b1349b8dc`. The recipe hashes the extracted
-paths and contents instead of trusting GitHub's archive compression. Its 487
+The selected source comes from official tag `v0.16.0`, commit
+`524f974bb21a1013408f76d71c15732482c0c3fe`. The recipe hashes the extracted
+paths and contents instead of trusting GitHub's archive compression. Its 479
 selected files have tree sha256
-`e2b4e65f0780bfe14884d924649a68b4b2d3326cbb9644046fa6e3f13dbb8ea9`.
+`81dcabafee82839a6ce3cefd61e218db7411af7a8f5abbaeaa6fd02bad9cd266`.
 
 Run `Rscript tools/vendor-ggml/vendorggml.R vendor` to regenerate the committed
 tree. Run `Rscript tools/vendor-ggml/vendorggml.R check` to derive it in a
@@ -25,15 +25,15 @@ also rejects stale source files left by an earlier recipe.
 
 The manifest carries GGML's core tensor and graph engine, allocator, backend
 registry, official GGUF reader and writer, quantization code, portable CPU
-backend, BLAS backend, aarch64 quantized kernels, Vulkan backend and shader
-sources, and CUDA backend. Public headers for those components come from the
-same source tree.
+backend, BLAS backend, aarch64 and wasm quantized kernels, Vulkan backend and
+shader sources, and CUDA backend. Public headers for those components come
+from the same source tree.
 
 Rggml deliberately does not carry training, RPC, Metal, SYCL, CANN, OpenCL,
 AMX implementation files, or upstream's compile-time x86 variants. Dense F32
-products use GGML's BLAS backend through R's BLAS. x86 quantized dispatch is
-owned by Rggml's runtime dispatcher, while aarch64 uses upstream's mandatory
-NEON baseline.
+products use GGML's BLAS backend through R's BLAS on native targets. x86
+quantized dispatch is owned by Rggml's runtime dispatcher, aarch64 uses
+upstream's mandatory NEON baseline, and wasm uses upstream's SIMD128 kernels.
 
 `gguf.cpp` and `gguf.h` are not a second import. They are part of this same
 pin. Rgguf calls the narrow GGUF C-callables exported by Rggml, so parsing,
@@ -74,11 +74,13 @@ BLAS bridge and build integration are Rggml code under GPL (>= 2).
 
 ## Backend contract
 
-CPU and BLAS are always present. Vulkan and CUDA are optional implementations
-of the same backend-buffer contract. A no-allocation tensor context is assigned
-to a backend buffer, inputs are uploaded with `ggml_backend_tensor_set`, the
-graph runs, and outputs are downloaded with `ggml_backend_tensor_get`. A build
-without a GPU backend reports zero devices so callers can probe and fall back.
+CPU is always present. BLAS is present on native R targets and omitted on
+webR, whose flang ABI adds hidden character-length arguments that do not match
+the native C-to-Fortran bridge. Vulkan and CUDA are optional implementations of
+the same backend-buffer contract. A no-allocation tensor context is assigned to
+a backend buffer, inputs are uploaded with `ggml_backend_tensor_set`, the graph
+runs, and outputs are downloaded with `ggml_backend_tensor_get`. A build
+without a backend reports it unavailable so callers can probe and fall back.
 
 CUDA accepts `CUDA_HOME` or `--with-cuda=/path` and an optional
 `RGGML_CUDA_ARCH`. Its real-device path is validated on the NVIDIA rig. Vulkan

@@ -1,5 +1,9 @@
 # Rgguf 0.1.0 (unreleased)
 
+- Registered official GGML `q2_0` group-64 ternary blocks as an Rfmalloc
+  storage codec. Legacy group-128 files which reuse the same numeric type id
+  remain unsupported rather than being decoded with the wrong geometry.
+
 - Added `gguf_tensor(as = "view")` and `gguf_import(as = "view")`. A view
   borrows the tensor's exact read-only span in the original GGUF mapping,
   keeps that mapping alive, and enters Rfmalloc/GGML compute without copying

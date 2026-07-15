@@ -1,6 +1,10 @@
 library(tinytest)
 library(Rggml)
 
+if (!isTRUE(rggml_cpu_info()$blas)) {
+    exit_file("BLAS backend is not part of this target build")
+}
+
 # GGML's BLAS backend (ggml-blas.cpp) offloads the dense F32 mul_mat to
 # whatever BLAS the R build links against, reached through our portable
 # cblas_sgemm -> Fortran sgemm_ shim. It is a drop-in backend for the same

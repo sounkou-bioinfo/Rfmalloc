@@ -1,5 +1,9 @@
 # Rpgen 0.1.0 (unreleased)
 
+- Fixed webR builds by classifying wasm32 separately from 32-bit x86 and using
+  pgenlib's word-width-correct scalar path instead of including `xmmintrin.h`.
+  The floating-point setup also stops treating every non-x86 target as arm64.
+
 - Removed the unused C-callable API counter. Rpgen and every native consumer
   evolve together in this monorepo, so the installed header describes one
   current contract without compatibility branches.

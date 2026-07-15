@@ -26,7 +26,7 @@
   HMM kernels and kalis Forward/Backward, while materialization still presents
   the conventional variants-by-haplotypes R matrix.
 
-- C-callable API version 8: added `fmalloc_ld()` and the banded LD-matrix
+- Added `fmalloc_ld()` and the banded LD-matrix
   accessor API. An `fmalloc_ld` store is a compressed, mmap-backed **banded
   symmetric correlation (LD) matrix**, a SIBLING interface to the matmul tensor
   codec ABI (like the haplotype store), not a decode-to-`f64` matmul codec: an
@@ -42,10 +42,9 @@
   The new C-callables `Rfmalloc_ld_ncol/bits/pair/col/col_raw/build` (declared
   in `inst/include/Rfmalloc.h`) let a consumer package (RfmallocStatgen's
   `statgen_snp_cor()` / LDpred2) build and read a store without knowing the
-  private byte layout. Additive, so existing API-7 consumers are unaffected.
-  Exercised by `inst/tinytest/test_fmalloc_ld.R`.
+  private byte layout. Exercised by `inst/tinytest/test_fmalloc_ld.R`.
 
-- C-callable API version 7: added `Rfmalloc_tensor_decode(tensor, elem_offset,
+- Added `Rfmalloc_tensor_decode(tensor, elem_offset,
   n_elems, out)`, a streaming decode primitive that decodes one block-aligned
   element range of a typed tensor into a caller-owned `double*` buffer using the
   tensor's own codec. This is the read primitive an out-of-core consumer needs
@@ -55,8 +54,7 @@
   standardize flag is needed. It returns a status code rather than calling
   `Rf_error`, so a C++ caller can turn a failure into its own control flow with
   no longjmp through its stack. RfmallocStatgen's out-of-core PCA is the first
-  consumer. Additive, so existing API-6 consumers are unaffected. Exercised by
-  `inst/tinytest/test_tensor_decode_range.R`.
+  consumer. Exercised by `inst/tinytest/test_tensor_decode_range.R`.
 
 - Added `fmalloc_haplotypes()` / `fmalloc_hap_materialize()`: a phased-
   haplotype fmalloc store with a **one-bit-per-call body**, a SIBLING interface to the
@@ -206,8 +204,8 @@
   pluggable matrix-multiply backend, so single-cell PCA on a larger-than-RAM,
   compressed count matrix runs on CPU BLAS today and on a registered GPU
   backend unchanged - the same call, composable across backends.
-- Extended the backend registry with a codec-aware *typed* hook (C API v6,
-  `Rfmalloc_register_matmul_backend_ex`): a backend can register a
+- Extended the backend registry with a codec-aware *typed* hook,
+  `Rfmalloc_register_matmul_backend_ex`: a backend can register a
   `typed_gemm` that receives a compressed tensor's raw codec payload and dims
   and multiplies it by a dense operand *without* Rfmalloc decoding to f64 -
   enabling native quantized/on-device matmul (e.g. an fmalloc-mmap'd `q4_k`
@@ -219,7 +217,7 @@
   `fmalloc_matmul_backend(name)` selects one (default `"blas"` = R's BLAS) and
   `fmalloc_matmul_backends()` lists registered ones; downstream packages
   register a GEMM kernel (e.g. GPU or out-of-core-aware) through the new
-  `Rfmalloc_register_matmul_backend` C-callable (API version 5). Selection is
+  `Rfmalloc_register_matmul_backend` C-callable. Selection is
   Rfmalloc-scoped (base R's `%*%` is unaffected), and a backend may decline a
   call to fall back to BLAS. Together with the tensor codec registry this makes
   the stack pluggable at both tiers - how bytes decode and what hardware
@@ -276,8 +274,8 @@
   reference. Adds `rfm_raw_fill_pattern_impl` for building large payloads.
 - Added typed fmalloc tensors: `create_fmalloc_tensor()` tags an fmalloc raw
   payload with a dtype codec (builtin `f64`/`f32`/`f16`/`bf16`; other packages
-  register codecs through the new `Rfmalloc_register_tensor_codec` C-callable,
-  API version 4) and dims. Matrix products against dense double operands
+  register codecs through the new `Rfmalloc_register_tensor_codec` C-callable)
+  and dims. Matrix products against dense double operands
   decode the payload in bounded block-aligned column panels streamed through
   BLAS `dgemm`, so the full double representation is never materialized;
   `fmalloc_tensor_materialize()` converts to a regular fmalloc matrix.

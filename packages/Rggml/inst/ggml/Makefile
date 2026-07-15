@@ -29,7 +29,7 @@ INCLUDES = -I. -Iggml-cpu -I../include
 # expands to __assert_rtn, which R CMD check flags (compiled code must not call
 # process-terminating entry points). GGML's own GGML_ASSERT is separately
 # redirected via rggml_compat.h, so this only removes libc assert().
-# -DGGML_USE_BLAS enables GGML's BLAS backend (ggml-blas.cpp). Its cblas_sgemm
+# BLAS_ENABLED=1 enables GGML's BLAS backend (ggml-blas.cpp). Its cblas_sgemm
 # calls are satisfied by our portable shim (cblas.h + rggml_cblas.c) forwarding
 # to R's Fortran sgemm_; the final Rggml.so links $(BLAS_LIBS) $(FLIBS).
 # On aarch64, ../../configure clears GENERIC_DEFS and passes ARCH_OBJECTS instead:
@@ -41,9 +41,23 @@ INCLUDES = -I. -Iggml-cpu -I../include
 # make the binary refuse to run on machines without it.
 GENERIC_DEFS ?= -DGGML_CPU_GENERIC
 ARCH_OBJECTS ?=
+ARCH_FLAGS ?=
 
-DEFS = -DGGML_USE_CPU $(GENERIC_DEFS) -DGGML_USE_BLAS -DGGML_R_PACKAGE -D_GNU_SOURCE -DNDEBUG \
-       -DGGML_VERSION='"0.11.0"' -DGGML_COMMIT='"1f09c6987071"' \
+# webR's Fortran BLAS ABI carries hidden character lengths that do not match
+# the native R ABI used by rggml_cblas.c. configure disables this backend on
+# wasm; dense products remain available through GGML's CPU backend.
+BLAS_ENABLED ?= 1
+BLAS_DEFS =
+BLAS_CXX_SOURCES =
+BLAS_OBJECTS =
+ifeq ($(BLAS_ENABLED),1)
+BLAS_DEFS += -DGGML_USE_BLAS
+BLAS_CXX_SOURCES += ggml-blas.cpp
+BLAS_OBJECTS += rggml_cblas.o
+endif
+
+DEFS = -DGGML_USE_CPU $(GENERIC_DEFS) $(BLAS_DEFS) -DGGML_R_PACKAGE -D_GNU_SOURCE -DNDEBUG \
+       -DGGML_VERSION='"0.16.0"' -DGGML_COMMIT='"524f974bb21a"' \
        -include rggml_compat.h
 
 # Vulkan backend: empty unless ../../configure was run with --with-vulkan, in
@@ -53,7 +67,7 @@ DEFS = -DGGML_USE_CPU $(GENERIC_DEFS) -DGGML_USE_BLAS -DGGML_R_PACKAGE -D_GNU_SO
 VULKAN_OBJECTS ?=
 VULKAN_CPPFLAGS ?=
 
-# CUDA source selection mirrors upstream GGML 0.11.0's CMake recipe. The
+# CUDA source selection mirrors upstream GGML 0.16.0's CMake recipe. The
 # default build leaves CUDA_ENABLED at zero, so nvcc is neither detected nor
 # invoked unless configure received --with-cuda.
 CUDA_ENABLED ?= 0
@@ -75,8 +89,8 @@ CUDA_SOURCES += ggml-cuda/template-instances/fattn-vec-instance-bf16-bf16.cu
 endif
 CUDA_OBJECTS = $(CUDA_SOURCES:.cu=.o)
 
-ALL_CFLAGS   = $(CPPFLAGS) $(INCLUDES) $(DEFS) $(VULKAN_CPPFLAGS) $(CUDA_CPPFLAGS) $(CFLAGS)
-ALL_CXXFLAGS = $(CPPFLAGS) $(INCLUDES) $(DEFS) $(VULKAN_CPPFLAGS) $(CUDA_CPPFLAGS) $(CXXFLAGS) -std=gnu++17
+ALL_CFLAGS   = $(CPPFLAGS) $(INCLUDES) $(DEFS) $(VULKAN_CPPFLAGS) $(CUDA_CPPFLAGS) $(ARCH_FLAGS) $(CFLAGS)
+ALL_CXXFLAGS = $(CPPFLAGS) $(INCLUDES) $(DEFS) $(VULKAN_CPPFLAGS) $(CUDA_CPPFLAGS) $(ARCH_FLAGS) $(CXXFLAGS) -std=gnu++17
 
 C_SOURCES = \
   ggml.c ggml-alloc.c ggml-quants.c \
@@ -86,7 +100,7 @@ CXX_SOURCES = \
   ggml-backend.cpp ggml-backend-reg.cpp ggml-backend-meta.cpp ggml-threading.cpp gguf.cpp \
   ggml-cpu/traits.cpp ggml-cpu/vec.cpp ggml-cpu/repack.cpp \
   ggml-cpu/binary-ops.cpp ggml-cpu/unary-ops.cpp ggml-cpu/ops.cpp \
-  ggml-blas.cpp
+  $(BLAS_CXX_SOURCES)
 
 # The upstream CPU backend has ggml-cpu.c and ggml-cpu.cpp in one directory.
 # A suffix-only make rule would map both to ggml-cpu.o, so name their objects
@@ -108,7 +122,7 @@ SIMD_DISPATCH_DEFS ?=
 DISPATCH_OBJECTS ?= cpu_features.o rggml_simd_dispatch.o
 
 OBJECTS = $(C_SOURCES:.c=.o) $(CXX_SOURCES:.cpp=.o) $(CPU_CORE_OBJECTS) \
-          rggml_io.o rggml_cblas.o \
+          rggml_io.o $(BLAS_OBJECTS) \
           $(DISPATCH_OBJECTS) $(SIMD_EXTRA_OBJECTS) $(ARCH_OBJECTS) \
           $(VULKAN_OBJECTS) $(CUDA_OBJECTS)
 

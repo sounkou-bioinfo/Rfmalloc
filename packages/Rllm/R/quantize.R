@@ -13,12 +13,13 @@
 #' be a multiple of the codec's block size: 256 for the K-quants
 #' (\code{"q2_k"}, \code{"q3_k"}, \code{"q4_k"}, \code{"q5_k"}, \code{"q6_k"})
 #' and 32 for \code{"q4_0"}, \code{"q4_1"}, \code{"q5_0"}, \code{"q5_1"},
-#' \code{"q8_0"}.
+#' \code{"q8_0"}; \code{"q2_0"} uses GGML's group-64 ternary blocks.
 #'
 #' @param x A numeric matrix to quantize.
 #' @param dtype Target quantized codec, one of \code{"q4_0"}, \code{"q4_1"},
-#'   \code{"q5_0"}, \code{"q5_1"}, \code{"q8_0"}, \code{"q2_k"}, \code{"q3_k"},
-#'   \code{"q4_k"} (default), \code{"q5_k"}, \code{"q6_k"}.
+#'   \code{"q5_0"}, \code{"q5_1"}, \code{"q8_0"}, \code{"q2_0"},
+#'   \code{"q2_k"}, \code{"q3_k"}, \code{"q4_k"} (default), \code{"q5_k"},
+#'   \code{"q6_k"}.
 #' @param runtime Optional \pkg{Rfmalloc} runtime handle
 #'   (see [Rfmalloc::open_fmalloc()]); if \code{NULL}, Rfmalloc's default
 #'   runtime is used.
@@ -40,7 +41,8 @@ rllm_quantize_tensor <- function(x, dtype = "q4_k", runtime = NULL) {
         stop("x must be a numeric matrix")
     }
     dtype <- match.arg(dtype, c("q4_0", "q4_1", "q5_0", "q5_1", "q8_0",
-                                "q2_k", "q3_k", "q4_k", "q5_k", "q6_k"))
+                                "q2_0", "q2_k", "q3_k", "q4_k", "q5_k",
+                                "q6_k"))
     storage.mode(x) <- "double"
     dims <- dim(x)
     nbytes <- .Call("RC_rllm_qtensor_nbytes", dtype, dims[1L], dims[2L],

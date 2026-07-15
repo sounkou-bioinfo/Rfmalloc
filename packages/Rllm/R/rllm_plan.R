@@ -125,6 +125,7 @@ print.rllm_plan <- function(x, ...) {
     plan <- switch(
         architecture,
         llama = .rllm_plan_llama(metadata, directory, rope_mode),
+        qwen35 = .rllm_plan_qwen35(metadata, directory, rope_mode),
         lfm2moe = .rllm_plan_lfm2moe(metadata, directory, rope_mode),
         `gemma-embedding` = .rllm_plan_gemma_embedding(
             metadata, directory, rope_mode
@@ -267,6 +268,234 @@ print.rllm_plan <- function(x, ...) {
         layers = layers,
         output = list(op = "projection", norm = "output_norm.weight",
                       weight = output_weight, tied = output_weight == "token_embd.weight"),
+        tensors = tensors
+    )
+}
+
+.rllm_plan_qwen35 <- function(metadata, directory, rope_mode) {
+    arch <- "qwen35"
+    key <- function(name, default = .rllm_missing) {
+        .rllm_metadata(metadata, arch, name, default)
+    }
+    scalar <- function(name, default = .rllm_missing) {
+        value <- .rllm_positive(key(name, default), paste0(arch, ".", name))
+        if (length(value) != 1L) {
+            stop("GGUF hyperparameter '", paste0(arch, ".", name),
+                 "' must have length one")
+        }
+        value
+    }
+
+    n_layer <- scalar("block_count")
+    n_embd <- scalar("embedding_length")
+    n_head <- scalar("attention.head_count")
+    n_head_kv <- scalar("attention.head_count_kv")
+    n_ff <- scalar("feed_forward_length")
+    head_dim <- scalar("attention.key_length")
+    value_dim <- scalar("attention.value_length")
+    conv_kernel <- scalar("ssm.conv_kernel")
+    state_dim <- scalar("ssm.state_size")
+    group_count <- scalar("ssm.group_count")
+    value_heads <- scalar("ssm.time_step_rank")
+    inner_dim <- scalar("ssm.inner_size")
+    full_interval <- scalar("full_attention_interval", 4L)
+    rope_dims <- scalar("rope.dimension_count", head_dim)
+    rope_sections <- .rllm_integer(
+        key("rope.dimension_sections"),
+        "qwen35.rope.dimension_sections"
+    )
+    rms_eps <- as.numeric(key("attention.layer_norm_rms_epsilon", 1e-6))
+    rope_base <- as.numeric(key("rope.freq_base", 1e7))
+
+    if (n_head %% n_head_kv != 0L || head_dim != value_dim ||
+        inner_dim != n_head * head_dim || inner_dim %% value_heads != 0L ||
+        inner_dim %/% value_heads != state_dim ||
+        value_heads %% group_count != 0L) {
+        stop("qwen35 attention and recurrent-state dimensions are inconsistent")
+    }
+    if (conv_kernel < 2L || length(rope_sections) != 4L ||
+        sum(rope_sections) * 2L != rope_dims ||
+        length(rms_eps) != 1L || !is.finite(rms_eps) || rms_eps <= 0 ||
+        length(rope_base) != 1L || !is.finite(rope_base) || rope_base <= 0) {
+        stop("invalid qwen35 convolution, normalization, or MRoPE parameters")
+    }
+    if (!is.null(rope_mode)) {
+        stop("qwen35 uses metadata-defined MRoPE; rope_mode cannot be overridden")
+    }
+
+    recurrent <- key("attention.recurrent_layers", NULL)
+    if (is.null(recurrent)) {
+        recurrent <- seq_len(n_layer) %% full_interval != 0L
+    } else {
+        if (!(is.logical(recurrent) || is.numeric(recurrent)) ||
+            length(recurrent) != n_layer || anyNA(recurrent) ||
+            any(!recurrent %in% c(FALSE, TRUE, 0, 1))) {
+            stop("qwen35.attention.recurrent_layers must contain one flag per block")
+        }
+        recurrent <- as.logical(recurrent)
+    }
+
+    emb <- directory[match("token_embd.weight", directory$name), , drop = FALSE]
+    if (!nrow(emb)) stop("GGUF file has no 'token_embd.weight' tensor")
+    emb_shape <- as.integer(emb$dims[[1L]])
+    if (length(emb_shape) != 2L || emb_shape[[1L]] != n_embd) {
+        stop("token_embd.weight is inconsistent with qwen35.embedding_length")
+    }
+    n_vocab <- emb_shape[[2L]]
+    tensors <- list()
+    tensors <- .rllm_add_tensor(tensors, .rllm_tensor(
+        "token_embd.weight", "token_embedding", c(n_embd, n_vocab)))
+    tensors <- .rllm_add_tensor(tensors, .rllm_tensor(
+        "output_norm.weight", "output_norm", n_embd))
+    output_weight <- if ("output.weight" %in% directory$name) {
+        tensors <- .rllm_add_tensor(tensors, .rllm_tensor(
+            "output.weight", "output_projection", c(n_embd, n_vocab)))
+        "output.weight"
+    } else {
+        "token_embd.weight"
+    }
+
+    kv_dim <- head_dim * n_head_kv
+    key_width <- state_dim * group_count
+    conv_width <- 2L * key_width + inner_dim
+    layers <- vector("list", n_layer)
+    for (index in seq_len(n_layer)) {
+        il <- index - 1L
+        prefix <- paste0("blk.", il, ".")
+        bind <- function(suffix, role, shape) {
+            .rllm_tensor(paste0(prefix, suffix), paste0("layer.", il, ".", role),
+                         shape)
+        }
+        norm <- bind("attn_norm.weight", "operator_norm", n_embd)
+        ffn_norm <- bind("post_attention_norm.weight", "ffn_norm", n_embd)
+        ffn <- list(
+            bind("ffn_gate.weight", "ffn.gate", c(n_embd, n_ff)),
+            bind("ffn_up.weight", "ffn.up", c(n_embd, n_ff)),
+            bind("ffn_down.weight", "ffn.down", c(n_ff, n_embd))
+        )
+        tensors <- .rllm_add_tensor(tensors, norm)
+        tensors <- .rllm_add_tensor(tensors, ffn_norm)
+        for (binding in ffn) tensors <- .rllm_add_tensor(tensors, binding)
+
+        if (recurrent[[index]]) {
+            op_bindings <- list(
+                bind("attn_qkv.weight", "gated_delta.qkv",
+                     c(n_embd, conv_width)),
+                bind("attn_gate.weight", "gated_delta.output_gate",
+                     c(n_embd, inner_dim)),
+                bind("ssm_conv1d.weight", "gated_delta.convolution",
+                     c(conv_kernel, conv_width)),
+                bind("ssm_dt.bias", "gated_delta.time_bias", value_heads),
+                bind("ssm_a", "gated_delta.decay", value_heads),
+                bind("ssm_beta.weight", "gated_delta.beta",
+                     c(n_embd, value_heads)),
+                bind("ssm_alpha.weight", "gated_delta.alpha",
+                     c(n_embd, value_heads)),
+                bind("ssm_norm.weight", "gated_delta.output_norm", state_dim),
+                bind("ssm_out.weight", "gated_delta.output",
+                     c(inner_dim, n_embd))
+            )
+            for (binding in op_bindings) {
+                tensors <- .rllm_add_tensor(tensors, binding)
+            }
+            operator <- list(
+                op = "gated_delta_net",
+                qkv = op_bindings[[1L]]$name,
+                output_gate = op_bindings[[2L]]$name,
+                convolution = op_bindings[[3L]]$name,
+                time_bias = op_bindings[[4L]]$name,
+                decay = op_bindings[[5L]]$name,
+                beta = op_bindings[[6L]]$name,
+                alpha = op_bindings[[7L]]$name,
+                norm = op_bindings[[8L]]$name,
+                output = op_bindings[[9L]]$name,
+                key_heads = group_count,
+                value_heads = value_heads,
+                key_head_dim = state_dim,
+                value_head_dim = state_dim,
+                convolution_width = conv_width,
+                convolution_kernel = conv_kernel,
+                qk_norm = list(kind = "l2", eps = rms_eps),
+                activations = list(
+                    convolution = "silu", beta = "sigmoid",
+                    time_step = "softplus", output_gate = "silu"
+                )
+            )
+            state <- list(
+                op = "gated_delta",
+                matrix = c(row = state_dim, column = state_dim,
+                           head = value_heads),
+                convolution = c(width = conv_width,
+                                history = conv_kernel - 1L)
+            )
+        } else {
+            op_bindings <- list(
+                bind("attn_q.weight", "attention.query_gate",
+                     c(n_embd, 2L * inner_dim)),
+                bind("attn_k.weight", "attention.key", c(n_embd, kv_dim)),
+                bind("attn_v.weight", "attention.value", c(n_embd, kv_dim)),
+                bind("attn_output.weight", "attention.output",
+                     c(inner_dim, n_embd)),
+                bind("attn_q_norm.weight", "attention.query_norm", head_dim),
+                bind("attn_k_norm.weight", "attention.key_norm", head_dim)
+            )
+            for (binding in op_bindings) {
+                tensors <- .rllm_add_tensor(tensors, binding)
+            }
+            operator <- list(
+                op = "gated_attention",
+                query_gate = op_bindings[[1L]]$name,
+                key = op_bindings[[2L]]$name,
+                value = op_bindings[[3L]]$name,
+                output = op_bindings[[4L]]$name,
+                query_norm = op_bindings[[5L]]$name,
+                key_norm = op_bindings[[6L]]$name,
+                query_gate_layout = "head_interleaved",
+                gate_activation = "sigmoid",
+                n_head = n_head,
+                n_head_kv = n_head_kv,
+                head_dim = head_dim,
+                rope = list(mode = "mrope", dims = rope_dims,
+                            sections = rope_sections, base = rope_base),
+                scale = list(at = "logits", value = 1 / sqrt(head_dim)),
+                mask = list(type = "causal", window = 0L)
+            )
+            state <- list(op = "kv", width = kv_dim)
+        }
+
+        layers[[index]] <- list(
+            index = il,
+            operator_norm = norm$name,
+            operator = operator,
+            operator_post_norm = NULL,
+            ffn_norm = ffn_norm$name,
+            feed_forward = list(
+                op = "swiglu", gate = ffn[[1L]]$name,
+                up = ffn[[2L]]$name, down = ffn[[3L]]$name,
+                width = n_ff
+            ),
+            feed_forward_post_norm = NULL,
+            state = state
+        )
+    }
+
+    list(
+        architecture = arch,
+        symbols = list(
+            n_layer = n_layer, n_embd = n_embd, n_head = n_head,
+            n_head_kv = n_head_kv, n_ff = n_ff, n_vocab = n_vocab,
+            head_dim = head_dim, rms_eps = rms_eps, rope_base = rope_base,
+            rope_dims = rope_dims, rope_sections = rope_sections,
+            recurrent = recurrent, full_attention_interval = full_interval,
+            ssm_state_size = state_dim, ssm_group_count = group_count,
+            ssm_value_heads = value_heads, ssm_inner_size = inner_dim,
+            ssm_conv_kernel = conv_kernel
+        ),
+        input = list(op = "embedding", weight = "token_embd.weight", scale = 1),
+        layers = layers,
+        output = list(op = "projection", norm = "output_norm.weight",
+                      weight = output_weight,
+                      tied = output_weight == "token_embd.weight"),
         tensors = tensors
     )
 }

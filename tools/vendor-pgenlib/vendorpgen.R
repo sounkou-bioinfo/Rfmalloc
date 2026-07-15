@@ -7,6 +7,7 @@
 #
 #     (SHA-pinned pgenlibr CRAN tarball) - (Rcpp wrappers)
 #                              + (Makevars and cleanup integration)
+#                              + (documented portability patches)
 #
 # recorded beside this script and verifiable by re-running it.
 #
@@ -47,6 +48,12 @@
 #   edit 3: pgenlibr's cleanup script removes only objects directly under
 #           src/. Rpgen also compiles the vendored tree in tools/include/, so
 #           the generated cleanup script removes those external objects too.
+#   patch : patches/plink2_simd_wasm.patch selects pgenlib's word-width-correct
+#           scalar path on wasm32. wasm32 is not 32-bit x86, so it must not
+#           include Emscripten's xmmintrin compatibility header.
+#           patches/plink2_float_wasm.patch leaves WebAssembly's specified
+#           floating-point environment unchanged instead of emitting an arm64
+#           FPCR instruction for every non-x86 target.
 #
 # Usage (from anywhere):
 #   Rscript tools/vendor-pgenlib/vendorpgen.R download   # fetch + SHA-verify the tarball into cache/
@@ -302,7 +309,7 @@ for (f in tools_files) {
   stopifnot(file.copy(file.path(src, "tools", f), file.path(out, "tools", f), overwrite = TRUE))
 }
 
-message("copy tools/include/ (pgenlib core + zstd + libdeflate + simde, verbatim)")
+message("copy tools/include/ (pgenlib core + zstd + libdeflate + simde)")
 inc_src <- file.path(src, "tools", "include")
 inc_out <- file.path(out, "tools", "include")
 unlink(inc_out, recursive = TRUE)
@@ -313,6 +320,18 @@ for (f in inc_manifest) {
   stopifnot(file.copy(file.path(inc_src, f), file.path(inc_out, f), overwrite = TRUE))
 }
 message("  ", length(inc_manifest), " files")
+
+message("apply pgenlib portability patches")
+patches <- sort(list.files(file.path(here, "patches"), "\\.patch$", full.names = TRUE))
+for (patch_file in patches) {
+  rc <- system2(
+    "patch",
+    c("-p1", "-s", "--no-backup-if-mismatch", "-d", shQuote(inc_out)),
+    stdin = patch_file, stdout = "", stderr = ""
+  )
+  if (rc != 0L) stop("patch failed: ", basename(patch_file))
+  message("  ", basename(patch_file))
+}
 
 message("copy inst/extdata/ test fixture (verbatim)")
 dir.create(file.path(out, "inst", "extdata"), showWarnings = FALSE, recursive = TRUE)

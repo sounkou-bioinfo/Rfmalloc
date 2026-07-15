@@ -1,0 +1,15 @@
+--- a/include/plink2_simd.h
++++ b/include/plink2_simd.h
+@@ -27,7 +27,11 @@
+ 
+ #include "plink2_base.h"
+ 
+-#ifdef __LP64__
++#if defined(__wasm__) || defined(__EMSCRIPTEN__)
++// wasm32 is not 32-bit x86. Keep the word-width-correct scalar path instead
++// of including Emscripten's x86-only xmmintrin compatibility header.
++#  define ALIGNV16 __attribute__ ((aligned (16)))
++#elif defined(__LP64__)
+ // Possible todo: working no-SSE2 fallback on 64-bit little-endian platforms
+ // unsupported by simde.  Can perform early test by compiling on arm64 without
+ // simde.

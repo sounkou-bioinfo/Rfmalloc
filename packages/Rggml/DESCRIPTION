@@ -15,15 +15,13 @@ Description: Vendors the core, official 'GGUF' implementation, and CPU
     it has no high-level R modeling API of its own. Other R packages link to
     it ('LinkingTo') to build and compute 'GGML' tensor graphs (including
     quantized types such as Q4_K) from their own C or C++ code without
-    re-vendoring 'GGML'. The CPU and BLAS backends are always built (dense
-    products offload to R's own BLAS); the 'Vulkan' and NVIDIA 'CUDA'
-    backends are independent opt-in builds.
+    re-vendoring 'GGML'. The CPU backend is always built. Native targets also
+    build the BLAS backend for dense products; webR uses the CPU backend because
+    its Fortran ABI differs. The 'Vulkan' and NVIDIA 'CUDA' backends are
+    independent opt-in builds.
 License: GPL (>= 2)
 Encoding: UTF-8
-SystemRequirements: GNU make, C++17, optional GPU builds require 'glslc' and
-    Vulkan headers for '--with-vulkan' (on Windows, the LunarG Vulkan SDK with
-    VULKAN_SDK set), or the NVIDIA CUDA toolkit including 'nvcc' and cuBLAS for
-    '--with-cuda' (Unix-like builds).
+SystemRequirements: GNU make, C++17
 Biarch: false
 Depends:
     R (>= 4.4.0)

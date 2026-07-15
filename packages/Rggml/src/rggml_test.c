@@ -635,7 +635,8 @@ SEXP RC_rggml_cuda_info(void)
 }
 
 /*
- * RC_rggml_cpu_info() -> list(arch_kernels, simd_dispatch, sgemm, vulkan, cuda)
+ * RC_rggml_cpu_info() ->
+ *   list(arch_kernels, simd_dispatch, blas, sgemm, vulkan, cuda)
  *
  * Reports what configure actually compiled, read straight off the preprocessor
  * symbols it put in PKG_CPPFLAGS. This exists because a build that silently
@@ -649,6 +650,8 @@ SEXP RC_rggml_cpu_info(void)
     static const char *const kernels =
 #ifdef RGGML_ARCH_ARM
         "arm";
+#elif defined(RGGML_ARCH_WASM)
+        "wasm";
 #else
         "generic";
 #endif
@@ -660,6 +663,12 @@ SEXP RC_rggml_cpu_info(void)
 #endif
     const Rboolean sgemm =
 #ifdef RGGML_HAVE_SGEMM
+        TRUE;
+#else
+        FALSE;
+#endif
+    const Rboolean blas =
+#ifdef RGGML_HAVE_BLAS
         TRUE;
 #else
         FALSE;
@@ -677,19 +686,21 @@ SEXP RC_rggml_cpu_info(void)
         FALSE;
 #endif
 
-    SEXP out = PROTECT(Rf_allocVector(VECSXP, 5));
+    SEXP out = PROTECT(Rf_allocVector(VECSXP, 6));
     SET_VECTOR_ELT(out, 0, Rf_mkString(kernels));
     SET_VECTOR_ELT(out, 1, Rf_ScalarLogical(dispatch));
-    SET_VECTOR_ELT(out, 2, Rf_ScalarLogical(sgemm));
-    SET_VECTOR_ELT(out, 3, Rf_ScalarLogical(vulkan));
-    SET_VECTOR_ELT(out, 4, Rf_ScalarLogical(cuda));
+    SET_VECTOR_ELT(out, 2, Rf_ScalarLogical(blas));
+    SET_VECTOR_ELT(out, 3, Rf_ScalarLogical(sgemm));
+    SET_VECTOR_ELT(out, 4, Rf_ScalarLogical(vulkan));
+    SET_VECTOR_ELT(out, 5, Rf_ScalarLogical(cuda));
 
-    SEXP nm = PROTECT(Rf_allocVector(STRSXP, 5));
+    SEXP nm = PROTECT(Rf_allocVector(STRSXP, 6));
     SET_STRING_ELT(nm, 0, Rf_mkChar("arch_kernels"));
     SET_STRING_ELT(nm, 1, Rf_mkChar("simd_dispatch"));
-    SET_STRING_ELT(nm, 2, Rf_mkChar("sgemm"));
-    SET_STRING_ELT(nm, 3, Rf_mkChar("vulkan"));
-    SET_STRING_ELT(nm, 4, Rf_mkChar("cuda"));
+    SET_STRING_ELT(nm, 2, Rf_mkChar("blas"));
+    SET_STRING_ELT(nm, 3, Rf_mkChar("sgemm"));
+    SET_STRING_ELT(nm, 4, Rf_mkChar("vulkan"));
+    SET_STRING_ELT(nm, 5, Rf_mkChar("cuda"));
     Rf_setAttrib(out, R_NamesSymbol, nm);
     UNPROTECT(2);
     return out;

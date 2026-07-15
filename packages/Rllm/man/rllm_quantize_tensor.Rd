@@ -10,8 +10,9 @@ rllm_quantize_tensor(x, dtype = "q4_k", runtime = NULL)
 \item{x}{A numeric matrix to quantize.}
 
 \item{dtype}{Target quantized codec, one of \code{"q4_0"}, \code{"q4_1"},
-\code{"q5_0"}, \code{"q5_1"}, \code{"q8_0"}, \code{"q2_k"}, \code{"q3_k"},
-\code{"q4_k"} (default), \code{"q5_k"}, \code{"q6_k"}.}
+\code{"q5_0"}, \code{"q5_1"}, \code{"q8_0"}, \code{"q2_0"},
+\code{"q2_k"}, \code{"q3_k"}, \code{"q4_k"} (default), \code{"q5_k"},
+\code{"q6_k"}.}
 
 \item{runtime}{Optional \pkg{Rfmalloc} runtime handle
 (see \code{\link[Rfmalloc:open_fmalloc]{Rfmalloc::open_fmalloc()}}); if \code{NULL}, Rfmalloc's default
@@ -36,7 +37,7 @@ The number of rows of \code{x} is the quantized (per-row) dimension and must
 be a multiple of the codec's block size: 256 for the K-quants
 (\code{"q2_k"}, \code{"q3_k"}, \code{"q4_k"}, \code{"q5_k"}, \code{"q6_k"})
 and 32 for \code{"q4_0"}, \code{"q4_1"}, \code{"q5_0"}, \code{"q5_1"},
-\code{"q8_0"}.
+\code{"q8_0"}; \code{"q2_0"} uses GGML's group-64 ternary blocks.
 }
 \examples{
 rt <- Rfmalloc::open_fmalloc(tempfile(fileext = ".bin"))
@@ -48,5 +49,5 @@ Y <- X \%*\% Wt                                      # native quantized product
 dim(Y)
 }
 \seealso{
-\code{\link[=rllm_use_ggml]{rllm_use_ggml()}}, \code{\link[Rfmalloc:fmalloc_tensor]{Rfmalloc::create_fmalloc_tensor()}}
+\code{\link[=rllm_use_ggml]{rllm_use_ggml()}}, \code{\link[Rfmalloc:create_fmalloc_tensor]{Rfmalloc::create_fmalloc_tensor()}}
 }

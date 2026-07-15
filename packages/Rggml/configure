@@ -107,16 +107,37 @@ export R_INCLUDE_FLAGS
 # Per-ISA kernels are compiled here with their own ISA flags, NOT through R's
 # recorded package compilation, so R CMD check raises no non-portable-flags
 # NOTE. A variant is only linked (and, after a runtime CPUID check, only ever
-# called) when the toolchain accepts its flags - so e.g. -mavx2 is skipped on
-# arm64/macOS, which then falls back to GGML's scalar reference.
+# called) when the toolchain accepts its flags. Target classification happens
+# first, so an Apple clang arm64 build cannot accept and ignore x86 flags.
 SIMD_EXTRA_OBJECTS=""
 SIMD_DISPATCH_DEFS=""
 _probe_base=`mktemp 2>/dev/null || echo "/tmp/rggml_probe_$$"`
 _probe_c="${_probe_base}.c"
+_probe_macros="${_probe_base}.macros"
 printf 'int main(void){return 0;}\n' > "$_probe_c"
+
+# Classify the compiler target from its predefined macros. Testing an ISA flag
+# is not target detection: Apple clang accepts -mavx2/-mfma on arm64 and only
+# warns that it ignored them, which used to stage an x86 object in an arm build.
+if ! $CC -dM -E -x c "$_probe_c" > "$_probe_macros" 2>/dev/null; then
+    echo "Error: could not inspect compiler target macros." >&2
+    exit 1
+fi
+IS_X86=0
+IS_ARM=0
+IS_WASM=0
+if grep -Eq '^#define (__wasm__|__EMSCRIPTEN__)( |$)' "$_probe_macros"; then
+    IS_WASM=1
+elif grep -Eq '^#define (__x86_64__|__i386__|_M_X64|_M_IX86)( |$)' "$_probe_macros"; then
+    IS_X86=1
+elif grep -Eq '^#define (__aarch64__|_M_ARM64)( |$)' "$_probe_macros"; then
+    IS_ARM=1
+fi
+
 # x86 (incl. Intel macOS, still a CRAN/r-universe target): stage the AVX2
 # variant if the toolchain accepts the flags; a runtime CPUID check gates it.
-if $CC -mavx2 -mfma "$_probe_c" -o "${_probe_c}.out" >/dev/null 2>&1; then
+if [ "$IS_X86" = "1" ] && \
+        $CC -mavx2 -mfma "$_probe_c" -o "${_probe_c}.out" >/dev/null 2>&1; then
     echo "SIMD: AVX2 supported - staging AVX2 q4_K kernel variant"
     SIMD_EXTRA_OBJECTS="$SIMD_EXTRA_OBJECTS rggml_q4k_avx2.o"
     SIMD_DISPATCH_DEFS="$SIMD_DISPATCH_DEFS -DRGGML_HAVE_AVX2"
@@ -129,13 +150,14 @@ fi
 # duplicate the canonical ggml_vec_dot_q4_K_q8_K they define).
 GENERIC_DEFS="-DGGML_CPU_GENERIC"
 ARCH_OBJECTS=""
+ARCH_FLAGS=""
 DISPATCH_OBJECTS="cpu_features.o rggml_simd_dispatch.o"
 # Recorded into the R-visible binary (see rggml_cpu_info()) so that the branch
 # taken here is asserted by the test suite instead of trusted. A silent fallback
 # to the generic kernels would otherwise produce an identically green build.
 ARCH_KERNELS_DEF=""
 SIMD_DISPATCH_DEF="-DRGGML_SIMD_DISPATCH=1"
-if $CC -dM -E -x c "$_probe_c" 2>/dev/null | grep -q '__aarch64__\|_M_ARM64'; then
+if [ "$IS_ARM" = "1" ]; then
     if [ -f ggml-cpu/arch/arm/quants.c ]; then
         echo "SIMD: aarch64 - using GGML's native NEON kernels (all quantized types)"
         GENERIC_DEFS=""
@@ -148,11 +170,23 @@ if $CC -dM -E -x c "$_probe_c" 2>/dev/null | grep -q '__aarch64__\|_M_ARM64'; th
         SIMD_EXTRA_OBJECTS="$SIMD_EXTRA_OBJECTS rggml_q4k_neon.o"
         SIMD_DISPATCH_DEFS="$SIMD_DISPATCH_DEFS -DRGGML_HAVE_NEON"
     fi
+elif [ "$IS_WASM" = "1" ]; then
+    if [ ! -f ggml-cpu/arch/wasm/quants.c ]; then
+        echo "Error: pinned GGML tree is missing its wasm quant kernels." >&2
+        exit 1
+    fi
+    echo "SIMD: wasm32 - using GGML's wasm SIMD128 quant kernels"
+    GENERIC_DEFS=""
+    ARCH_OBJECTS="ggml-cpu/arch/wasm/quants.o"
+    ARCH_FLAGS="-msimd128"
+    DISPATCH_OBJECTS=""
+    ARCH_KERNELS_DEF="-DRGGML_ARCH_WASM=1"
+    SIMD_DISPATCH_DEF=""
 fi
-if [ -z "$SIMD_EXTRA_OBJECTS" ]; then
+if [ -z "$SIMD_EXTRA_OBJECTS" ] && [ -z "$ARCH_OBJECTS" ]; then
     echo "SIMD: no staged variant for this toolchain - q4_K uses the scalar reference"
 fi
-rm -f "$_probe_base" "$_probe_c" "${_probe_c}.out"
+rm -f "$_probe_base" "$_probe_c" "$_probe_macros" "${_probe_c}.out"
 
 # --- Does R's BLAS actually provide single precision? -------------------------
 # GGML's BLAS backend calls cblas_sgemm; our shim (rggml_cblas.c) implements it
@@ -162,7 +196,14 @@ rm -f "$_probe_base" "$_probe_c" "${_probe_c}.out"
 # unnoticed until the first Windows build failed to link. Probe, and let the shim
 # promote to dgemm_ when sgemm_ is missing.
 CBLAS_DEFS=""
-if [ -z "${RGGML_NO_SGEMM:-}" ]; then
+BLAS_ENABLED=1
+if [ "$IS_WASM" = "1" ]; then
+    # webR's flang BLAS uses hidden character-length arguments. Our native
+    # C-to-Fortran shim follows R's host ABI and cannot be linked to that wasm
+    # ABI. GGML's CPU backend already owns dense products on this target.
+    BLAS_ENABLED=0
+    echo "BLAS: disabled for wasm - using GGML's CPU backend"
+elif [ -z "${RGGML_NO_SGEMM:-}" ]; then
     _bl=`"${R_HOME}/bin/R" CMD config BLAS_LIBS 2>/dev/null`
     _fl=`"${R_HOME}/bin/R" CMD config FLIBS 2>/dev/null`
     _sg=`mktemp 2>/dev/null || echo "/tmp/rggml_sgemm_$$"`
@@ -290,7 +331,7 @@ else
 fi
 
 # --- CUDA backend (only when requested) ---------------------------------------
-# CUDA comes from the same pinned upstream GGML 0.11.0 source tree as the core.
+# CUDA comes from the same pinned upstream GGML source tree as the core.
 # The default build never looks for nvcc. An explicit CUDA build is native to
 # its installation machine unless RGGML_CUDA_ARCH names another architecture,
 # for example sm_89 or sm_120a. This keeps GPU switches out of R's recorded
@@ -452,7 +493,8 @@ fi
 make clean >/dev/null 2>&1 || true
 if make SIMD_EXTRA_OBJECTS="$SIMD_EXTRA_OBJECTS" SIMD_DISPATCH_DEFS="$SIMD_DISPATCH_DEFS" \
         GENERIC_DEFS="$GENERIC_DEFS" ARCH_OBJECTS="$ARCH_OBJECTS" \
-        DISPATCH_OBJECTS="$DISPATCH_OBJECTS" CBLAS_DEFS="$CBLAS_DEFS" \
+        ARCH_FLAGS="$ARCH_FLAGS" DISPATCH_OBJECTS="$DISPATCH_OBJECTS" \
+        BLAS_ENABLED="$BLAS_ENABLED" CBLAS_DEFS="$CBLAS_DEFS" \
         VULKAN_OBJECTS="$VULKAN_OBJECTS" VULKAN_CPPFLAGS="$VULKAN_CPPFLAGS" \
         CUDA_ENABLED="$USE_CUDA" NVCC="$NVCC" CUDA_CPPFLAGS="$CUDA_CPPFLAGS" \
         CUDA_NVCCFLAGS="$CUDA_NVCCFLAGS" CUDA_HOST_PIC="$R_CPICFLAGS"; then
@@ -496,18 +538,19 @@ cat > "$MAKEVARS_FILE" << 'EOF'
 # etc. from ggml-backend*.cpp).
 
 PKG_CPPFLAGS = -I../inst/include -I../inst/ggml @RGGML_VULKAN_DEF@ @RGGML_CUDA_DEF@ @RGGML_BUILD_DEFS@
-# $(BLAS_LIBS) $(FLIBS) resolve the Fortran sgemm_ that our cblas shim
+# @BLAS_LINK_LIBS@ resolves the Fortran sgemm_ that our cblas shim
 # (inst/ggml/rggml_cblas.c) forwards GGML's BLAS backend to. -lggml precedes
-# them so its unresolved sgemm_ pulls from R's BLAS. @VULKAN_LIBS@ is empty
-# unless configure was given --with-vulkan. @CUDA_LIBS@ is similarly empty
-# unless configure was given --with-cuda.
-PKG_LIBS = -L../inst/ggml -lggml @VULKAN_LIBS@ @CUDA_LIBS@ $(BLAS_LIBS) $(FLIBS) @PLATFORM_LIBS@
+# it so its unresolved sgemm_ pulls from R's BLAS. It is empty on wasm, where
+# no BLAS backend or Fortran shim is compiled. @VULKAN_LIBS@ is empty unless
+# configure was given --with-vulkan. @CUDA_LIBS@ is similarly empty unless
+# configure was given --with-cuda.
+PKG_LIBS = -L../inst/ggml -lggml @VULKAN_LIBS@ @CUDA_LIBS@ @BLAS_LINK_LIBS@ @PLATFORM_LIBS@
 
 CXX_STD = CXX17
 EOF
 
 # Substituted here rather than expanded in the heredoc above, which is quoted so
-# that make's own $(BLAS_LIBS)/$(FLIBS) survive verbatim.
+# that make's own $(BLAS_LIBS)/$(FLIBS) survive verbatim when enabled.
 RGGML_VULKAN_DEF=""
 [ "$USE_VULKAN" = "1" ] && RGGML_VULKAN_DEF="-DRGGML_HAVE_VULKAN"
 RGGML_CUDA_DEF=""
@@ -515,8 +558,14 @@ RGGML_CUDA_DEF=""
 # The three build decisions above, carried into the binary so rggml_cpu_info()
 # reports what was actually compiled rather than what we meant to compile.
 RGGML_BUILD_DEFS="$ARCH_KERNELS_DEF $SIMD_DISPATCH_DEF $CBLAS_DEFS"
+BLAS_LINK_LIBS=""
+if [ "$BLAS_ENABLED" = "1" ]; then
+    RGGML_BUILD_DEFS="$RGGML_BUILD_DEFS -DRGGML_HAVE_BLAS"
+    BLAS_LINK_LIBS='$(BLAS_LIBS) $(FLIBS)'
+fi
 sed -i.bak -e "s|@VULKAN_LIBS@|$VULKAN_LIBS|" \
            -e "s|@CUDA_LIBS@|$CUDA_LIBS|" \
+           -e "s|@BLAS_LINK_LIBS@|$BLAS_LINK_LIBS|" \
            -e "s|@RGGML_VULKAN_DEF@|$RGGML_VULKAN_DEF|" \
            -e "s|@RGGML_CUDA_DEF@|$RGGML_CUDA_DEF|" \
            -e "s|@RGGML_BUILD_DEFS@|$RGGML_BUILD_DEFS|" \

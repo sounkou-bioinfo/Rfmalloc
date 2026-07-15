@@ -20,15 +20,14 @@ The first composition is a codec-aware matrix-product backend:
 directly through GGML after registering with Rfmalloc’s backend
 registry. The second normalizes GGUF metadata into semantic plans and
 composes those plans into forward graphs, state, embeddings and
-byte-level generation over the same typed storage. Llama, LFM2MoE and
-EmbeddingGemma are model probes of the operator vocabulary rather than
-C++ subclasses.
+byte-level generation over the same typed storage. Llama, Qwen3.5,
+LFM2MoE and EmbeddingGemma are model probes of the operator vocabulary
+rather than C++ subclasses.
 
 ## Quantized products, zero-copy
 
 ``` r
 library(Rllm)   # registers + selects the ggml backend
-#> Rllm: ggml quantized matmul backend registered and active for Rfmalloc typed tensors (disable with rllm_use_ggml(FALSE)).
 
 rt <- Rfmalloc::open_fmalloc(tempfile(fileext = ".bin"))
 set.seed(1)
@@ -116,12 +115,24 @@ program
 #> <rllm_program encoder: 5 nodes, 1 parameters, 2 outputs; add=1/attention=1/input=1/pool=1/rms_norm=1>
 ```
 
+The Qwen3.5 plan is the first deliberately heterogeneous model probe.
+The metadata and tensor directory of [Ternary Bonsai
+27B](https://huggingface.co/prism-ml/Ternary-Bonsai-27B-gguf) normalize
+to one R data AST with 48 gated-delta recurrent blocks, 16
+gated-attention blocks, two kinds of persistent state and 851 typed
+parameter bindings. Its official group-64 `q2_0` weights remain a
+storage-codec concern. The recurrent and attention mixture remains an
+architecture concern. Neither becomes a model-family branch in C++. The
+plan is inspectable now; execution still requires lowerings for gated
+delta net and MRoPE gated attention.
+
 The language does not pretend that every recorded operator executes. The
 native lowerer implements the operators exercised by llama, LFM2MoE and
-EmbeddingGemma. ESM, Evo 2 and Tiny Recursive Models are structural
-stress tests for padding masks and representation taps, stateful long
-convolutions, and nested shared recurrence. A missing lowering is
-reported as such; it is not another architecture branch hidden in C++.
+EmbeddingGemma. Qwen3.5, ESM, Evo 2 and Tiny Recursive Models are
+structural stress tests for hybrid recurrent-attention state, padding
+masks and representation taps, stateful long convolutions, and nested
+shared recurrence. A missing lowering is reported as such; it is not
+another architecture branch hidden in C++.
 
 [Rtinycc](https://github.com/sounkou-bioinfo/Rtinycc) is a plausible
 prototype target for generated C reference operators and ABI glue. It

@@ -19,6 +19,11 @@ rt <- Rfmalloc::open_fmalloc(tempfile(fileext = ".bin"))
 for (ty in names(fixture)) {
     f <- fixture[[ty]]
 
+    # Fixtures must be self-contained bytes, not a serialized ALTREP which
+    # tries to reopen the generator's temporary mmap during readRDS().
+    expect_true(is.raw(f$payload), info = ty)
+    expect_false(Rfmalloc::is_fmalloc_vector(f$payload), info = ty)
+
     # Stage the ggml-quantized bytes in fmalloc storage and decode them through
     # Rgguf's registered codec (fmalloc_tensor_materialize).
     payload <- Rfmalloc::create_fmalloc_vector("raw", length = length(f$payload),

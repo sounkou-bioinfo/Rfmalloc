@@ -29,6 +29,7 @@ RGGUF_DECODER(rgguf_q4_1, GGML_TYPE_Q4_1)
 RGGUF_DECODER(rgguf_q5_0, GGML_TYPE_Q5_0)
 RGGUF_DECODER(rgguf_q5_1, GGML_TYPE_Q5_1)
 RGGUF_DECODER(rgguf_q8_0, GGML_TYPE_Q8_0)
+RGGUF_DECODER(rgguf_q2_0, GGML_TYPE_Q2_0)
 RGGUF_DECODER(rgguf_q2_k, GGML_TYPE_Q2_K)
 RGGUF_DECODER(rgguf_q3_k, GGML_TYPE_Q3_K)
 RGGUF_DECODER(rgguf_q4_k, GGML_TYPE_Q4_K)
@@ -54,6 +55,7 @@ void rgguf_register_fmalloc_codecs(void)
     rgguf_register_one("q5_0", GGML_TYPE_Q5_0, rgguf_q5_0);
     rgguf_register_one("q5_1", GGML_TYPE_Q5_1, rgguf_q5_1);
     rgguf_register_one("q8_0", GGML_TYPE_Q8_0, rgguf_q8_0);
+    rgguf_register_one("q2_0", GGML_TYPE_Q2_0, rgguf_q2_0);
     rgguf_register_one("q2_k", GGML_TYPE_Q2_K, rgguf_q2_k);
     rgguf_register_one("q3_k", GGML_TYPE_Q3_K, rgguf_q3_k);
     rgguf_register_one("q4_k", GGML_TYPE_Q4_K, rgguf_q4_k);

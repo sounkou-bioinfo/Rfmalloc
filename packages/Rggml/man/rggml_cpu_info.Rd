@@ -9,15 +9,18 @@ rggml_cpu_info()
 \value{
 A list with
 \describe{
-\item{\code{arch_kernels}}{\code{"arm"} when GGML's hand-tuned NEON kernels
-(\code{ggml-cpu/arch/arm/quants.c}, every quantized type) are compiled in;
-\code{"generic"} when the portable reference kernels are.}
+\item{\code{arch_kernels}}{\code{"arm"} for GGML's hand-tuned NEON kernels,
+\code{"wasm"} for its SIMD128 kernels, and \code{"generic"} for the portable
+reference kernels.}
 \item{\code{simd_dispatch}}{\code{TRUE} when the runtime CPUID dispatcher is active
 (x86: the staged AVX2 \code{q4_K} variant). Always \code{FALSE} alongside
-\code{arch_kernels = "arm"}, which supersedes it.}
+\code{arch_kernels = "arm"} or \code{"wasm"}, which supersede it.}
+\item{\code{blas}}{\code{TRUE} when GGML's BLAS backend and R's Fortran bridge
+are part of this target build. It is \code{FALSE} on wasm, where webR's
+hidden character-length ABI is incompatible with the native bridge.}
 \item{\code{sgemm}}{\code{TRUE} when R's BLAS exports \code{sgemm_} and GGML's BLAS
-backend calls it directly; \code{FALSE} when the shim promotes to \code{dgemm_},
-the only BLAS routine R guarantees.}
+backend calls it directly; \code{FALSE} when the shim promotes to \code{dgemm_}
+or when \code{blas} is \code{FALSE}.}
 \item{\code{vulkan}}{\code{TRUE} when built with \code{--with-vulkan}. Whether a \emph{device}
 is visible is a separate question: see \code{\link[=rggml_vulkan_info]{rggml_vulkan_info()}}.}
 \item{\code{cuda}}{\code{TRUE} when built with \code{--with-cuda}. Whether a \emph{device}

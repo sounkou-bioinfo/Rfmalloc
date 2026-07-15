@@ -2,7 +2,7 @@
 # Regenerate Rggml's vendored engine from one pinned ggml-org source tree.
 # The committed tree is:
 #
-#     selected files from ggml-org/ggml v0.11.0
+#     selected files from ggml-org/ggml v0.16.0
 #   + patches/
 #   + overlay/
 #
@@ -17,13 +17,13 @@
 args <- commandArgs(trailingOnly = TRUE)
 mode <- if (length(args) > 0L) args[[1L]] else "check"
 
-ggml_tag <- "v0.11.0"
-ggml_commit <- "1f09c6987071512f9a11189880c0130b1349b8dc"
+ggml_tag <- "v0.16.0"
+ggml_commit <- "524f974bb21a1013408f76d71c15732482c0c3fe"
 ggml_url <- sprintf(
   "https://github.com/ggml-org/ggml/archive/refs/tags/%s.tar.gz",
   ggml_tag
 )
-source_tree_sha <- "e2b4e65f0780bfe14884d924649a68b4b2d3326cbb9644046fa6e3f13dbb8ea9"
+source_tree_sha <- "81dcabafee82839a6ce3cefd61e218db7411af7a8f5abbaeaa6fd02bad9cd266"
 
 get_script_path <- function() {
   cmd_args <- commandArgs()

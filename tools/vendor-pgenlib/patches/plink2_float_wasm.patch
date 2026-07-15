@@ -1,0 +1,14 @@
+--- a/include/plink2_float.cc
++++ b/include/plink2_float.cc
+@@ -25,7 +25,10 @@
+ #endif
+ 
+ void flush_denormals() {
+-#if defined(__x86_64__) || defined(__i386__)
++#if defined(__wasm__) || defined(__EMSCRIPTEN__)
++  // WebAssembly exposes no portable control register for flush-to-zero mode.
++  // Keep its specified floating-point environment unchanged.
++#elif defined(__x86_64__) || defined(__i386__)
+   _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
+ #else
+ #  ifdef __APPLE__

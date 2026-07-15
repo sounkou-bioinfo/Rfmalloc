@@ -37,6 +37,7 @@ int rllm_ggml_type_from_codec(const char *codec, enum ggml_type *out)
     else if (!strcmp(codec, "q5_0")) *out = GGML_TYPE_Q5_0;
     else if (!strcmp(codec, "q5_1")) *out = GGML_TYPE_Q5_1;
     else if (!strcmp(codec, "q8_0")) *out = GGML_TYPE_Q8_0;
+    else if (!strcmp(codec, "q2_0")) *out = GGML_TYPE_Q2_0;
     else if (!strcmp(codec, "q2_k")) *out = GGML_TYPE_Q2_K;
     else if (!strcmp(codec, "q3_k")) *out = GGML_TYPE_Q3_K;
     else if (!strcmp(codec, "q4_k")) *out = GGML_TYPE_Q4_K;

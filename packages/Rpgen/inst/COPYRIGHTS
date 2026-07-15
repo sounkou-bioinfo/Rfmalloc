@@ -37,7 +37,8 @@ for CRAN. Specifically:
     src/Makevars.ucrt                    = (same tarball), verbatim
     src/Makevars.in, src/Makevars.win    = generated base plus Rpgen import/shim wiring
     tools/*_version.cpp                  = (same tarball), verbatim
-    tools/include/**                     = (same tarball), verbatim, entire subtree
+    tools/include/**                     = (same tarball), with the documented
+                                           wasm portability patches
 
 `Rscript tools/vendor-pgenlib/vendorpgen.R check` re-derives the base manifest
 and asserts it still equals this recipe. Makevars carry the additional
@@ -120,6 +121,15 @@ subset above):
       BSD-3-Clause notice (SFMT)" below.
 
   Local patches:
+    tools/vendor-pgenlib/patches/plink2_simd_wasm.patch selects pgenlib's
+    word-width-correct scalar path on wasm32. It does not change pgenlib's
+    interface or license; it prevents a non-x86 target from including
+    xmmintrin.h.
+
+    tools/vendor-pgenlib/patches/plink2_float_wasm.patch keeps WebAssembly's
+    specified floating-point environment instead of emitting arm64 FPCR
+    instructions on a non-arm target.
+
     tools/vendor-plink2-import/patches/pgenlib_write_direct_sink.patch adds
     the optional terminal record hook described above. The hook glue in
     src/rpgen_direct_sink.cpp/.h is Rpgen code under GPL-3.

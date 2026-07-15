@@ -8,6 +8,7 @@ src/Makevars*,tools/}` is **generated**, not hand-maintained. It is produced by
 packages/Rpgen pgenlib base  =  (SHA-pinned pgenlibr 0.6.2 CRAN tarball)
                                - (pgenlibr's Rcpp-facing source files)
                                + (Rpgen Makevars and cleanup integration)
+                               + (documented portability patches)
 ```
 
 Re-run and verify at any time:
@@ -37,9 +38,10 @@ binding). The source of record is an immutable CRAN artifact, pinned here.
   version is available via `pkg-config`. That build - CRAN-accepted,
   exercised across CRAN's whole build-machine matrix - is Rpgen's
   reference, not a rewrite of it.
-- All 468 files in pgenlibr's `tools/include/` manifest are byte-identical to
-  stock pgenlibr 0.6.2. The separate `vendor-plink2-import` recipe adds the
-  writer and program-level format-import closure on top of this base.
+- The 468-file `tools/include/` manifest comes from stock pgenlibr 0.6.2.
+  Two source files receive the wasm portability patches documented below. The
+  separate `vendor-plink2-import` recipe adds the writer and program-level
+  format-import closure on top of this base.
 
 ## Local integration
 
@@ -76,6 +78,21 @@ Rpgen does not ship pgenlibr's `pvar.cpp`, `pvar.h`, `pgenlibr.cpp`, or
 including them would create an undeclared Rcpp dependency and break Windows
 builds that compile every source file present.
 
+`patches/plink2_simd_wasm.patch` corrects pgenlib's target classification for
+webR. Upstream treats every non-LP64 target as 32-bit x86 and includes
+`xmmintrin.h`; wasm32 consequently fails before the first Rpgen translation
+unit is compiled. The patch selects pgenlib's existing 32-bit scalar path for
+`__wasm__` and `__EMSCRIPTEN__`. Its SSE2 path extracts 64-bit vector lanes
+into `uintptr_t` and is therefore not valid on wasm32, even through SIMDe.
+`vendorpgen.R check` applies and verifies the patch as part of the generated
+tree.
+
+`patches/plink2_float_wasm.patch` makes `flush_denormals()` a no-op on wasm.
+Upstream's final target branch is arm64-specific and emits `mrs`/`msr` FPCR
+instructions for every non-x86, non-Apple target. WebAssembly has no portable
+flush-to-zero control register, so retaining its specified floating-point
+environment is the only honest implementation.
+
 ## What's vendored vs. what's Rpgen's own
 
 ```
@@ -95,7 +112,7 @@ packages/Rpgen/
     zstd_version.cpp                   <- vendored, verbatim (configure's
     libdeflate_version.cpp                compiler probes for a system install
     simde_version.cpp                     new enough to skip the bundled copy)
-    include/                           <- vendored, verbatim, entire subtree
+    include/                           <- vendored subtree plus documented wasm patch
       include/*.cc,*.h                    (pgenlib core, read and writer paths)
       zstd/**                             (bundled Zstd 1.5.5, BSD)
       libdeflate/**                       (bundled libdeflate, MIT)

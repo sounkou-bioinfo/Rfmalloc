@@ -7,7 +7,7 @@ message("Testing native (typed fmalloc_tensor) imports...")
     message("  Test 1: quantized codecs are registered with Rfmalloc")
     codecs <- Rfmalloc::fmalloc_tensor_codecs()
     expected <- c(
-        "q4_0", "q4_1", "q5_0", "q5_1", "q8_0",
+        "q4_0", "q4_1", "q5_0", "q5_1", "q8_0", "q2_0",
         "q2_k", "q3_k", "q4_k", "q5_k", "q6_k"
     )
     expect_true(all(expected %in% codecs))

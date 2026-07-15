@@ -1,5 +1,18 @@
 # Rllm 0.1.0 (unreleased)
 
+- Attaching Rllm is quiet. Backend registration remains automatic and its
+  selected state is available through `rllm_backend_enabled()`.
+
+- Added a Qwen3.5 semantic plan against the real Ternary Bonsai 27B metadata
+  and tensor layout. Its single serializable R program distinguishes 48 gated
+  delta recurrent blocks from 16 gated-attention blocks, represents both
+  recurrent and KV state, and binds all 851 parameters without a C++
+  architecture branch. The two new operators remain explicit lowering work.
+
+- Added official GGML group-64 `q2_0` to quantization and the typed-product
+  bridge. The codec stays encoded in Rfmalloc storage and uses GGML's ternary
+  decoder and CPU dot product.
+
 - Added a data-only architecture program traced from ordinary R modules and
   base pipes. Typed parameter identities, residual branches, named
   representation taps, multiple carried states and structured shared loops

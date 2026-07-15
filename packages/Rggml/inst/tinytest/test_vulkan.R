@@ -31,9 +31,13 @@ cpu <- mm(A, B, 0L)
 expect_equal(dim(cpu), c(n, m))
 expect_equal(cpu, ref, tolerance = 1e-5)
 
-# BLAS backend, same path.
-blas <- mm(A, B, 1L)
-expect_equal(blas, ref, tolerance = 1e-5)
+# BLAS backend, same path when this target has a compatible Fortran ABI.
+if (isTRUE(rggml_cpu_info()$blas)) {
+    blas <- mm(A, B, 1L)
+    expect_equal(blas, ref, tolerance = 1e-5)
+} else {
+    expect_error(mm(A, B, 1L), "unavailable")
+}
 
 if (!rggml_has_vulkan()) {
     # Built without --with-vulkan (or no driver): the contract is that we

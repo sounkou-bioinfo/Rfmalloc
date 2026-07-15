@@ -13,10 +13,3 @@
     Rfmalloc::fmalloc_matmul_backend("ggml")
     invisible()
 }
-
-.onAttach <- function(libname, pkgname) {
-    packageStartupMessage(
-        "Rllm: ggml quantized matmul backend registered and active for ",
-        "Rfmalloc typed tensors (disable with rllm_use_ggml(FALSE))."
-    )
-}

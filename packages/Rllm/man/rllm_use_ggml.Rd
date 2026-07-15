@@ -23,7 +23,8 @@ active Rfmalloc matmul backend.
 Rllm registers \pkg{Rggml} as an \pkg{Rfmalloc} codec-aware matrix-multiply
 backend named \code{"ggml"} and selects it on load. When active, products of
 quantized \code{fmalloc_tensor}s (types \code{"q4_0"}, \code{"q4_1"},
-\code{"q8_0"}, \code{"q2_k"}, \code{"q4_k"}, \code{"q6_k"}) where the tensor
+\code{"q8_0"}, \code{"q2_0"}, \code{"q2_k"}, \code{"q4_k"},
+\code{"q6_k"}) where the tensor
 is the right-hand operand (\code{dense \%*\% tensor}) are computed by ggml in
 quantized space, contracting each weight row through GGML's
 SIMD-dispatched dot kernel, with the dense operand quantized on the fly.
