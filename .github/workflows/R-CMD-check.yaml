@@ -77,6 +77,21 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # GitHub's ARM runners currently ship an HTTP Ubuntu Ports source. The
+      # runner network reaches the archive over HTTPS, but times out on port 80
+      # before setup-r can install R.
+      - name: Use HTTPS for Ubuntu Ports
+        if: matrix.os == 'ubuntu-24.04-arm'
+        run: |
+          for source in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources; do
+            [ -f "$source" ] || continue
+            sudo sed -i \
+              's|http://ports.ubuntu.com/ubuntu-ports|https://ports.ubuntu.com/ubuntu-ports|g' \
+              "$source"
+          done
+          printf 'Acquire::ForceIPv4 "true";\n' |
+            sudo tee /etc/apt/apt.conf.d/99force-ipv4 > /dev/null
+
       - uses: r-lib/actions/setup-pandoc@v2
 
       - uses: r-lib/actions/setup-r@v2
