@@ -1,0 +1,77 @@
+--- a/ggml-cuda/ssm-conv.cu
++++ b/ggml-cuda/ssm-conv.cu
+@@ -128,31 +128,49 @@ static void ssm_conv_f32_cuda(const float * src0, const float * src1, const flo
+                               const int src0_nb2, const int src1_nb1, float * dst, const int dst_nb0, const int dst_nb1,
+                               const int dst_nb2, const int64_t nc, const int64_t nr, const int64_t n_t,
+                               const int64_t n_s, cudaStream_t stream) {
+-    const int threads = 128;
+-    GGML_ASSERT(nr % threads == 0);
+-
+-    auto launch_kernel = [&](auto NC) {
+-        constexpr int kNC = decltype(NC)::value;
+-        if (n_t <= 32) {
+-            const dim3 blocks(n_s, (nr + threads - 1) / threads, 1);
+-            const ggml_cuda_kernel_launch_params launch_params = ggml_cuda_kernel_launch_params(blocks, threads, 0, stream);
+-            ggml_cuda_kernel_launch(ssm_conv_f32<apply_silu, threads, kNC>, launch_params, src0, src1, bias, src0_nb0, src0_nb1,
+-                                                                        src0_nb2, src1_nb1, dst, dst_nb0, dst_nb1, dst_nb2, n_t);
+-        } else {
+-            const int64_t split_n_t = 32;
+-            dim3          blocks(n_s, (nr + threads - 1) / threads, (n_t + split_n_t - 1) / split_n_t);
+-            const size_t  smem_size = threads * (kNC - 1 + split_n_t) * sizeof(float);
+-            ssm_conv_long_token_f32<apply_silu, threads, kNC, split_n_t><<<blocks, threads, smem_size, stream>>>(
+-                src0, src1, bias, src0_nb0, src0_nb1, src0_nb2, src1_nb1, dst, dst_nb0, dst_nb1, dst_nb2, n_t);
+-        }
+-    };
++    auto launch_threads = [&](auto THREADS) {
++        constexpr int kThreads = decltype(THREADS)::value;
++        GGML_ASSERT(nr % kThreads == 0);
++
++        auto launch_kernel = [&](auto NC) {
++            constexpr int kNC = decltype(NC)::value;
++            if (n_t <= 32) {
++                const dim3 blocks(n_s, nr / kThreads, 1);
++                const ggml_cuda_kernel_launch_params launch_params = ggml_cuda_kernel_launch_params(blocks, kThreads, 0, stream);
++                ggml_cuda_kernel_launch(ssm_conv_f32<apply_silu, kThreads, kNC>, launch_params, src0, src1, bias, src0_nb0, src0_nb1,
++                                                                                     src0_nb2, src1_nb1, dst, dst_nb0, dst_nb1, dst_nb2, n_t);
++            } else {
++                const int64_t split_n_t = 32;
++                dim3          blocks(n_s, nr / kThreads, (n_t + split_n_t - 1) / split_n_t);
++                const size_t  smem_size = kThreads * (kNC - 1 + split_n_t) * sizeof(float);
++                ssm_conv_long_token_f32<apply_silu, kThreads, kNC, split_n_t><<<blocks, kThreads, smem_size, stream>>>(
++                    src0, src1, bias, src0_nb0, src0_nb1, src0_nb2, src1_nb1, dst, dst_nb0, dst_nb1, dst_nb2, n_t);
++            }
++        };
+ 
+-    switch (nc) {
+-        case 3:  launch_kernel(std::integral_constant<int, 3 >{}); break;
+-        case 4:  launch_kernel(std::integral_constant<int, 4 >{}); break;
+-        case 5:  launch_kernel(std::integral_constant<int, 5 >{}); break;
+-        case 9:  launch_kernel(std::integral_constant<int, 9 >{}); break;
+-        case 15: launch_kernel(std::integral_constant<int, 15>{}); break;
+-        default: GGML_ABORT("Only support kernel sizes 3, 4, 5, 9, 15 right now.");
++        switch (nc) {
++            case 3:  launch_kernel(std::integral_constant<int, 3 >{}); break;
++            case 4:  launch_kernel(std::integral_constant<int, 4 >{}); break;
++            case 5:  launch_kernel(std::integral_constant<int, 5 >{}); break;
++            case 9:  launch_kernel(std::integral_constant<int, 9 >{}); break;
++            case 15: launch_kernel(std::integral_constant<int, 15>{}); break;
++            default: GGML_ABORT("Only support kernel sizes 3, 4, 5, 9, 15 right now.");
++        }
++    };
++
++    const int64_t row_alignment = nr & -nr;
++    if (row_alignment >= 128) {
++        launch_threads(std::integral_constant<int, 128>{});
++    } else {
++        switch (row_alignment) {
++            case 64: launch_threads(std::integral_constant<int, 64>{}); break;
++            case 32: launch_threads(std::integral_constant<int, 32>{}); break;
++            case 16: launch_threads(std::integral_constant<int, 16>{}); break;
++            case 8:  launch_threads(std::integral_constant<int, 8 >{}); break;
++            case 4:  launch_threads(std::integral_constant<int, 4 >{}); break;
++            case 2:  launch_threads(std::integral_constant<int, 2 >{}); break;
++            case 1:  launch_threads(std::integral_constant<int, 1 >{}); break;
++            default: GGML_ABORT("Invalid SSM convolution row count.");
++        }
+     }
+ }

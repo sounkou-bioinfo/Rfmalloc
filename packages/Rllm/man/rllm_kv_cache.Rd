@@ -14,14 +14,15 @@ rllm_kv_cache(model, n_ctx = 512L, runtime = NULL)
 \item{runtime}{Optional \code{\link[Rfmalloc:open_fmalloc]{Rfmalloc::open_fmalloc()}} runtime for the slabs.}
 }
 \value{
-An environment of class \code{rllm_kv_cache} with per-layer \code{k}, \code{v} and
-\code{conv} state, plus \code{n_ctx} and \code{n_past}.
+An environment of class \code{rllm_kv_cache} with per-layer \code{k}, \code{v},
+\code{conv} and \code{recurrent} state, plus \code{n_ctx} and \code{n_past}.
 }
 \description{
 Allocates the persistent state declared by the model plan. Attention layers
-receive key/value slabs sized by their own KV width; short-convolution
-layers receive their fixed causal history. State is plain R memory by
-default or \pkg{Rfmalloc}-backed when \code{runtime} is supplied.
+receive key/value slabs, short-convolution layers receive causal history,
+and gated-delta layers receive both convolution history and recurrent
+matrices. State is plain R memory by default or \pkg{Rfmalloc}-backed when
+\code{runtime} is supplied.
 }
 \details{
 The returned object is an environment, so \code{\link[=rllm_forward]{rllm_forward()}} can advance its

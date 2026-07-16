@@ -22,10 +22,9 @@
 #define ggml_vec_dot_tq2_0_q8_K_generic ggml_vec_dot_tq2_0_q8_K
 #define ggml_vec_dot_q2_K_q8_K_generic ggml_vec_dot_q2_K_q8_K
 #define ggml_vec_dot_q3_K_q8_K_generic ggml_vec_dot_q3_K_q8_K
-// ggml_vec_dot_q4_K_q8_K is NOT aliased to the scalar generic here: Rggml
-// provides the canonical symbol as a runtime SIMD dispatcher
-// (tools/simd/rggml_simd_dispatch.c), which forwards either to the staged
-// AVX2 variant or to this scalar ..._generic reference.
+// Rggml's runtime dispatcher owns the canonical Q4_K symbol. Its portable
+// fallback remains GGML's official `_generic` implementation; the staged x86
+// branch comes from GGML's official arch/x86/quants.c translation unit.
 // #define ggml_vec_dot_q4_K_q8_K_generic ggml_vec_dot_q4_K_q8_K
 #define ggml_vec_dot_q5_K_q8_K_generic ggml_vec_dot_q5_K_q8_K
 #define ggml_vec_dot_q6_K_q8_K_generic ggml_vec_dot_q6_K_q8_K

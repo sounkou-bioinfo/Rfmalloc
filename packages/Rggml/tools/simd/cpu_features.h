@@ -17,6 +17,7 @@ extern "C" {
 int sd_cpu_has_sse2(void);
 int sd_cpu_has_sse41(void);
 int sd_cpu_has_avx2(void);
+int sd_cpu_has_upstream_avx2(void);
 int sd_cpu_has_avx512(void);
 int sd_cpu_has_neon(void);
 int sd_cpu_has_wasm_simd128(void);

@@ -22,5 +22,5 @@ A traced value, or a named list of traced values when \code{x} is a list.
 Unlike an R \code{for} loop, \code{rllm_loop()} does not unroll its body. The body is
 traced once into a nested data-only program and retained as a loop node.
 A single value supports pipe syntax. A named list supports multiple carried
-values, as required by recurrent answer and latent states.
+values, including nested recurrences with shared parameters.
 }

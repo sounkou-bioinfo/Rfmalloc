@@ -23,7 +23,7 @@ ggml_url <- sprintf(
   "https://github.com/ggml-org/ggml/archive/refs/tags/%s.tar.gz",
   ggml_tag
 )
-source_tree_sha <- "81dcabafee82839a6ce3cefd61e218db7411af7a8f5abbaeaa6fd02bad9cd266"
+source_tree_sha <- "b721fe02a203abef32a6fc139aaf9d24ffc8150ef99076ede75b806a5f84a199"
 
 get_script_path <- function() {
   cmd_args <- commandArgs()

@@ -1,0 +1,39 @@
+#ifndef RGGML_SIMD_RENAME_X86_H
+#define RGGML_SIMD_RENAME_X86_H
+
+/*
+ * Give the symbols in GGML's complete x86 quant translation unit private
+ * names.  The portable library and this ISA-specific object then coexist in
+ * one archive; rggml_simd_dispatch.c owns the canonical names and selects the
+ * latter only after checking the running CPU.
+ */
+#define quantize_row_q8_0 rggml_quantize_row_q8_0_avx2
+#define quantize_row_q8_1 rggml_quantize_row_q8_1_avx2
+#define quantize_row_q8_K rggml_quantize_row_q8_K_avx2
+
+#define ggml_vec_dot_q1_0_q8_0 rggml_vec_dot_q1_0_q8_0_avx2
+#define ggml_vec_dot_q4_0_q8_0 rggml_vec_dot_q4_0_q8_0_avx2
+#define ggml_vec_dot_q4_1_q8_1 rggml_vec_dot_q4_1_q8_1_avx2
+#define ggml_vec_dot_mxfp4_q8_0 rggml_vec_dot_mxfp4_q8_0_avx2
+#define ggml_vec_dot_nvfp4_q8_0 rggml_vec_dot_nvfp4_q8_0_avx2
+#define ggml_vec_dot_q5_0_q8_0 rggml_vec_dot_q5_0_q8_0_avx2
+#define ggml_vec_dot_q5_1_q8_1 rggml_vec_dot_q5_1_q8_1_avx2
+#define ggml_vec_dot_q8_0_q8_0 rggml_vec_dot_q8_0_q8_0_avx2
+#define ggml_vec_dot_tq1_0_q8_K rggml_vec_dot_tq1_0_q8_K_avx2
+#define ggml_vec_dot_tq2_0_q8_K rggml_vec_dot_tq2_0_q8_K_avx2
+#define ggml_vec_dot_q2_K_q8_K rggml_vec_dot_q2_K_q8_K_avx2
+#define ggml_vec_dot_q3_K_q8_K rggml_vec_dot_q3_K_q8_K_avx2
+#define ggml_vec_dot_q4_K_q8_K rggml_vec_dot_q4_K_q8_K_avx2
+#define ggml_vec_dot_q5_K_q8_K rggml_vec_dot_q5_K_q8_K_avx2
+#define ggml_vec_dot_q6_K_q8_K rggml_vec_dot_q6_K_q8_K_avx2
+#define ggml_vec_dot_iq2_xxs_q8_K rggml_vec_dot_iq2_xxs_q8_K_avx2
+#define ggml_vec_dot_iq2_xs_q8_K rggml_vec_dot_iq2_xs_q8_K_avx2
+#define ggml_vec_dot_iq2_s_q8_K rggml_vec_dot_iq2_s_q8_K_avx2
+#define ggml_vec_dot_iq3_xxs_q8_K rggml_vec_dot_iq3_xxs_q8_K_avx2
+#define ggml_vec_dot_iq3_s_q8_K rggml_vec_dot_iq3_s_q8_K_avx2
+#define ggml_vec_dot_iq1_s_q8_K rggml_vec_dot_iq1_s_q8_K_avx2
+#define ggml_vec_dot_iq1_m_q8_K rggml_vec_dot_iq1_m_q8_K_avx2
+#define ggml_vec_dot_iq4_nl_q8_0 rggml_vec_dot_iq4_nl_q8_0_avx2
+#define ggml_vec_dot_iq4_xs_q8_K rggml_vec_dot_iq4_xs_q8_K_avx2
+
+#endif

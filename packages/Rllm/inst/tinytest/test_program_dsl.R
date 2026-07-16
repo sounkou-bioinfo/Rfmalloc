@@ -10,135 +10,430 @@ contains_runtime_object <- function(x) {
 
 parameter <- function(name, shape) rllm_parameter(name, shape)
 
-# ESM stresses padding-aware bidirectional attention, LayerNorm with bias,
-# per-token representations, pooled representations and a pairwise contact
-# output. The module body is ordinary R and the graph reads in pipe order.
-d_model <- "d_model"
+# ESM-2 8M is a complete six-layer topology. It forces the AST to preserve
+# typed token and padding inputs, attention as a genuine two-result operator,
+# per-layer representations, tied embeddings and a contact head over attention
+# maps. The official contact head never consumes the hidden representation.
+esm_hidden <- 320L
+esm_ff <- 1280L
+esm_heads <- 20L
+esm_layers <- 6L
+esm_alphabet <- 33L
 n_residue <- "n_residue"
-norm_weight <- parameter("esm.norm.weight", d_model)
-norm_bias <- parameter("esm.norm.bias", d_model)
-q <- parameter("esm.attn.q.weight", c(d_model, d_model))
-k <- parameter("esm.attn.k.weight", c(d_model, d_model))
-v <- parameter("esm.attn.v.weight", c(d_model, d_model))
-o <- parameter("esm.attn.o.weight", c(d_model, d_model))
-ff_in <- parameter("esm.ff.in.weight", c(d_model, "ff_width"))
-ff_out <- parameter("esm.ff.out.weight", c("ff_width", d_model))
-
-esm_block <- rllm_module("esm.encoder.block", function(x) {
-    x |>
-        rllm_residual(function(branch) {
-            branch |>
-                rllm_norm(norm_weight, kind = "layer", bias = norm_bias) |>
-                rllm_attention(
-                    q, k, v, o, heads = 20L,
-                    rope = list(type = "neox"),
-                    mask = list(type = "padding", input = "padding_mask")
-                )
-        }) |>
-        rllm_residual(function(branch) {
-            branch |>
-                rllm_norm(norm_weight, kind = "layer", bias = norm_bias) |>
-                rllm_linear(ff_in) |>
-                rllm_op("gelu") |>
-                rllm_linear(ff_out)
-        })
-})
-
-esm_sequence <- rllm_input(
-    "residue_embedding", c(feature = d_model, sequence = n_residue)
+esm_shape <- c(feature = esm_hidden, sequence = n_residue, batch = "batch")
+attention_shape <- c(head = esm_heads, query = n_residue,
+                     key = n_residue, batch = "batch")
+esm_inputs <- rllm_inputs(
+    tokens = c(sequence = n_residue, batch = "batch"),
+    padding_mask = c(sequence = n_residue, batch = "batch"),
+    .dtype = c(tokens = "i32", padding_mask = "bool"),
+    .name = "esm2_t6_8M"
+)
+esm_embedding <- parameter("embed_tokens.weight",
+                           c(vocabulary = esm_alphabet,
+                             feature = esm_hidden))
+esm_hidden_state <- rllm_op(
+    esm_inputs, "esm_token_embedding",
+    weight = esm_embedding,
+    token_dropout = list(mask_index = 32L, training_ratio = 0.12),
+    output_shape = esm_shape
 ) |>
-    esm_block() |>
-    rllm_tap("per_token")
-esm_mean <- esm_sequence |>
-    rllm_pool("mean") |>
-    rllm_tap("mean")
-esm_contact <- esm_sequence |>
+    rllm_tap("representation.0")
+
+esm_block <- function(index, padding_mask) {
+    prefix <- paste0("layers.", index - 1L, ".")
+    self_norm <- parameter(paste0(prefix, "self_attn_layer_norm.weight"),
+                           esm_hidden)
+    self_norm_bias <- parameter(
+        paste0(prefix, "self_attn_layer_norm.bias"), esm_hidden
+    )
+    final_norm <- parameter(paste0(prefix, "final_layer_norm.weight"),
+                            esm_hidden)
+    final_norm_bias <- parameter(paste0(prefix, "final_layer_norm.bias"),
+                                 esm_hidden)
+    projection <- function(name) {
+        list(
+            weight = parameter(paste0(prefix, "self_attn.", name,
+                                      "_proj.weight"),
+                               c(esm_hidden, esm_hidden)),
+            bias = parameter(paste0(prefix, "self_attn.", name,
+                                    "_proj.bias"), esm_hidden)
+        )
+    }
+    query <- projection("q")
+    key <- projection("k")
+    value <- projection("v")
+    output <- projection("out")
+    fc1 <- parameter(paste0(prefix, "fc1.weight"), c(esm_hidden, esm_ff))
+    fc1_bias <- parameter(paste0(prefix, "fc1.bias"), esm_ff)
+    fc2 <- parameter(paste0(prefix, "fc2.weight"), c(esm_ff, esm_hidden))
+    fc2_bias <- parameter(paste0(prefix, "fc2.bias"), esm_hidden)
+
+    rllm_module(paste0("esm.encoder.layer.", index), function(x) {
+        normalized <- rllm_norm(
+            x, self_norm, kind = "layer", bias = self_norm_bias
+        )
+        attention <- rllm_op(
+            list(hidden = normalized, padding_mask = padding_mask),
+            "attention",
+            query = query, key = key, value = value, output = output,
+            heads = esm_heads,
+            rope = list(type = "neox", base = 10000),
+            mask = list(type = "key_padding"),
+            outputs = list(hidden = esm_shape, weights = attention_shape)
+        )
+        hidden <- rllm_op(
+            list(residual = x, update = attention$hidden), "add"
+        )
+        hidden <- rllm_residual(hidden, function(branch) {
+            branch |>
+                rllm_norm(final_norm, kind = "layer",
+                          bias = final_norm_bias) |>
+                rllm_linear(fc1, fc1_bias) |>
+                rllm_op("gelu") |>
+                rllm_linear(fc2, fc2_bias)
+        })
+        list(hidden = hidden, attention = attention$weights)
+    })
+}
+
+esm_attentions <- vector("list", esm_layers)
+for (index in seq_len(esm_layers)) {
+    block <- esm_block(index, esm_inputs$padding_mask)(esm_hidden_state)
+    esm_hidden_state <- block$hidden |>
+        rllm_tap(paste0("representation.", index))
+    esm_attentions[[index]] <- block$attention
+}
+names(esm_attentions) <- paste0("layer.", seq_len(esm_layers))
+
+esm_final_norm <- parameter("emb_layer_norm_after.weight", esm_hidden)
+esm_final_norm_bias <- parameter("emb_layer_norm_after.bias", esm_hidden)
+esm_representation <- esm_hidden_state |>
+    rllm_norm(esm_final_norm, kind = "layer", bias = esm_final_norm_bias) |>
+    rllm_tap("representation.final")
+esm_lm_dense <- parameter("lm_head.dense.weight",
+                          c(esm_hidden, esm_hidden))
+esm_lm_dense_bias <- parameter("lm_head.dense.bias", esm_hidden)
+esm_lm_norm <- parameter("lm_head.layer_norm.weight", esm_hidden)
+esm_lm_norm_bias <- parameter("lm_head.layer_norm.bias", esm_hidden)
+esm_lm_bias <- parameter("lm_head.bias", esm_alphabet)
+esm_logits <- esm_representation |>
+    rllm_linear(esm_lm_dense, esm_lm_dense_bias) |>
+    rllm_op("gelu") |>
+    rllm_norm(esm_lm_norm, kind = "layer", bias = esm_lm_norm_bias) |>
     rllm_op(
-        "contact_head", symmetric = TRUE,
-        output_shape = c(row = n_residue, column = n_residue)
-    ) |>
-    rllm_tap("contacts")
+        "tied_projection", weight = esm_embedding, bias = esm_lm_bias,
+        transpose = TRUE,
+        output_shape = c(feature = esm_alphabet, sequence = n_residue,
+                         batch = "batch")
+    )
+contact_inputs <- c(list(tokens = esm_inputs$tokens), esm_attentions)
+esm_contacts <- rllm_op(
+    contact_inputs, "esm_contact_head",
+    regression = parameter("contact_head.regression.weight",
+                           c(layer_head = esm_layers * esm_heads, output = 1L)),
+    bias = parameter("contact_head.regression.bias", 1L),
+    remove_bos = TRUE, remove_eos = TRUE,
+    symmetrize = TRUE, average_product_correction = TRUE,
+    output_shape = c(row = "n_residue_without_specials",
+                     column = "n_residue_without_specials", batch = "batch")
+)
 esm <- rllm_program(
-    list(sequence = esm_sequence, mean = esm_mean, contacts = esm_contact),
-    "esm2"
+    list(logits = esm_logits, representation = esm_representation,
+         contacts = esm_contacts),
+    "esm2_t6_8M"
 )
 
-expect_equal(names(esm$outputs), c("per_token", "mean", "contacts", "sequence"))
-expect_true(all(c("attention", "layer_norm", "pool", "contact_head") %in%
-                vapply(esm$nodes, `[[`, character(1), "op")))
-expect_true(any(vapply(esm$nodes, function(node) {
-    identical(node$module, "esm.encoder.block")
-}, logical(1))))
+esm_ops <- vapply(esm$nodes, `[[`, character(1), "op")
+expect_true(all(c("esm_token_embedding", "attention", "op_result",
+                  "tied_projection", "esm_contact_head") %in% esm_ops))
+expect_equal(sum(esm_ops == "attention"), esm_layers)
+expect_equal(sum(esm_ops == "op_result"), 2L * esm_layers)
+expect_equal(length(grep("^representation\\.", names(esm$outputs))),
+             esm_layers + 2L)
+expect_equal(length(Filter(function(node) {
+    identical(node$op, "input")
+}, esm$nodes)), 2L)
 expect_false(contains_runtime_object(esm))
 
-# Evo 2 stresses an architecture-level schedule of short, medium and long
-# stateful convolutions. The schedule is data on one reusable operator, not a
-# family name hidden in C++.
-hyena <- rllm_module("striped_hyena.operator", function(x, span) {
-    x |>
-        rllm_op(
-            "hyena_convolution",
-            span = span,
-            causal = TRUE,
-            state = list(kind = "convolution", width = span)
-        )
-})
-evo <- rllm_input(
-    "dna_embedding", c(feature = "hidden", sequence = "n_base")
+# Evo 2 7B is a 32-layer schedule, not three generic convolutions. Its HCS
+# and HCM blocks carry a width-3 projection FIR plus width-7 or width-128
+# grouped FIR state. HCL carries the same projection FIR plus a 16-state IIR.
+# Five causal attention layers are interleaved with those 27 Hyena cascades.
+evo_hidden <- 4096L
+evo_inner <- 11008L
+evo_vocab <- 512L
+evo_shape <- c(feature = evo_hidden, sequence = "n_base", batch = "batch")
+evo_inputs <- rllm_inputs(
+    tokens = c(sequence = "n_base", batch = "batch"),
+    padding_mask = c(sequence = "n_base", batch = "batch"),
+    .dtype = c(tokens = "i32", padding_mask = "bool"),
+    .name = "evo2_7b"
 )
-for (span in c("short", "medium", "long")) evo <- hyena(evo, span)
-evo <- evo |> rllm_tap("intermediate")
-evo <- rllm_program(evo, "striped_hyena_2")
-hyena_nodes <- Filter(function(node) node$op == "hyena_convolution", evo$nodes)
+evo_embedding <- parameter("embedding_layer.weight",
+                           c(vocabulary = evo_vocab, feature = evo_hidden))
+evo_hidden_state <- rllm_op(
+    evo_inputs, "token_embedding", weight = evo_embedding,
+    output_shape = evo_shape
+)
 
-expect_equal(vapply(hyena_nodes, function(node) node$attributes$span,
-                    character(1)), c("short", "medium", "long"))
-expect_true(all(vapply(hyena_nodes, function(node) {
-    identical(node$module, "striped_hyena.operator")
-}, logical(1))))
+evo_schedule <- rep(NA_character_, 32L)
+evo_schedule[c(3, 7, 10, 14, 17, 21, 24, 28, 31)] <- "hcl"
+evo_schedule[c(2, 6, 9, 13, 16, 20, 23, 27, 30)] <- "hcm"
+evo_schedule[c(1, 5, 8, 12, 15, 19, 22, 26, 29)] <- "hcs"
+evo_schedule[c(4, 11, 18, 25, 32)] <- "attention"
+stopifnot(!anyNA(evo_schedule))
+
+evo_norm <- function(x, name) {
+    rllm_op(
+        x, "rms_norm", weight = parameter(name, evo_hidden),
+        eps = 1e-6, convention = "vortex"
+    )
+}
+evo_mlp <- function(x, prefix, index) {
+    rllm_op(
+        x, "gated_mlp",
+        gate = parameter(paste0(prefix, "mlp.l1.weight"),
+                         c(evo_hidden, evo_inner)),
+        up = parameter(paste0(prefix, "mlp.l2.weight"),
+                       c(evo_hidden, evo_inner)),
+        down = parameter(paste0(prefix, "mlp.l3.weight"),
+                         c(evo_inner, evo_hidden)),
+        activation = if (index == 1L) "gelu" else "identity"
+    )
+}
+evo_add <- function(residual, update) {
+    rllm_op(list(residual = residual, update = update), "add")
+}
+
+evo_block <- function(index, kind, padding_mask) {
+    prefix <- paste0("blocks.", index - 1L, ".")
+    pre_norm_name <- paste0(prefix, "pre_norm.scale")
+    post_norm_name <- paste0(prefix, "post_norm.scale")
+
+    rllm_module(paste0("striped_hyena.block.", index), function(x) {
+        normalized <- evo_norm(x, pre_norm_name)
+        if (kind == "attention") {
+            update <- rllm_op(
+                list(hidden = normalized, padding_mask = padding_mask),
+                "attention",
+                qkv = parameter(paste0(prefix, "inner_mha_cls.Wqkv.weight"),
+                                c(evo_hidden, 3L * evo_hidden)),
+                output = parameter(paste0(prefix, "inner_mha_cls.out_proj.weight"),
+                                   c(evo_hidden, evo_hidden)),
+                output_bias = parameter(
+                    paste0(prefix, "inner_mha_cls.out_proj.bias"), evo_hidden
+                ),
+                heads = 32L, rope = list(type = "neox", base = 10000),
+                mask = list(type = "causal"),
+                state = list(kind = "kv", layout = "layer_head_sequence")
+            )
+        } else {
+            projected <- rllm_linear(
+                normalized,
+                parameter(paste0(prefix, "projections.weight"),
+                          c(evo_hidden, 3L * evo_hidden))
+            )
+            inner_width <- if (kind == "hcs") 7L else
+                if (kind == "hcm") 128L else NULL
+            groups <- if (kind == "hcl") evo_hidden else 256L
+            update <- rllm_op(
+                list(projected = projected, padding_mask = padding_mask),
+                "hyena_cascade",
+                variant = if (kind == "hcl") "long_iir" else
+                    paste0(if (kind == "hcs") "short" else "medium", "_fir"),
+                short_filter = parameter(
+                    paste0(prefix, "filter.short_filter_weight"),
+                    c(channel = 3L * evo_hidden, group = 1L, width = 3L)
+                ),
+                inner_filter = if (!is.null(inner_width)) parameter(
+                    paste0(prefix, "filter.h"),
+                    c(group = groups, singleton = 1L, width = inner_width)
+                ) else NULL,
+                direct = if (is.null(inner_width) || inner_width >= 128L) {
+                    parameter(paste0(prefix, "filter.D"), evo_hidden)
+                } else NULL,
+                log_poles = if (kind == "hcl") parameter(
+                    paste0(prefix, "filter.log_poles"),
+                    c(group = groups, state = 16L, singleton = 1L)
+                ) else NULL,
+                residues = if (kind == "hcl") parameter(
+                    paste0(prefix, "filter.residues"),
+                    c(group = groups, state = 16L)
+                ) else NULL,
+                groups = groups,
+                interleave = TRUE,
+                state = if (kind == "hcl") {
+                    list(fir = list(width = 2L),
+                         iir = list(groups = groups, width = 16L))
+                } else {
+                    list(fir = list(width = 2L),
+                         inner_fir = list(groups = groups,
+                                          width = inner_width - 1L))
+                },
+                output_shape = evo_shape
+            )
+            update <- rllm_linear(
+                update,
+                parameter(paste0(prefix, "out_filter_dense.weight"),
+                          c(evo_hidden, evo_hidden)),
+                parameter(paste0(prefix, "out_filter_dense.bias"), evo_hidden)
+            )
+        }
+        hidden <- evo_add(x, update)
+        mlp <- evo_mlp(evo_norm(hidden, post_norm_name), prefix, index)
+        if (index == 29L) mlp <- rllm_tap(mlp, "blocks.28.mlp.l3")
+        evo_add(hidden, mlp)
+    })
+}
+
+for (index in seq_along(evo_schedule)) {
+    evo_hidden_state <- evo_block(
+        index, evo_schedule[[index]], evo_inputs$padding_mask
+    )(evo_hidden_state)
+}
+evo_hidden_state <- evo_norm(evo_hidden_state, "norm.scale")
+evo_logits <- rllm_op(
+    evo_hidden_state, "tied_projection", weight = evo_embedding,
+    transpose = TRUE,
+    output_shape = c(feature = evo_vocab, sequence = "n_base",
+                     batch = "batch")
+)
+evo <- rllm_program(evo_logits, "evo2_7b")
+hyena_nodes <- Filter(function(node) node$op == "hyena_cascade", evo$nodes)
+attention_nodes <- Filter(function(node) node$op == "attention", evo$nodes)
+
+expect_equal(vapply(hyena_nodes, function(node) node$attributes$variant,
+                    character(1)),
+             c("short_fir", "medium_fir", "long_iir")[
+                 match(evo_schedule[evo_schedule != "attention"],
+                       c("hcs", "hcm", "hcl"))
+             ])
+expect_equal(length(hyena_nodes), 27L)
+expect_equal(length(attention_nodes), 5L)
+expect_equal(sum(vapply(evo$nodes, function(node) node$op == "loop",
+                        logical(1))), 0L)
+expect_true("blocks.28.mlp.l3" %in% names(evo$outputs))
 expect_false(contains_runtime_object(evo))
 
-# Tiny Recursive Models stress shared parameters, nested control flow and two
-# carried states. rllm_loop() records each body once, so H and L remain
-# symbolic and the shared cell keeps one module identity.
-shared_weight <- parameter("recursive.cell.weight", c("hidden", "hidden"))
-recursive_cell <- rllm_module("recursive.cell", function(state) {
-    mixed <- rllm_op(
-        state, "recursive_mlp", weight = shared_weight,
-        output_shape = state$latent$shape
-    )
-    list(
-        answer = rllm_op(
-            list(answer = state$answer, update = mixed), "answer_update",
-            output_shape = state$answer$shape
-        ),
-        latent = mixed
-    )
+# TRM carries z_H and z_L through fixed evaluation-time improvement steps.
+# Within each step, L_cycles update z_L from z_H + x, then one update of z_H
+# consumes z_L. The same two-layer reasoning module performs both updates and
+# is shared across every H, L and improvement iteration.
+hidden <- "hidden"
+sequence <- "sequence"
+
+reasoning_blocks <- lapply(seq_len(2L), function(index) {
+    prefix <- paste0("trm.reasoning.", index - 1L, ".")
+    qkv <- parameter(paste0(prefix, "attn.qkv.weight"),
+                     c(hidden, "qkv_width"))
+    attn_out <- parameter(paste0(prefix, "attn.output.weight"),
+                          c(hidden, hidden))
+    gate_up <- parameter(paste0(prefix, "mlp.gate_up.weight"),
+                         c(hidden, "2 * intermediate"))
+    down <- parameter(paste0(prefix, "mlp.down.weight"),
+                      c("intermediate", hidden))
+    rllm_module(paste0("trm.reasoning.block.", index), function(x) {
+        x <- x |>
+            rllm_residual(function(branch) {
+                branch |>
+                    rllm_op(
+                        "bidirectional_attention", qkv = qkv,
+                        output = attn_out,
+                        rope = list(type = "neox", base = 10000)
+                    )
+            }) |>
+            rllm_op("rms_norm", eps = 1e-5)
+        x |>
+            rllm_residual(function(branch) {
+                branch |>
+                    rllm_op("swiglu", gate_up = gate_up, down = down)
+            }) |>
+            rllm_op("rms_norm", eps = 1e-5)
+    })
 })
 
-puzzle <- rllm_input("puzzle", c(feature = "hidden"))
-state <- list(
-    answer = puzzle |> rllm_op("answer_init"),
-    latent = puzzle |> rllm_op("latent_init")
-)
-state <- rllm_loop(state, "H", function(outer) {
-    rllm_loop(outer, "L", recursive_cell, name = "low_level")
-}, name = "high_level")
-trm <- rllm_program(state, "tiny_recursive_model")
+reasoning_level <- rllm_module("trm.reasoning", function(pair) {
+    value <- rllm_op(pair, "add")
+    for (block in reasoning_blocks) value <- block(value)
+    value
+})
 
-top_loop <- Filter(function(node) node$op == "loop", trm$nodes)[[1L]]
-inner_loop <- Filter(
+input_embeddings <- rllm_input(
+    "input_embeddings", c(feature = hidden, sequence = sequence)
+)
+h_init <- parameter("trm.H_init", hidden)
+l_init <- parameter("trm.L_init", hidden)
+state <- list(
+    z_H = input_embeddings |>
+        rllm_op("broadcast_initial", value = h_init),
+    z_L = input_embeddings |>
+        rllm_op("broadcast_initial", value = l_init),
+    input = input_embeddings
+)
+
+state <- rllm_loop(state, "halt_max_steps", function(improvement) {
+    rllm_loop(improvement, "H_cycles", function(high) {
+        low <- rllm_loop(high, "L_cycles", function(low) {
+            injection <- rllm_op(
+                list(high = low$z_H, input = low$input), "add"
+            )
+            list(
+                z_H = low$z_H,
+                z_L = reasoning_level(list(
+                    hidden = low$z_L, injection = injection
+                )),
+                input = low$input
+            )
+        }, name = "low_cycle")
+        list(
+            z_H = reasoning_level(list(
+                hidden = low$z_H, injection = low$z_L
+            )),
+            z_L = low$z_L,
+            input = low$input
+        )
+    }, name = "high_cycle")
+}, name = "improvement_step")
+
+lm_head <- parameter("trm.lm_head.weight", c(hidden, "vocab"))
+q_weight <- parameter("trm.q_head.weight", c(hidden, 2L))
+q_bias <- parameter("trm.q_head.bias", 2L)
+answer <- state$z_H |>
+    rllm_linear(lm_head) |>
+    rllm_op("drop_puzzle_prefix", count = "puzzle_emb_len")
+halt <- state$z_H |>
+    rllm_op("select_first_token", output_shape = c(feature = hidden)) |>
+    rllm_linear(q_weight, q_bias)
+trm <- rllm_program(
+    list(answer = answer, halt = halt, z_H = state$z_H, z_L = state$z_L),
+    "tiny_recursive_model"
+)
+
+improvement_loop <- Filter(function(node) node$op == "loop", trm$nodes)[[1L]]
+high_loop <- Filter(
     function(node) node$op == "loop",
-    top_loop$attributes$body$nodes
+    improvement_loop$attributes$body$nodes
 )[[1L]]
-cell_nodes <- inner_loop$attributes$body$nodes
-expect_equal(top_loop$attributes$times, "H")
-expect_equal(inner_loop$attributes$times, "L")
-expect_true(any(vapply(cell_nodes, function(node) {
-    identical(node$module, "recursive.cell")
+low_loop <- Filter(
+    function(node) node$op == "loop",
+    high_loop$attributes$body$nodes
+)[[1L]]
+reasoning_nodes <- low_loop$attributes$body$nodes
+expect_equal(improvement_loop$attributes$times, "halt_max_steps")
+expect_equal(high_loop$attributes$times, "H_cycles")
+expect_equal(low_loop$attributes$times, "L_cycles")
+expect_true(any(vapply(reasoning_nodes, function(node) {
+    identical(node$module,
+              c("trm.reasoning", "trm.reasoning.block.1"))
 }, logical(1))))
-expect_equal(names(inner_loop$attributes$body$parameters),
-             "recursive.cell.weight")
+expect_equal(
+    sum(names(trm$parameters) == "trm.reasoning.0.attn.qkv.weight"),
+    1L
+)
+expect_true(all(c("trm.H_init", "trm.L_init", "trm.lm_head.weight",
+                  "trm.q_head.weight", "trm.q_head.bias") %in%
+                names(trm$parameters)))
 expect_false(contains_runtime_object(trm))
 
 roundtrip <- unserialize(serialize(trm, NULL))
@@ -147,12 +442,12 @@ expect_identical(roundtrip, trm)
 leaky <- 1
 attr(leaky, "builder") <- new.env(parent = emptyenv())
 expect_error(
-    rllm_op(puzzle, "opaque_attribute", payload = leaky),
+    rllm_op(input_embeddings, "opaque_attribute", payload = leaky),
     "data only"
 )
 
 foreign <- rllm_input("foreign", c(feature = "hidden"))
 pair_module <- rllm_module("pair", function(x) x[[1L]])
-expect_error(pair_module(list(puzzle, foreign)), "different programs")
+expect_error(pair_module(list(input_embeddings, foreign)), "different programs")
 
 message("R module and pipe program tests completed")

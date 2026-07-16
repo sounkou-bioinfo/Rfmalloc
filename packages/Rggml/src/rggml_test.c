@@ -29,7 +29,7 @@ SEXP RC_rggml_version(void)
  * Exercises the runtime-SIMD-dispatched q4_K x q8_K dot product. Builds
  * deterministic inputs of length nblocks*256, quantizes them to Q4_K and Q8_K
  * with GGML's own quantizers, then calls both the canonical (dispatched, i.e.
- * AVX2/NEON where staged) ggml_vec_dot_q4_K_q8_K and GGML's scalar reference
+ * upstream x86 where staged) ggml_vec_dot_q4_K_q8_K and GGML's scalar reference
  * ggml_vec_dot_q4_K_q8_K_generic on identical bytes. Returns c(dispatched,
  * scalar); the tinytest asserts they agree, proving the staged ISA variant is
  * correct. These are GGML-internal symbols (not C-callables); this test file

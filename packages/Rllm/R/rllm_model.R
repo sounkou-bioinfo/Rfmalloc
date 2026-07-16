@@ -6,7 +6,8 @@
 #' on-disk encoding; no second weight store is created.
 #'
 #' Architecture definitions are data ASTs rather than native model-family
-#' branches. The registered plans cover llama, LFM2MoE and EmbeddingGemma.
+#' branches. The registered plans cover llama, Qwen3.5, LFM2MoE and
+#' EmbeddingGemma.
 #' Models with tied embeddings reuse `token_embd.weight` as the output
 #' projection.
 #'
@@ -90,9 +91,10 @@ print.rllm_model <- function(x, ...) {
 #' Create plan-shaped state for incremental decoding
 #'
 #' Allocates the persistent state declared by the model plan. Attention layers
-#' receive key/value slabs sized by their own KV width; short-convolution
-#' layers receive their fixed causal history. State is plain R memory by
-#' default or \pkg{Rfmalloc}-backed when `runtime` is supplied.
+#' receive key/value slabs, short-convolution layers receive causal history,
+#' and gated-delta layers receive both convolution history and recurrent
+#' matrices. State is plain R memory by default or \pkg{Rfmalloc}-backed when
+#' `runtime` is supplied.
 #'
 #' The returned object is an environment, so [rllm_forward()] can advance its
 #' `n_past` by reference.
@@ -101,8 +103,8 @@ print.rllm_model <- function(x, ...) {
 #' @param n_ctx Maximum number of positions the cache can hold.
 #' @param runtime Optional [Rfmalloc::open_fmalloc()] runtime for the slabs.
 #'
-#' @return An environment of class `rllm_kv_cache` with per-layer `k`, `v` and
-#'   `conv` state, plus `n_ctx` and `n_past`.
+#' @return An environment of class `rllm_kv_cache` with per-layer `k`, `v`,
+#'   `conv` and `recurrent` state, plus `n_ctx` and `n_past`.
 #' @seealso [rllm_forward()], [rllm_generate()]
 #' @export
 rllm_kv_cache <- function(model, n_ctx = 512L, runtime = NULL) {
@@ -132,16 +134,31 @@ rllm_kv_cache <- function(model, n_ctx = 512L, runtime = NULL) {
         if (state$op == "kv") as.double(n_ctx) * state$width * 4 else 0
     }, numeric(1))
     conv_bytes <- vapply(states, function(state) {
-        if (state$op == "conv") as.double(state$width) * state$history * 4 else 0
+        if (state$op == "conv") {
+            as.double(state$width) * state$history * 4
+        } else if (state$op == "gated_delta") {
+            prod(as.double(state$convolution)) * 4
+        } else {
+            0
+        }
     }, numeric(1))
-    if (any(!is.finite(c(k_bytes, conv_bytes))) ||
-        any(c(k_bytes, conv_bytes) > .Machine$integer.max)) {
+    recurrent_bytes <- vapply(states, function(state) {
+        if (state$op == "gated_delta") {
+            prod(as.double(state$matrix)) * 4
+        } else {
+            0
+        }
+    }, numeric(1))
+    state_bytes <- c(k_bytes, conv_bytes, recurrent_bytes)
+    if (any(!is.finite(state_bytes)) ||
+        any(state_bytes > .Machine$integer.max)) {
         stop("requested model state is too large for an R raw vector")
     }
     cache <- new.env(parent = emptyenv())
     cache$k <- lapply(k_bytes, new_slab)
     cache$v <- lapply(k_bytes, new_slab)
     cache$conv <- lapply(conv_bytes, new_slab)
+    cache$recurrent <- lapply(recurrent_bytes, new_slab)
     cache$plan <- model$plan
     cache$n_ctx <- n_ctx
     cache$n_past <- 0L
@@ -151,7 +168,7 @@ rllm_kv_cache <- function(model, n_ctx = 512L, runtime = NULL) {
 
 #' @export
 print.rllm_kv_cache <- function(x, ...) {
-    state <- c(x$k, x$conv)
+    state <- c(x$k, x$conv, x$recurrent)
     state <- state[vapply(state, length, numeric(1)) > 0]
     storage <- if (length(state) && Rfmalloc::is_fmalloc_vector(state[[1L]])) {
         "fmalloc"
@@ -168,19 +185,19 @@ print.rllm_kv_cache <- function(x, ...) {
 #'
 #' Lowers the model's inspectable [rllm_plan()] to a GGML graph over its
 #' memory-mapped weights and computes it on a chosen backend. The operator
-#' vocabulary includes attention, gated short convolution, dense gated
-#' products and sparse routed experts.
+#' vocabulary includes causal and gated attention, gated-delta recurrence,
+#' short convolution, dense gated products and sparse routed experts.
 #' Quantized weights are contracted natively in their encoded form - they are
 #' never decoded to double. The CPU backend borrows the mapped bytes directly.
 #' On its first use, the CUDA backend creates a model-owned context and uploads
 #' the codec-native weights once. Later passes reuse those resident weights;
 #' mutable inputs, cache slabs and logits move through Rggml's transfer API.
 #'
-#' Without a `cache`, the graph attends over the whole token batch with a
-#' causal mask (prompt scoring). With a [rllm_kv_cache()], the pass appends
-#' the new tokens' keys/values to the cache and attends over everything
-#' cached so far, advancing `cache$n_past` - the incremental-decoding path:
-#' prefill once with the prompt, then feed one token at a time.
+#' Without a `cache`, the graph evaluates the complete token batch from zero
+#' state. With a [rllm_kv_cache()], the pass advances every state declared by
+#' the plan, including key/value, convolution and gated-delta state, then
+#' advances `cache$n_past`. This is the incremental-decoding path: prefill once
+#' with the prompt, then feed one token at a time.
 #'
 #' @param model An `rllm_model` from [rllm_gguf_model()].
 #' @param tokens Integer vector of 0-based token ids (as in the GGUF vocab).
@@ -222,7 +239,7 @@ rllm_forward <- function(model, tokens, cache = NULL,
     }
     if (is.null(cache)) {
         return(.Call("RC_rllm_plan_forward", model$plan, model$tensors,
-                     tokens, NULL, NULL, NULL, 0L, 0L, backend_code,
+                     tokens, NULL, NULL, NULL, NULL, 0L, 0L, backend_code,
                      backend_context, PACKAGE = "Rllm"))
     }
     if (!inherits(cache, "rllm_kv_cache")) {
@@ -232,8 +249,9 @@ rllm_forward <- function(model, tokens, cache = NULL,
         stop("cache belongs to a different model plan")
     }
     out <- .Call("RC_rllm_plan_forward", model$plan, model$tensors,
-                 tokens, cache$k, cache$v, cache$conv, cache$n_ctx,
-                 cache$n_past, backend_code, backend_context, PACKAGE = "Rllm")
+                 tokens, cache$k, cache$v, cache$conv, cache$recurrent,
+                 cache$n_ctx, cache$n_past, backend_code, backend_context,
+                 PACKAGE = "Rllm")
     cache$n_past <- cache$n_past + length(tokens)
     out
 }
@@ -290,7 +308,7 @@ rllm_embed <- function(model, tokens, normalize = TRUE,
     }
     out <- .Call(
         "RC_rllm_plan_forward", model$plan, model$tensors, tokens,
-        NULL, NULL, NULL, 0L, 0L, backend_code, backend_context,
+        NULL, NULL, NULL, NULL, 0L, 0L, backend_code, backend_context,
         PACKAGE = "Rllm"
     )[, 1L]
     if (normalize) {

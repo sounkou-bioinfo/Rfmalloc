@@ -15,7 +15,8 @@ SEXP RC_rllm_dequantize(SEXP payload, SEXP dtype_sexp, SEXP n_sexp);
 SEXP RC_rllm_cuda_model_context(SEXP tensors);
 SEXP RC_rllm_plan_forward(SEXP plan, SEXP tensors, SEXP tokens_sexp,
                           SEXP kcache, SEXP vcache, SEXP convcache,
-                          SEXP n_ctx_sexp, SEXP n_past_sexp,
+                          SEXP recurrent_cache, SEXP n_ctx_sexp,
+                          SEXP n_past_sexp,
                           SEXP backend_sexp, SEXP backend_context);
 
 static const R_CallMethodDef CallEntries[] = {
@@ -24,7 +25,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"RC_rllm_quantize_into",    (DL_FUNC) &RC_rllm_quantize_into,    3},
     {"RC_rllm_dequantize",       (DL_FUNC) &RC_rllm_dequantize,       3},
     {"RC_rllm_cuda_model_context", (DL_FUNC) &RC_rllm_cuda_model_context, 1},
-    {"RC_rllm_plan_forward",     (DL_FUNC) &RC_rllm_plan_forward,    10},
+    {"RC_rllm_plan_forward",     (DL_FUNC) &RC_rllm_plan_forward,    11},
     {NULL, NULL, 0}
 };
 

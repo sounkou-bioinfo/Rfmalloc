@@ -36,7 +36,7 @@ Wq <- rllm_quantize_tensor(W, "q4_k", runtime = rt)  # 4.5 bits/weight, mmap'd
 X  <- matrix(rnorm(4 * 512), nrow = 4)
 Y  <- X %*% Wq                                       # GGML SIMD, no f64 decode
 sqrt(sum((Y - X %*% W)^2) / sum((X %*% W)^2))        # q4_k-accurate
-#> [1] 0.09047354
+#> [1] 0.09047353
 ```
 
 ## Inference: bytes in, bytes out
@@ -86,6 +86,9 @@ dataflow, `rllm_residual()` records branches, `rllm_tap()` names
 intermediate outputs and `rllm_loop()` preserves shared recurrence
 instead of unrolling it. Freezing the trace with `rllm_program()`
 removes the builder environment and leaves only serializable data.
+`rllm_inputs()` starts a trace with several typed inputs, while an
+operator’s `outputs` specification keeps several named results in the
+same graph.
 
 ``` r
 d <- "hidden"
@@ -122,17 +125,38 @@ to one R data AST with 48 gated-delta recurrent blocks, 16
 gated-attention blocks, two kinds of persistent state and 851 typed
 parameter bindings. Its official group-64 `q2_0` weights remain a
 storage-codec concern. The recurrent and attention mixture remains an
-architecture concern. Neither becomes a model-family branch in C++. The
-plan is inspectable now; execution still requires lowerings for gated
-delta net and MRoPE gated attention.
+architecture concern. Neither becomes a model-family branch in C++. Both
+operators lower through Rggml, including MRoPE, head-interleaved query
+gates, causal convolution and recurrent matrix state. Whole-batch and
+incremental execution are pinned to a pure-R equation oracle. For the
+real checkpoint, a token-zero forward pass produces all 248,320 logits
+bit-for-bit identically to upstream llama.cpp built with the
+corresponding portable CPU backend. The pinned GGML release has no
+`q2_0` CUDA or Vulkan matrix-product kernel, so this ternary checkpoint
+executes on CPU. The same Qwen3.5 graph can use CUDA when its weights
+use a codec that backend supports.
 
-The language does not pretend that every recorded operator executes. The
-native lowerer implements the operators exercised by llama, LFM2MoE and
-EmbeddingGemma. Qwen3.5, ESM, Evo 2 and Tiny Recursive Models are
-structural stress tests for hybrid recurrent-attention state, padding
-masks and representation taps, stateful long convolutions, and nested
-shared recurrence. A missing lowering is reported as such; it is not
-another architecture branch hidden in C++.
+The program interpreter executes dataflow and structured control flow
+through an explicit table of R operator lowerings. Its dense reference
+vocabulary pins Tiny Recursive Model evaluation against a direct R
+recurrence: `z_H` and `z_L` cross three nested symbolic loops while one
+reasoning module stays shared. The full attention and SwiGLU TRM
+topology is also serializable, but a Samsung checkpoint importer and
+native bidirectional-attention lowering do not yet exist.
+`rllm_execute()` is a semantic oracle and lowering harness; it does not
+replace the GGUF path in `rllm_forward()`.
+
+The native lowerer implements the operators exercised by llama, Qwen3.5,
+LFM2MoE and EmbeddingGemma. ESM-2 and Evo 2 remain executable-frontier
+probes, but their programs are no longer caricatures. The ESM-2 8M
+program records typed token and padding inputs, six attention layers
+returning both hidden states and attention maps, tied embeddings,
+representation taps and the contact head over those maps. The Evo 2 7B
+program records the complete 32-layer schedule: 27 short, medium and
+long Hyena cascades with their distinct FIR or IIR state, interleaved
+with five causal-attention layers. Missing checkpoint importers and
+numerical lowerings fail explicitly; they are not model-family branches
+hidden in C++.
 
 [Rtinycc](https://github.com/sounkou-bioinfo/Rtinycc) is a plausible
 prototype target for generated C reference operators and ABI glue. It
@@ -161,21 +185,26 @@ decoding one token at a time.
 ## Correctness discipline
 
 The forward pass is pinned to pure-R implementations of the same
-arithmetic for llama, LFM2MoE and EmbeddingGemma. Hermetic f32 models
-require incremental state to equal whole-batch execution at every
-position. On a real quantized MoE, changing batch width can select a
-different GGML GEMV or GEMM kernel; tiny router-score rounding may cross
-the top-k boundary, so the real-file test pins the chosen token and
-logit direction while generation is checked against the upstream
-continuation. Every codec decoder must be bit-identical to GGML’s
-type-traits `to_float`, the cross-validation that caught the Q4_K bug in
-the earlier partial C port. At the byte boundary,
-`rllm_decode(rllm_encode(x))` must always equal `x`.
+arithmetic for llama, Qwen3.5, LFM2MoE and EmbeddingGemma. Hermetic f32
+models require incremental state to equal whole-batch execution at every
+position. Qwen3.5 is also compared over every real-model logit with an
+upstream build using the same portable CPU arithmetic. On a real
+quantized MoE, changing batch width can select a different GGML GEMV or
+GEMM kernel; tiny router-score rounding may cross the top-k boundary, so
+the real-file test pins the chosen token and logit direction while
+generation is checked against the upstream continuation. Every codec
+decoder must be bit-identical to GGML’s type-traits `to_float`, the
+cross-validation that caught the Q4_K bug in the earlier partial C port.
+At the byte boundary, `rllm_decode(rllm_encode(x))` must always equal
+`x`.
 
 The hermetic tests write their synthetic GGUF models at test time with
 [Rgguf](../Rgguf)’s own writer. `RLLM_TEST_GGUF=<path>` exercises a real
 generation model, while `RLLM_EMBEDDING_GGUF=<path>` compares the 300M
 EmbeddingGemma Q8_0 probe with an upstream llama.cpp reference.
+`RLLM_QWEN35_GGUF=<path>` executes a real hybrid checkpoint; pairing it
+with `RLLM_QWEN35_REFERENCE=<f32.bin>` checks a portable upstream logit
+transcript bit-for-bit.
 
 ## Compute follows residency
 

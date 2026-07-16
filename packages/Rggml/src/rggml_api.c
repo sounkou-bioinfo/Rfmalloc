@@ -461,6 +461,13 @@ struct ggml_tensor *Rggml_rms_norm(struct ggml_context *ctx, struct ggml_tensor 
     return ggml_rms_norm(ctx, a, (float) eps);
 }
 
+struct ggml_tensor *Rggml_l2_norm(struct ggml_context *ctx, struct ggml_tensor *a,
+                                   double eps)
+{
+    if (!ctx || !a) return NULL;
+    return ggml_l2_norm(ctx, a, (float) eps);
+}
+
 struct ggml_tensor *Rggml_mul(struct ggml_context *ctx, struct ggml_tensor *a,
                                struct ggml_tensor *b)
 {
@@ -500,6 +507,12 @@ struct ggml_tensor *Rggml_sigmoid(struct ggml_context *ctx, struct ggml_tensor *
 {
     if (!ctx || !a) return NULL;
     return ggml_sigmoid(ctx, a);
+}
+
+struct ggml_tensor *Rggml_softplus(struct ggml_context *ctx, struct ggml_tensor *a)
+{
+    if (!ctx || !a) return NULL;
+    return ggml_softplus(ctx, a);
 }
 
 struct ggml_tensor *Rggml_scale(struct ggml_context *ctx, struct ggml_tensor *a,
@@ -585,6 +598,36 @@ struct ggml_tensor *Rggml_rope(struct ggml_context *ctx, struct ggml_tensor *a,
                          /*beta_fast=*/32.0f, /*beta_slow=*/1.0f);
 }
 
+struct ggml_tensor *Rggml_rope_multi(struct ggml_context *ctx,
+                                      struct ggml_tensor *a,
+                                      struct ggml_tensor *pos, int n_dims,
+                                      const int sections[GGML_MROPE_SECTIONS],
+                                      int mode, double freq_base)
+{
+    if (!ctx || !a || !pos || !sections) return NULL;
+    int copy[GGML_MROPE_SECTIONS];
+    memcpy(copy, sections, sizeof(copy));
+    return ggml_rope_multi(ctx, a, pos, NULL, n_dims, copy, mode,
+                           /*n_ctx_orig=*/0, (float)freq_base,
+                           /*freq_scale=*/1.0f, /*ext_factor=*/0.0f,
+                           /*attn_factor=*/1.0f, /*beta_fast=*/32.0f,
+                           /*beta_slow=*/1.0f);
+}
+
+struct ggml_tensor *Rggml_gated_delta_net(struct ggml_context *ctx,
+                                           struct ggml_tensor *q,
+                                           struct ggml_tensor *k,
+                                           struct ggml_tensor *v,
+                                           struct ggml_tensor *gate,
+                                           struct ggml_tensor *beta,
+                                           struct ggml_tensor *state,
+                                           int64_t snapshots)
+{
+    if (!ctx || !q || !k || !v || !gate || !beta || !state ||
+        snapshots < 1) return NULL;
+    return ggml_gated_delta_net(ctx, q, k, v, gate, beta, state, snapshots);
+}
+
 struct ggml_tensor *Rggml_reshape_2d(struct ggml_context *ctx, struct ggml_tensor *a,
                                       int64_t ne0, int64_t ne1)
 {
@@ -597,6 +640,14 @@ struct ggml_tensor *Rggml_reshape_3d(struct ggml_context *ctx, struct ggml_tenso
 {
     if (!ctx || !a) return NULL;
     return ggml_reshape_3d(ctx, a, ne0, ne1, ne2);
+}
+
+struct ggml_tensor *Rggml_reshape_4d(struct ggml_context *ctx, struct ggml_tensor *a,
+                                      int64_t ne0, int64_t ne1, int64_t ne2,
+                                      int64_t ne3)
+{
+    if (!ctx || !a) return NULL;
+    return ggml_reshape_4d(ctx, a, ne0, ne1, ne2, ne3);
 }
 
 struct ggml_tensor *Rggml_permute(struct ggml_context *ctx, struct ggml_tensor *a,
@@ -644,6 +695,16 @@ struct ggml_tensor *Rggml_view_3d(struct ggml_context *ctx, struct ggml_tensor *
 {
     if (!ctx || !a) return NULL;
     return ggml_view_3d(ctx, a, ne0, ne1, ne2, nb1, nb2, offset);
+}
+
+struct ggml_tensor *Rggml_view_4d(struct ggml_context *ctx, struct ggml_tensor *a,
+                                   int64_t ne0, int64_t ne1, int64_t ne2,
+                                   int64_t ne3, size_t nb1, size_t nb2,
+                                   size_t nb3, size_t offset)
+{
+    if (!ctx || !a) return NULL;
+    return ggml_view_4d(ctx, a, ne0, ne1, ne2, ne3,
+                        nb1, nb2, nb3, offset);
 }
 
 struct ggml_tensor *Rggml_cpy(struct ggml_context *ctx, struct ggml_tensor *a,

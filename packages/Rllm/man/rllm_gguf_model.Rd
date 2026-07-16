@@ -31,7 +31,8 @@ on-disk encoding; no second weight store is created.
 }
 \details{
 Architecture definitions are data ASTs rather than native model-family
-branches. The registered plans cover llama, LFM2MoE and EmbeddingGemma.
+branches. The registered plans cover llama, Qwen3.5, LFM2MoE and
+EmbeddingGemma.
 Models with tied embeddings reuse \code{token_embd.weight} as the output
 projection.
 }

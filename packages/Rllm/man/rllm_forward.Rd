@@ -24,8 +24,8 @@ column \code{i} scores the token following position \code{i}.
 \description{
 Lowers the model's inspectable \code{\link[=rllm_plan]{rllm_plan()}} to a GGML graph over its
 memory-mapped weights and computes it on a chosen backend. The operator
-vocabulary includes attention, gated short convolution, dense gated
-products and sparse routed experts.
+vocabulary includes causal and gated attention, gated-delta recurrence,
+short convolution, dense gated products and sparse routed experts.
 Quantized weights are contracted natively in their encoded form - they are
 never decoded to double. The CPU backend borrows the mapped bytes directly.
 On its first use, the CUDA backend creates a model-owned context and uploads
@@ -33,9 +33,9 @@ the codec-native weights once. Later passes reuse those resident weights;
 mutable inputs, cache slabs and logits move through Rggml's transfer API.
 }
 \details{
-Without a \code{cache}, the graph attends over the whole token batch with a
-causal mask (prompt scoring). With a \code{\link[=rllm_kv_cache]{rllm_kv_cache()}}, the pass appends
-the new tokens' keys/values to the cache and attends over everything
-cached so far, advancing \code{cache$n_past} - the incremental-decoding path:
-prefill once with the prompt, then feed one token at a time.
+Without a \code{cache}, the graph evaluates the complete token batch from zero
+state. With a \code{\link[=rllm_kv_cache]{rllm_kv_cache()}}, the pass advances every state declared by
+the plan, including key/value, convolution and gated-delta state, then
+advances \code{cache$n_past}. This is the incremental-decoding path: prefill once
+with the prompt, then feed one token at a time.
 }

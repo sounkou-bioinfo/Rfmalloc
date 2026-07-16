@@ -12,6 +12,10 @@
 
 #include "rggml_api.h"
 
+#if defined(RGGML_SIMD_DISPATCH) && RGGML_SIMD_DISPATCH
+void rggml_simd_dispatch_init(void);
+#endif
+
 SEXP RC_rggml_version(void);
 SEXP RC_rggml_test_mul_mat(SEXP A_sexp, SEXP B_sexp, SEXP zero_copy_sexp, SEXP use_blas_sexp);
 SEXP RC_rggml_test_mul_mat_backend(SEXP A_sexp, SEXP B_sexp, SEXP backend_sexp);
@@ -102,12 +106,14 @@ static void register_c_callables(DllInfo *dll)
 
     R_RegisterCCallable("Rggml", "Rggml_get_rows",              (DL_FUNC) Rggml_get_rows);
     R_RegisterCCallable("Rggml", "Rggml_rms_norm",              (DL_FUNC) Rggml_rms_norm);
+    R_RegisterCCallable("Rggml", "Rggml_l2_norm",               (DL_FUNC) Rggml_l2_norm);
     R_RegisterCCallable("Rggml", "Rggml_mul",                   (DL_FUNC) Rggml_mul);
     R_RegisterCCallable("Rggml", "Rggml_add",                   (DL_FUNC) Rggml_add);
     R_RegisterCCallable("Rggml", "Rggml_div",                   (DL_FUNC) Rggml_div);
     R_RegisterCCallable("Rggml", "Rggml_silu",                  (DL_FUNC) Rggml_silu);
     R_RegisterCCallable("Rggml", "Rggml_geglu",                 (DL_FUNC) Rggml_geglu);
     R_RegisterCCallable("Rggml", "Rggml_sigmoid",               (DL_FUNC) Rggml_sigmoid);
+    R_RegisterCCallable("Rggml", "Rggml_softplus",              (DL_FUNC) Rggml_softplus);
     R_RegisterCCallable("Rggml", "Rggml_scale",                 (DL_FUNC) Rggml_scale);
     R_RegisterCCallable("Rggml", "Rggml_sum_rows",              (DL_FUNC) Rggml_sum_rows);
     R_RegisterCCallable("Rggml", "Rggml_clamp",                 (DL_FUNC) Rggml_clamp);
@@ -118,14 +124,18 @@ static void register_c_callables(DllInfo *dll)
     R_RegisterCCallable("Rggml", "Rggml_soft_max_ext",          (DL_FUNC) Rggml_soft_max_ext);
     R_RegisterCCallable("Rggml", "Rggml_diag_mask_inf",         (DL_FUNC) Rggml_diag_mask_inf);
     R_RegisterCCallable("Rggml", "Rggml_rope",                  (DL_FUNC) Rggml_rope);
+    R_RegisterCCallable("Rggml", "Rggml_rope_multi",            (DL_FUNC) Rggml_rope_multi);
+    R_RegisterCCallable("Rggml", "Rggml_gated_delta_net",       (DL_FUNC) Rggml_gated_delta_net);
     R_RegisterCCallable("Rggml", "Rggml_reshape_2d",            (DL_FUNC) Rggml_reshape_2d);
     R_RegisterCCallable("Rggml", "Rggml_reshape_3d",            (DL_FUNC) Rggml_reshape_3d);
+    R_RegisterCCallable("Rggml", "Rggml_reshape_4d",            (DL_FUNC) Rggml_reshape_4d);
     R_RegisterCCallable("Rggml", "Rggml_permute",               (DL_FUNC) Rggml_permute);
     R_RegisterCCallable("Rggml", "Rggml_cont",                  (DL_FUNC) Rggml_cont);
     R_RegisterCCallable("Rggml", "Rggml_transpose",             (DL_FUNC) Rggml_transpose);
     R_RegisterCCallable("Rggml", "Rggml_view_1d",               (DL_FUNC) Rggml_view_1d);
     R_RegisterCCallable("Rggml", "Rggml_view_2d",               (DL_FUNC) Rggml_view_2d);
     R_RegisterCCallable("Rggml", "Rggml_view_3d",               (DL_FUNC) Rggml_view_3d);
+    R_RegisterCCallable("Rggml", "Rggml_view_4d",               (DL_FUNC) Rggml_view_4d);
     R_RegisterCCallable("Rggml", "Rggml_cpy",                   (DL_FUNC) Rggml_cpy);
 
     R_RegisterCCallable("Rggml", "Rggml_type_size",              (DL_FUNC) Rggml_type_size);
@@ -140,6 +150,9 @@ static void register_c_callables(DllInfo *dll)
 
 void R_init_Rggml(DllInfo *dll)
 {
+#if defined(RGGML_SIMD_DISPATCH) && RGGML_SIMD_DISPATCH
+    rggml_simd_dispatch_init();
+#endif
     R_registerRoutines(dll, NULL, CallEntries, NULL, NULL);
     register_c_callables(dll);
     R_useDynamicSymbols(dll, FALSE);

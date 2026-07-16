@@ -195,6 +195,8 @@ typedef struct ggml_tensor *(*Rggml_get_rows_fun)(struct ggml_context *ctx,
                                                    struct ggml_tensor *b);
 typedef struct ggml_tensor *(*Rggml_rms_norm_fun)(struct ggml_context *ctx,
                                                    struct ggml_tensor *a, double eps);
+typedef struct ggml_tensor *(*Rggml_l2_norm_fun)(struct ggml_context *ctx,
+                                                  struct ggml_tensor *a, double eps);
 typedef struct ggml_tensor *(*Rggml_mul_fun)(struct ggml_context *ctx,
                                               struct ggml_tensor *a,
                                               struct ggml_tensor *b);
@@ -211,6 +213,8 @@ typedef struct ggml_tensor *(*Rggml_geglu_fun)(struct ggml_context *ctx,
                                                 struct ggml_tensor *up);
 typedef struct ggml_tensor *(*Rggml_sigmoid_fun)(struct ggml_context *ctx,
                                                   struct ggml_tensor *a);
+typedef struct ggml_tensor *(*Rggml_softplus_fun)(struct ggml_context *ctx,
+                                                   struct ggml_tensor *a);
 typedef struct ggml_tensor *(*Rggml_scale_fun)(struct ggml_context *ctx,
                                                 struct ggml_tensor *a, double s);
 typedef struct ggml_tensor *(*Rggml_sum_rows_fun)(struct ggml_context *ctx,
@@ -242,12 +246,26 @@ typedef struct ggml_tensor *(*Rggml_rope_fun)(struct ggml_context *ctx,
                                                struct ggml_tensor *a,
                                                struct ggml_tensor *pos,
                                                int n_dims, int mode, double freq_base);
+typedef struct ggml_tensor *(*Rggml_rope_multi_fun)(struct ggml_context *ctx,
+                                                     struct ggml_tensor *a,
+                                                     struct ggml_tensor *pos,
+                                                     int n_dims,
+                                                     const int sections[GGML_MROPE_SECTIONS],
+                                                     int mode, double freq_base);
+typedef struct ggml_tensor *(*Rggml_gated_delta_net_fun)(
+    struct ggml_context *ctx, struct ggml_tensor *q, struct ggml_tensor *k,
+    struct ggml_tensor *v, struct ggml_tensor *gate,
+    struct ggml_tensor *beta, struct ggml_tensor *state, int64_t snapshots);
 typedef struct ggml_tensor *(*Rggml_reshape_2d_fun)(struct ggml_context *ctx,
                                                      struct ggml_tensor *a,
                                                      int64_t ne0, int64_t ne1);
 typedef struct ggml_tensor *(*Rggml_reshape_3d_fun)(struct ggml_context *ctx,
                                                      struct ggml_tensor *a,
                                                      int64_t ne0, int64_t ne1, int64_t ne2);
+typedef struct ggml_tensor *(*Rggml_reshape_4d_fun)(struct ggml_context *ctx,
+                                                     struct ggml_tensor *a,
+                                                     int64_t ne0, int64_t ne1,
+                                                     int64_t ne2, int64_t ne3);
 typedef struct ggml_tensor *(*Rggml_permute_fun)(struct ggml_context *ctx,
                                                   struct ggml_tensor *a,
                                                   int axis0, int axis1, int axis2, int axis3);
@@ -301,6 +319,12 @@ typedef struct ggml_tensor *(*Rggml_view_3d_fun)(struct ggml_context *ctx,
                                                   struct ggml_tensor *a,
                                                   int64_t ne0, int64_t ne1, int64_t ne2,
                                                   size_t nb1, size_t nb2, size_t offset);
+typedef struct ggml_tensor *(*Rggml_view_4d_fun)(struct ggml_context *ctx,
+                                                  struct ggml_tensor *a,
+                                                  int64_t ne0, int64_t ne1,
+                                                  int64_t ne2, int64_t ne3,
+                                                  size_t nb1, size_t nb2,
+                                                  size_t nb3, size_t offset);
 typedef struct ggml_tensor *(*Rggml_cpy_fun)(struct ggml_context *ctx,
                                               struct ggml_tensor *a,
                                               struct ggml_tensor *b);
@@ -443,6 +467,11 @@ static inline Rggml_rms_norm_fun Rggml_rms_norm_ptr(void)
     return (Rggml_rms_norm_fun) R_GetCCallable("Rggml", "Rggml_rms_norm");
 }
 
+static inline Rggml_l2_norm_fun Rggml_l2_norm_ptr(void)
+{
+    return (Rggml_l2_norm_fun) R_GetCCallable("Rggml", "Rggml_l2_norm");
+}
+
 static inline Rggml_mul_fun Rggml_mul_ptr(void)
 {
     return (Rggml_mul_fun) R_GetCCallable("Rggml", "Rggml_mul");
@@ -471,6 +500,11 @@ static inline Rggml_geglu_fun Rggml_geglu_ptr(void)
 static inline Rggml_sigmoid_fun Rggml_sigmoid_ptr(void)
 {
     return (Rggml_sigmoid_fun) R_GetCCallable("Rggml", "Rggml_sigmoid");
+}
+
+static inline Rggml_softplus_fun Rggml_softplus_ptr(void)
+{
+    return (Rggml_softplus_fun) R_GetCCallable("Rggml", "Rggml_softplus");
 }
 
 static inline Rggml_scale_fun Rggml_scale_ptr(void)
@@ -525,6 +559,18 @@ static inline Rggml_rope_fun Rggml_rope_ptr(void)
     return (Rggml_rope_fun) R_GetCCallable("Rggml", "Rggml_rope");
 }
 
+static inline Rggml_rope_multi_fun Rggml_rope_multi_ptr(void)
+{
+    return (Rggml_rope_multi_fun)
+        R_GetCCallable("Rggml", "Rggml_rope_multi");
+}
+
+static inline Rggml_gated_delta_net_fun Rggml_gated_delta_net_ptr(void)
+{
+    return (Rggml_gated_delta_net_fun)
+        R_GetCCallable("Rggml", "Rggml_gated_delta_net");
+}
+
 static inline Rggml_reshape_2d_fun Rggml_reshape_2d_ptr(void)
 {
     return (Rggml_reshape_2d_fun) R_GetCCallable("Rggml", "Rggml_reshape_2d");
@@ -533,6 +579,12 @@ static inline Rggml_reshape_2d_fun Rggml_reshape_2d_ptr(void)
 static inline Rggml_reshape_3d_fun Rggml_reshape_3d_ptr(void)
 {
     return (Rggml_reshape_3d_fun) R_GetCCallable("Rggml", "Rggml_reshape_3d");
+}
+
+static inline Rggml_reshape_4d_fun Rggml_reshape_4d_ptr(void)
+{
+    return (Rggml_reshape_4d_fun)
+        R_GetCCallable("Rggml", "Rggml_reshape_4d");
 }
 
 static inline Rggml_permute_fun Rggml_permute_ptr(void)
@@ -613,6 +665,11 @@ static inline Rggml_view_2d_fun Rggml_view_2d_ptr(void)
 static inline Rggml_view_3d_fun Rggml_view_3d_ptr(void)
 {
     return (Rggml_view_3d_fun) R_GetCCallable("Rggml", "Rggml_view_3d");
+}
+
+static inline Rggml_view_4d_fun Rggml_view_4d_ptr(void)
+{
+    return (Rggml_view_4d_fun) R_GetCCallable("Rggml", "Rggml_view_4d");
 }
 
 static inline Rggml_cpy_fun Rggml_cpy_ptr(void)

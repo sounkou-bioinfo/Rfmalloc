@@ -2,6 +2,7 @@
 % Please edit documentation in R/rllm_program.R
 \name{rllm_input}
 \alias{rllm_input}
+\alias{rllm_inputs}
 \alias{rllm_parameter}
 \alias{rllm_module}
 \alias{rllm_op}
@@ -10,11 +11,13 @@
 \usage{
 rllm_input(name, shape, dtype = "f32")
 
+rllm_inputs(..., .dtype = "f32", .name = NULL)
+
 rllm_parameter(name, shape, dtype = NULL, role = NULL)
 
 rllm_module(name, forward)
 
-rllm_op(x, op, ..., output_shape = NULL, output_dtype = NULL)
+rllm_op(x, op, ..., output_shape = NULL, output_dtype = NULL, outputs = NULL)
 
 rllm_program(x, name = NULL)
 }
@@ -26,6 +29,14 @@ numbers or symbolic character strings.}
 
 \item{dtype}{Storage or value type.}
 
+\item{...}{Named, data-only operator attributes, or arguments passed to a
+module's \code{forward} function.}
+
+\item{.dtype}{One dtype for all inputs, or a named character vector with one
+dtype per input.}
+
+\item{.name}{Program-builder name for a multiple-input trace.}
+
 \item{role}{Optional semantic role for a parameter.}
 
 \item{forward}{An ordinary R function whose first argument is a traced
@@ -36,17 +47,21 @@ multi-input operator, a model plan, a loaded model, or a GGUF path.}
 
 \item{op}{A non-empty semantic operator name.}
 
-\item{...}{Named, data-only operator attributes, or arguments passed to a
-module's \code{forward} function.}
-
 \item{output_shape}{Optional result shape. The input shape is retained when
 omitted.}
 
 \item{output_dtype}{Optional result type. The input type is retained when
 omitted.}
+
+\item{outputs}{Optional named output specifications for an operator with
+multiple results. Each entry is either a shape or a list with \code{shape} and
+optional \code{dtype}. This cannot be combined with \code{output_shape} or
+\code{output_dtype}.}
 }
 \value{
-\code{rllm_input()} and operators return a traced \code{rllm_value}.
+\code{rllm_input()} and single-result operators return a traced
+\code{rllm_value}. \code{rllm_inputs()} and multiple-result operators return named
+lists of traced values.
 \code{rllm_parameter()} returns a data-only tensor reference,
 \code{rllm_module()} returns a callable R function, and \code{rllm_program()}
 returns a data-only \code{rllm_program}.

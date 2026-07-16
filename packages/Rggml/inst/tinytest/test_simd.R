@@ -1,12 +1,10 @@
 library(tinytest)
 library(Rggml)
 
-# Rggml stages ISA-specific variants of GGML's hot quantized dot kernels
-# (q4_K x q8_K to start) compiled by configure with their own ISA flags
-# (-mavx2/-mfma on x86, -O3 NEON on aarch64), selected at runtime by a CPUID
-# dispatcher. The staged variant is the same source auto-vectorized (no
-# -ffast-math), so it must equal GGML's scalar reference to tight float
-# tolerance. This is the correctness guarantee for the dispatch.
+# On x86, Rggml stages GGML's official arch/x86 Q4_K dot under its upstream
+# ISA flags and selects it through a CPUID dispatcher. Aarch64 and wasm compile
+# GGML's complete native architecture sources directly. The staged x86 result
+# must agree with GGML's generic reference to tight float tolerance.
 
 message("Testing runtime-SIMD-dispatched q4_K dot (staged variant vs scalar)...")
 

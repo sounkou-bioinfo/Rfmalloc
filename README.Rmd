@@ -219,19 +219,30 @@ kernel. The failed form is evidence, not an API to preserve.
 The graph description follows the same separation. GGUF metadata is first
 normalized into named tensor roles, shapes, operators, state and outputs. An R
 architecture program then expresses modules, residual branches, representation
-taps and structured recurrence with ordinary functions and the base pipe. The
-frozen program is data only. C does not need another model-family class; it
-needs reusable lowerings for attention, normalization, convolution, routing
-and whatever operators survive the next model stress test.
+taps and structured recurrence with ordinary functions and the base pipe.
+Several typed inputs and several named results stay explicit instead of being
+smuggled through string attributes. The frozen program is data only. C does
+not need another model-family class; it needs reusable lowerings for attention,
+normalization, convolution, routing and whatever operators survive the next
+model stress test.
 
 This language is intentionally closer to `torch::nn_module()` and luz's pipe
 cadence than to a C++ architecture switch. EmbeddingGemma forces non-causal and
 symmetric-window attention, post-branch normalization, pooling and projection.
-ESM forces padding masks and multiple representation outputs. Evo 2 forces
-scheduled stateful long convolutions. Tiny Recursive Models force shared
-modules and nested carried state. Unsupported operators remain explicit in the
-program until a backend can lower them; representing an idea is not presented
-as executing it.
+The complete ESM-2 8M topology forces typed token and padding inputs, attention
+maps as second results, arbitrary representation taps, tied embeddings and a
+contact head over those maps. The Evo 2 7B topology forces the real 32-layer
+schedule: 27 HCS, HCM and HCL cascades with different FIR or IIR state, plus
+five interleaved attention layers. Tiny Recursive Models force shared modules
+and nested carried state.
+
+`rllm_execute()` interprets dataflow and loops through an explicit operator
+table. A dense oracle executes the TRM `z_H` and `z_L` recurrence across its
+three nested symbolic loops and agrees with direct R iteration. It is a
+semantic and lowering harness, not a second GGUF runtime. ESM and Evo still
+need checkpoint importers and numerical lowerings, while TRM still needs its
+full bidirectional-attention lowering. Those absences remain named operator
+failures instead of becoming architecture switches.
 
 [Rtinycc](https://github.com/sounkou-bioinfo/Rtinycc) gives this separation a
 useful experimental path. A data-only program can generate a small C reference

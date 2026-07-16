@@ -188,6 +188,23 @@ int sd_cpu_has_avx2(void) {
     return sd_bit(leaf7.ebx, 5);
 }
 
+/* Feature set used by GGML's upstream AVX2 CPU build.  AVX2 alone does not
+ * imply FMA, F16C or BMI2 on every x86 processor, so the staged object must
+ * not be entered until each instruction family it was compiled with exists. */
+int sd_cpu_has_upstream_avx2(void) {
+    SdCpuRegs leaf1;
+    SdCpuRegs leaf7;
+
+    if (!sd_cpu_has_avx2() || !sd_cpuid(1, 0, &leaf1) ||
+        !sd_cpuid(7, 0, &leaf7)) {
+        return 0;
+    }
+    return sd_bit(leaf1.ecx, 12) && /* FMA */
+           sd_bit(leaf1.ecx, 20) && /* SSE4.2 */
+           sd_bit(leaf1.ecx, 29) && /* F16C */
+           sd_bit(leaf7.ebx, 8);    /* BMI2 */
+}
+
 int sd_cpu_has_avx512(void) {
     SdCpuRegs leaf1;
     SdCpuRegs leaf7;
@@ -216,6 +233,10 @@ int sd_cpu_has_sse41(void) {
 }
 
 int sd_cpu_has_avx2(void) {
+    return 0;
+}
+
+int sd_cpu_has_upstream_avx2(void) {
     return 0;
 }
 

@@ -15,6 +15,7 @@ gguf.cpp
 ggml-cpu/amx/amx.h
 ggml-cpu/arch-fallback.h
 ggml-cpu/arch/arm/quants.c
+ggml-cpu/arch/x86/quants.c
 ggml-cpu/arch/wasm/quants.c
 ggml-cpu/binary-ops.cpp
 ggml-cpu/binary-ops.h

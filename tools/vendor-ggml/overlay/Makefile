@@ -107,18 +107,17 @@ CXX_SOURCES = \
 # explicitly instead of silently dropping half the backend from the archive.
 CPU_CORE_OBJECTS = ggml-cpu/ggml-cpu-c.o ggml-cpu/ggml-cpu-cpp.o
 
-# SIMD runtime dispatch (RsimdDispatch strategy): cpu_features (CPUID detect)
-# and the dispatcher are always built; per-ISA kernel variants
-# ($(SIMD_EXTRA_OBJECTS), e.g. rggml_q4k_avx2.o) are staged conditionally by
-# ../../configure after it probes toolchain ISA support. SIMD_DISPATCH_DEFS
-# tells the dispatcher which staged variants exist (e.g. -DRGGML_HAVE_AVX2).
+# SIMD runtime dispatch (RsimdDispatch strategy): cpu_features and the
+# dispatcher are always built for the generic backend. Per-ISA translation
+# units are staged by configure after it probes the toolchain. Their canonical
+# symbols are privately renamed, and the dispatcher selects them at runtime.
 # The ISA flags live here/in configure, never in R's recorded package flags,
 # so R CMD check raises no "non-portable flags" NOTE.
 SIMD_DIR = ../../tools/simd
 SIMD_EXTRA_OBJECTS ?=
 SIMD_DISPATCH_DEFS ?=
-# Emptied by configure on aarch64: GGML's arch/arm/quants.c already defines the
-# canonical ggml_vec_dot_q4_K_q8_K, which our dispatcher would duplicate.
+# Emptied by configure on aarch64 and wasm, where GGML's native translation
+# units already define the canonical quant symbols.
 DISPATCH_OBJECTS ?= cpu_features.o rggml_simd_dispatch.o
 
 OBJECTS = $(C_SOURCES:.c=.o) $(CXX_SOURCES:.cpp=.o) $(CPU_CORE_OBJECTS) \
@@ -162,24 +161,18 @@ ggml-cpu/ggml-cpu-cpp.o: ggml-cpu/ggml-cpu.cpp
 cpu_features.o: $(SIMD_DIR)/cpu_features.c
 	$(CC) $(CPPFLAGS) -I$(SIMD_DIR) $(CFLAGS) -c $< -o $@
 
-# The dispatcher owns the canonical ggml_vec_dot_* symbols and forwards to the
-# scalar generic or a staged ISA variant. SIMD_DISPATCH_DEFS (set by configure)
-# is -DRGGML_HAVE_* for each staged variant.
+# The dispatcher owns the canonical Q4_K dot symbol.
 rggml_simd_dispatch.o: $(SIMD_DIR)/rggml_simd_dispatch.c
 	$(CC) $(CPPFLAGS) -I$(SIMD_DIR) $(SIMD_DISPATCH_DEFS) $(CFLAGS) -c $< -o $@
 
-# AVX2 variant of the q4_K x q8_K dot (needs the GGML includes/defines). Built
-# only when configure staged it; -mavx2 -mfma -O3 auto-vectorizes the loops.
-rggml_q4k_avx2.o: $(SIMD_DIR)/vec_dot_q4_K.c
-	$(CC) $(ALL_CFLAGS) -DRGGML_Q4K_DOT_FN=rggml_vec_dot_q4_K_q8_K_avx2 \
-	    -mavx2 -mfma -O3 -funroll-loops -c $< -o $@
+X86_SIMD_FLAGS = -msse4.2 -mf16c -mfma -mbmi2 -mavx -mavx2
 
-# NEON variant of the q4_K x q8_K dot. NEON is a mandatory baseline on aarch64,
-# so no ISA flag is needed - just -O3 to auto-vectorize better than the -O2
-# GGML_CPU_GENERIC scalar build.
-rggml_q4k_neon.o: $(SIMD_DIR)/vec_dot_q4_K.c
-	$(CC) $(ALL_CFLAGS) -DRGGML_Q4K_DOT_FN=rggml_vec_dot_q4_K_q8_K_neon \
-	    -O3 -funroll-loops -c $< -o $@
+# The complete official x86 quant implementation. Every external definition
+# receives a private name through the forced header.
+rggml_x86_avx2.o: ggml-cpu/arch/x86/quants.c $(SIMD_DIR)/rggml_simd_rename_x86.h
+	$(CC) $(ALL_CFLAGS) -UGGML_CPU_GENERIC \
+	    -include $(SIMD_DIR)/rggml_simd_rename_x86.h \
+	    $(X86_SIMD_FLAGS) -O3 -c $< -o $@
 
 %.o: %.c
 	$(CC) $(ALL_CFLAGS) -c $< -o $@

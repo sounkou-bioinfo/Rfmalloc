@@ -27,8 +27,17 @@
 #'   omitted.
 #' @param output_dtype Optional result type. The input type is retained when
 #'   omitted.
+#' @param outputs Optional named output specifications for an operator with
+#'   multiple results. Each entry is either a shape or a list with `shape` and
+#'   optional `dtype`. This cannot be combined with `output_shape` or
+#'   `output_dtype`.
+#' @param .dtype One dtype for all inputs, or a named character vector with one
+#'   dtype per input.
+#' @param .name Program-builder name for a multiple-input trace.
 #'
-#' @return `rllm_input()` and operators return a traced `rllm_value`.
+#' @return `rllm_input()` and single-result operators return a traced
+#'   `rllm_value`. `rllm_inputs()` and multiple-result operators return named
+#'   lists of traced values.
 #'   `rllm_parameter()` returns a data-only tensor reference,
 #'   `rllm_module()` returns a callable R function, and `rllm_program()`
 #'   returns a data-only `rllm_program`.
@@ -36,6 +45,39 @@
 rllm_input <- function(name, shape, dtype = "f32") {
     builder <- .rllm_new_builder(name)
     .rllm_add_input(builder, name, shape, dtype)
+}
+
+#' @rdname rllm_input
+#' @export
+rllm_inputs <- function(..., .dtype = "f32", .name = NULL) {
+    shapes <- list(...)
+    .rllm_named(shapes, "inputs")
+    if (!length(shapes)) stop("inputs must not be empty")
+    if (!all(vapply(shapes, is.atomic, logical(1)))) {
+        stop("each input must be described by an atomic shape")
+    }
+    if (!is.character(.dtype) || anyNA(.dtype) || any(!nzchar(.dtype))) {
+        stop(".dtype must contain non-empty strings")
+    }
+    if (length(.dtype) == 1L) {
+        .dtype <- rep(.dtype, length(shapes))
+        names(.dtype) <- names(shapes)
+    } else {
+        if (is.null(names(.dtype)) || anyNA(names(.dtype)) ||
+            anyDuplicated(names(.dtype)) ||
+            !setequal(names(.dtype), names(shapes))) {
+            stop("named .dtype entries must match the inputs")
+        }
+        .dtype <- .dtype[names(shapes)]
+    }
+    if (is.null(.name)) .name <- names(shapes)[[1L]]
+    .rllm_name(.name, "program name")
+    builder <- .rllm_new_builder(.name)
+    out <- Map(function(name, shape, dtype) {
+        .rllm_add_input(builder, name, shape, dtype)
+    }, names(shapes), shapes, as.list(.dtype))
+    names(out) <- names(shapes)
+    out
 }
 
 #' @rdname rllm_input
@@ -73,13 +115,28 @@ rllm_module <- function(name, forward) {
 #' @rdname rllm_input
 #' @export
 rllm_op <- function(x, op, ..., output_shape = NULL,
-                    output_dtype = NULL) {
+                    output_dtype = NULL, outputs = NULL) {
     .rllm_name(op, "operator name")
     values <- .rllm_values(x)
     value <- values[[1L]]
     .rllm_assert_builder(x, value$.builder)
     attrs <- list(...)
     .rllm_named(attrs, "operator attributes")
+    if (!is.null(outputs)) {
+        if (!is.null(output_shape) || !is.null(output_dtype)) {
+            stop("outputs cannot be combined with output_shape or output_dtype")
+        }
+        specs <- .rllm_output_specs(outputs, value$dtype)
+        tuple <- .rllm_append(value$.builder, op, values, attrs, NULL, "tuple")
+        out <- Map(function(spec, name, index) {
+            .rllm_append(
+                value$.builder, "op_result", list(tuple),
+                list(result = name, index = index), spec$shape, spec$dtype
+            )
+        }, specs, names(specs), seq_along(specs) - 1L)
+        names(out) <- names(specs)
+        return(out)
+    }
     if (is.null(output_shape)) output_shape <- value$shape
     if (is.null(output_dtype)) output_dtype <- value$dtype
     .rllm_append(value$.builder, op, values, attrs,
@@ -247,7 +304,7 @@ rllm_tap <- function(x, name) {
 #' Unlike an R `for` loop, `rllm_loop()` does not unroll its body. The body is
 #' traced once into a nested data-only program and retained as a loop node.
 #' A single value supports pipe syntax. A named list supports multiple carried
-#' values, as required by recurrent answer and latent states.
+#' values, including nested recurrences with shared parameters.
 #'
 #' @param x A traced value or named list of values from one program.
 #' @param times A positive integer or one symbolic count.
@@ -267,8 +324,8 @@ rllm_loop <- function(x, times, body, name = "loop") {
     if (!is.function(body)) stop("body must be an R function")
     many <- is.list(x) && !inherits(x, "rllm_value")
     state <- if (many) x else list(state = .rllm_one_value(x))
-    if (many && (is.null(names(state)) || any(!nzchar(names(state))) ||
-                 anyDuplicated(names(state)))) {
+    if (many && (is.null(names(state)) || anyNA(names(state)) ||
+                 any(!nzchar(names(state))) || anyDuplicated(names(state)))) {
         stop("multiple loop values must have unique names")
     }
     values <- .rllm_values(state)
@@ -323,6 +380,388 @@ print.rllm_program <- function(x, ...) {
     invisible(x)
 }
 
+#' Execute a data-only architecture program
+#'
+#' `rllm_execute()` interprets the dataflow and structured loops in an
+#' [rllm_program()]. Semantic operators are ordinary R functions supplied in
+#' `operators`; a small dense reference vocabulary is provided for arithmetic
+#' shared by the architecture probes. This is a reference and lowering
+#' harness, not the GGUF execution path used by [rllm_forward()].
+#'
+#' Each operator function is called with four named arguments: `inputs`, the
+#' list of values arriving at the node; `attributes`, the node's data-only
+#' attributes; `parameters`, the named parameter values; and `context`, a
+#' list containing the current node and program, root and local inputs,
+#' symbolic counts, and the enclosing loop iterations. Operator functions
+#' control the representation of their results, so a lowering may preserve a
+#' mapped or device-backed value rather than materializing it in R.
+#'
+#' The built-in dense reference operators are `add`, `linear`, `rms_norm`,
+#' `layer_norm`, `pool`, `gelu`, `silu`, `sigmoid`, `tanh`,
+#' `broadcast_initial`, `select_first_token`, `drop_puzzle_prefix` and
+#' `swiglu`. Entries in `operators` replace built-ins with the same name.
+#'
+#' @param program A data-only `rllm_program`.
+#' @param inputs A named list of input values. Extra entries remain available
+#'   to operator functions through `context$inputs`.
+#' @param parameters A named list containing a value for every declared
+#'   program parameter.
+#' @param counts A named list or atomic vector resolving symbolic loop counts
+#'   and other symbolic integer attributes.
+#' @param operators A named list of semantic operator functions.
+#'
+#' @return A named list containing every program output and tap.
+#' @export
+rllm_execute <- function(program, inputs, parameters = list(), counts = list(),
+                         operators = list()) {
+    if (!inherits(program, "rllm_program")) {
+        stop("program must come from rllm_program()")
+    }
+    inputs <- .rllm_execute_named(inputs, "inputs")
+    parameters <- .rllm_execute_named(parameters, "parameters")
+    counts <- .rllm_execute_counts(counts)
+    operators <- .rllm_execute_named(operators, "operators")
+    if (length(operators) &&
+        !all(vapply(operators, is.function, logical(1)))) {
+        stop("operators must contain functions")
+    }
+
+    input_names <- vapply(Filter(function(node) node$op == "input",
+                                 program$nodes),
+                          function(node) node$attributes$name, character(1))
+    missing_inputs <- setdiff(input_names, names(inputs))
+    if (length(missing_inputs)) {
+        stop("missing program inputs: ", paste(missing_inputs, collapse = ", "))
+    }
+    missing_parameters <- setdiff(names(program$parameters), names(parameters))
+    if (length(missing_parameters)) {
+        stop("missing program parameters: ",
+             paste(missing_parameters, collapse = ", "))
+    }
+
+    reference <- .rllm_reference_operators()
+    reference[names(operators)] <- operators
+    .rllm_execute_program(program, inputs, parameters, counts, reference,
+                          root_inputs = inputs, loops = list())
+}
+
+.rllm_execute_program <- function(program, inputs, parameters, counts,
+                                  operators, root_inputs, loops) {
+    values <- new.env(hash = TRUE, parent = emptyenv())
+
+    for (node in program$nodes) {
+        node_inputs <- lapply(unname(node$inputs), function(id) {
+            if (!exists(id, values, inherits = FALSE)) {
+                stop("program node '", node$id,
+                     "' refers to unavailable input '", id, "'")
+            }
+            get(id, values, inherits = FALSE)
+        })
+        if (length(node$inputs) && !is.null(names(node$inputs))) {
+            names(node_inputs) <- names(node$inputs)
+        }
+
+        value <- switch(node$op,
+            input = {
+                name <- node$attributes$name
+                if (!(name %in% names(inputs))) {
+                    stop("missing loop carry or program input '", name, "'")
+                }
+                inputs[[name]]
+            },
+            loop = .rllm_execute_loop(
+                node, node_inputs, parameters, counts, operators,
+                root_inputs, loops
+            ),
+            loop_result = {
+                tuple <- node_inputs[[1L]]
+                carry <- node$attributes$carry
+                if (!is.list(tuple) || !(carry %in% names(tuple))) {
+                    stop("loop did not return carry '", carry, "'")
+                }
+                tuple[[carry]]
+            },
+            op_result = {
+                tuple <- node_inputs[[1L]]
+                result <- node$attributes$result
+                if (!is.list(tuple) || !(result %in% names(tuple))) {
+                    stop("operator did not return result '", result, "'")
+                }
+                tuple[[result]]
+            },
+            {
+                operator <- operators[[node$op]]
+                if (is.null(operator)) {
+                    location <- if (length(node$module)) {
+                        paste0(" in module '",
+                               paste(node$module, collapse = "/"), "'")
+                    } else {
+                        ""
+                    }
+                    stop("no lowering registered for operator '", node$op,
+                         "'", location)
+                }
+                operator(
+                    inputs = node_inputs,
+                    attributes = node$attributes,
+                    parameters = parameters,
+                    context = list(
+                        node = node,
+                        program = program,
+                        inputs = root_inputs,
+                        locals = inputs,
+                        counts = counts,
+                        loops = loops
+                    )
+                )
+            }
+        )
+        assign(node$id, value, values)
+    }
+
+    out <- lapply(unname(program$outputs), function(id) {
+        if (!exists(id, values, inherits = FALSE)) {
+            stop("program output refers to unavailable node '", id, "'")
+        }
+        get(id, values, inherits = FALSE)
+    })
+    names(out) <- names(program$outputs)
+    out
+}
+
+.rllm_execute_loop <- function(node, inputs, parameters, counts, operators,
+                               root_inputs, loops) {
+    carries <- node$attributes$carries
+    names(inputs) <- carries
+    times <- .rllm_execute_count(node$attributes$times, counts,
+                                 paste0("loop '", node$attributes$name, "'"))
+    state <- inputs
+    for (iteration in seq_len(times)) {
+        current_loop <- list(iteration)
+        names(current_loop) <- node$attributes$name
+        loop_context <- c(loops, current_loop)
+        result <- .rllm_execute_program(
+            node$attributes$body, state, parameters, counts, operators,
+            root_inputs, loop_context
+        )
+        missing <- setdiff(carries, names(result))
+        if (length(missing)) {
+            stop("loop '", node$attributes$name,
+                 "' body did not return carries: ",
+                 paste(missing, collapse = ", "))
+        }
+        state <- result[carries]
+    }
+    if (length(carries) == 1L) state[[1L]] else state
+}
+
+.rllm_execute_named <- function(x, what) {
+    if (is.null(x)) x <- list()
+    if (!is.list(x)) stop(what, " must be a named list")
+    .rllm_named(x, what)
+    x
+}
+
+.rllm_execute_counts <- function(x) {
+    if (is.null(x)) return(list())
+    if (is.atomic(x)) x <- as.list(x)
+    x <- .rllm_execute_named(x, "counts")
+    for (name in names(x)) {
+        .rllm_execute_count(x[[name]], list(), paste0("count '", name, "'"),
+                            symbolic = FALSE, zero = TRUE)
+    }
+    x
+}
+
+.rllm_execute_count <- function(x, counts, what, symbolic = TRUE,
+                                zero = FALSE) {
+    if (is.character(x) && symbolic) {
+        if (!(x %in% names(counts))) stop(what, " needs count '", x, "'")
+        x <- counts[[x]]
+    }
+    lower <- if (zero) 0 else 1
+    if (!is.numeric(x) || length(x) != 1L || is.na(x) || !is.finite(x) ||
+        x < lower || x != floor(x) || x > .Machine$integer.max) {
+        stop(what, " must resolve to one ",
+             if (zero) "non-negative" else "positive", " integer")
+    }
+    as.integer(x)
+}
+
+.rllm_execute_parameter <- function(reference, parameters, what) {
+    if (!inherits(reference, "rllm_parameter")) {
+        stop(what, " attribute is not an rllm_parameter")
+    }
+    if (!(reference$name %in% names(parameters))) {
+        stop("missing program parameter '", reference$name, "'")
+    }
+    parameters[[reference$name]]
+}
+
+.rllm_execute_feature_matrix <- function(x, what) {
+    dimensions <- dim(x)
+    if (is.null(dimensions)) {
+        return(list(value = matrix(x, ncol = 1L), dimensions = NULL))
+    }
+    if (!length(dimensions) || any(dimensions < 1L)) {
+        stop(what, " must have a non-empty feature dimension")
+    }
+    list(value = matrix(x, nrow = dimensions[[1L]]),
+         dimensions = dimensions)
+}
+
+.rllm_execute_restore <- function(x, dimensions) {
+    if (is.null(dimensions)) return(drop(x))
+    dim(x) <- c(nrow(x), dimensions[-1L])
+    x
+}
+
+.rllm_execute_linear <- function(inputs, attributes, parameters, context) {
+    x <- .rllm_execute_feature_matrix(inputs[[1L]], "linear input")
+    weight <- .rllm_execute_parameter(attributes$weight, parameters,
+                                       "linear weight")
+    if (!is.matrix(weight) || nrow(weight) != nrow(x$value)) {
+        stop("linear weight does not match the input feature dimension")
+    }
+    out <- crossprod(weight, x$value)
+    if (!is.null(attributes$bias)) {
+        bias <- .rllm_execute_parameter(attributes$bias, parameters,
+                                        "linear bias")
+        if (length(bias) != nrow(out)) {
+            stop("linear bias does not match the output feature dimension")
+        }
+        out <- sweep(out, 1L, bias, `+`)
+    }
+    dimensions <- x$dimensions
+    if (!is.null(dimensions)) dimensions[[1L]] <- nrow(out)
+    .rllm_execute_restore(out, dimensions)
+}
+
+.rllm_execute_norm <- function(inputs, attributes, parameters, layer = FALSE) {
+    x <- .rllm_execute_feature_matrix(inputs[[1L]], "normalization input")
+    eps <- attributes$eps
+    if (is.null(eps)) eps <- 1e-5
+    if (layer) {
+        centre <- colMeans(x$value)
+        centred <- sweep(x$value, 2L, centre, `-`)
+        scale <- sqrt(colMeans(centred^2) + eps)
+        out <- sweep(centred, 2L, scale, `/`)
+    } else {
+        scale <- sqrt(colMeans(x$value^2) + eps)
+        out <- sweep(x$value, 2L, scale, `/`)
+    }
+    if (!is.null(attributes$weight)) {
+        weight <- .rllm_execute_parameter(attributes$weight, parameters,
+                                           "normalization weight")
+        if (length(weight) != nrow(out)) {
+            stop("normalization weight has the wrong feature dimension")
+        }
+        out <- sweep(out, 1L, weight, `*`)
+    }
+    if (!is.null(attributes$bias)) {
+        bias <- .rllm_execute_parameter(attributes$bias, parameters,
+                                        "normalization bias")
+        if (length(bias) != nrow(out)) {
+            stop("normalization bias has the wrong feature dimension")
+        }
+        out <- sweep(out, 1L, bias, `+`)
+    }
+    .rllm_execute_restore(out, x$dimensions)
+}
+
+.rllm_execute_pool <- function(inputs, attributes, parameters, context) {
+    x <- inputs[[1L]]
+    kind <- attributes$kind
+    if (identical(kind, "none")) return(x)
+    value <- .rllm_execute_feature_matrix(x, "pool input")$value
+    if (identical(kind, "cls")) return(value[, 1L])
+    if (identical(kind, "mean")) return(rowMeans(value))
+    stop("unknown pool kind '", kind, "'")
+}
+
+.rllm_execute_broadcast <- function(inputs, attributes, parameters, context) {
+    initial <- .rllm_execute_parameter(attributes$value, parameters,
+                                        "initial value")
+    target <- inputs[[1L]]
+    dimensions <- dim(target)
+    if (is.null(dimensions)) {
+        if (length(initial) != length(target)) {
+            stop("initial value does not match the target feature dimension")
+        }
+        return(initial)
+    }
+    if (length(initial) != dimensions[[1L]]) {
+        stop("initial value does not match the target feature dimension")
+    }
+    array(rep(initial, prod(dimensions[-1L])), dim = dimensions)
+}
+
+.rllm_execute_swiglu <- function(inputs, attributes, parameters, context) {
+    x <- .rllm_execute_feature_matrix(inputs[[1L]], "swiglu input")
+    gate_up <- .rllm_execute_parameter(attributes$gate_up, parameters,
+                                        "swiglu gate_up")
+    down <- .rllm_execute_parameter(attributes$down, parameters,
+                                     "swiglu down")
+    if (!is.matrix(gate_up) || nrow(gate_up) != nrow(x$value) ||
+        ncol(gate_up) %% 2L != 0L) {
+        stop("swiglu gate_up has incompatible dimensions")
+    }
+    projected <- crossprod(gate_up, x$value)
+    width <- nrow(projected) %/% 2L
+    gate <- projected[seq_len(width), , drop = FALSE]
+    up <- projected[width + seq_len(width), , drop = FALSE]
+    hidden <- (gate * stats::plogis(gate)) * up
+    if (!is.matrix(down) || nrow(down) != width) {
+        stop("swiglu down has incompatible dimensions")
+    }
+    out <- crossprod(down, hidden)
+    dimensions <- x$dimensions
+    if (!is.null(dimensions)) dimensions[[1L]] <- nrow(out)
+    .rllm_execute_restore(out, dimensions)
+}
+
+.rllm_reference_operators <- function() {
+    unary <- function(fun) {
+        force(fun)
+        function(inputs, attributes, parameters, context) fun(inputs[[1L]])
+    }
+    list(
+        add = function(inputs, attributes, parameters, context) {
+            if (!length(inputs)) stop("add needs at least one input")
+            Reduce(`+`, inputs)
+        },
+        linear = .rllm_execute_linear,
+        rms_norm = function(inputs, attributes, parameters, context) {
+            .rllm_execute_norm(inputs, attributes, parameters)
+        },
+        layer_norm = function(inputs, attributes, parameters, context) {
+            .rllm_execute_norm(inputs, attributes, parameters, layer = TRUE)
+        },
+        pool = .rllm_execute_pool,
+        gelu = unary(function(x) x * stats::pnorm(x)),
+        silu = unary(function(x) x * stats::plogis(x)),
+        sigmoid = unary(stats::plogis),
+        tanh = unary(tanh),
+        broadcast_initial = .rllm_execute_broadcast,
+        select_first_token = function(inputs, attributes, parameters, context) {
+            .rllm_execute_feature_matrix(inputs[[1L]],
+                                          "token selection input")$value[, 1L]
+        },
+        drop_puzzle_prefix = function(inputs, attributes, parameters, context) {
+            count <- .rllm_execute_count(
+                attributes$count, context$counts, "puzzle prefix",
+                zero = TRUE
+            )
+            value <- .rllm_execute_feature_matrix(
+                inputs[[1L]], "prefix removal input"
+            )$value
+            if (count >= ncol(value)) return(value[, 0L, drop = FALSE])
+            value[, seq.int(count + 1L, ncol(value)), drop = FALSE]
+        },
+        swiglu = .rllm_execute_swiglu
+    )
+}
+
 .rllm_new_builder <- function(name) {
     builder <- new.env(parent = emptyenv())
     builder$name <- name
@@ -364,8 +803,9 @@ print.rllm_program <- function(x, ...) {
     builder <- values[[1L]]$.builder
     .rllm_assert_builder(x, builder)
     outputs <- builder$outputs
-    value_names <- names(x)
-    if (is.null(value_names) || any(!nzchar(value_names))) {
+    value_names <- if (inherits(x, "rllm_value")) NULL else names(x)
+    if (is.null(value_names) || anyNA(value_names) ||
+        any(!nzchar(value_names))) {
         value_names <- if (length(values) == 1L) "output" else
             paste0("output_", seq_along(values))
     }
@@ -421,8 +861,8 @@ print.rllm_program <- function(x, ...) {
 }
 
 .rllm_named <- function(x, what) {
-    if (length(x) && (is.null(names(x)) || any(!nzchar(names(x))) ||
-                      anyDuplicated(names(x)))) {
+    if (length(x) && (is.null(names(x)) || anyNA(names(x)) ||
+                      any(!nzchar(names(x))) || anyDuplicated(names(x)))) {
         stop(what, " must have unique non-empty names")
     }
     invisible(x)
@@ -443,6 +883,32 @@ print.rllm_program <- function(x, ...) {
         stop("symbolic shape dimensions must be non-empty")
     }
     shape
+}
+
+.rllm_output_specs <- function(outputs, default_dtype) {
+    if (!is.list(outputs) || !length(outputs)) {
+        stop("outputs must be a non-empty named list")
+    }
+    .rllm_named(outputs, "outputs")
+    lapply(outputs, function(spec) {
+        if (is.atomic(spec)) {
+            shape <- spec
+            dtype <- default_dtype
+        } else {
+            if (!is.list(spec) || is.null(spec$shape)) {
+                stop("each output must provide a shape")
+            }
+            unknown <- setdiff(names(spec), c("shape", "dtype"))
+            if (length(unknown)) {
+                stop("unknown output fields: ", paste(unknown, collapse = ", "))
+            }
+            shape <- spec$shape
+            dtype <- spec$dtype
+            if (is.null(dtype)) dtype <- default_dtype
+        }
+        .rllm_name(dtype, "output dtype")
+        list(shape = .rllm_program_shape(shape), dtype = dtype)
+    })
 }
 
 .rllm_same_dimension <- function(x, y) identical(as.character(x), as.character(y))
