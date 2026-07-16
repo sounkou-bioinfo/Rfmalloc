@@ -2,6 +2,16 @@
 
 ## Rllm 0.1.0 (unreleased)
 
+- Native inference now consumes a bound `rllm_program`: the serializable
+  AST, its typed GGUF parameter bindings and its validated GGML lowering
+  travel as one object. Forward execution, embedding, CUDA upload and
+  persistent state no longer read or store a separate model plan or
+  tensor-binding alias; `rllm_plan(model)` is a derived inspection view.
+  Program mutations, not legacy plan mutations, drive the native
+  semantic tests. Operator fields such as masks, routing, scale and
+  state now live directly on AST nodes rather than inside a second
+  opaque specification wrapper.
+
 - Named each sibling package explicitly in `Remotes`, so dependency
   installers replace stale monorepo dependencies instead of mistaking a
   shared repository commit for an already installed package.
@@ -36,8 +46,8 @@
   Their checkpoint importers and numerical lowerings remain explicit
   work.
 
-- GGUF metadata is normalized into semantic plans for llama, LFM2MoE and
-  EmbeddingGemma before any weight is borrowed. The model-neutral
+- GGUF metadata is normalized into semantic programs for llama, LFM2MoE
+  and EmbeddingGemma before any weight is borrowed. The model-neutral
   lowerer covers causal, bidirectional and symmetric-window attention,
   normal and NEOX RoPE, post-branch RMS normalization, SwiGLU, GEGLU,
   short convolution, sparse routed experts, mean pooling and dense

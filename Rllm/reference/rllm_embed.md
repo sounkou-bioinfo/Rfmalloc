@@ -1,10 +1,10 @@
 # Compute one pooled sequence embedding
 
-Lowers an embedding model's semantic plan over a complete token
+Lowers an embedding model's semantic program over a complete token
 sequence. Bidirectional and symmetric-window attention are evaluated
-without a decode cache, then the plan's pooling and projection pipeline
-produces one vector. Quantized weights remain encoded in the mapped GGUF
-file.
+without a decode cache, then the program's pooling and projection
+pipeline produces one vector. Quantized weights remain encoded in the
+mapped GGUF file.
 
 ## Usage
 
@@ -34,7 +34,7 @@ rllm_embed(model, tokens, normalize = TRUE, backend = c("cpu", "cuda"))
 
 ## Value
 
-A numeric vector whose length is `model$plan$output$dimension`.
+A numeric vector whose length is the program's output dimension.
 
 ## Details
 

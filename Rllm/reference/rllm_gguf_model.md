@@ -1,10 +1,12 @@
-# Load a GGUF model as a semantic execution plan and borrowed weights
+# Load a GGUF model as a bound semantic program
 
 Normalizes the model-family metadata into a typed
-[`rllm_plan()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_plan.md),
-validates every tensor role and shape, then borrows each required weight
-from the original GGUF mapping. Quantized and floating-point payloads
-keep their on-disk encoding; no second weight store is created.
+[`rllm_program()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_input.md),
+validates every tensor role and shape, then binds each required weight
+directly to the original GGUF mapping. Quantized and floating-point
+payloads keep their on-disk encoding; no second weight store is created.
+The same program is the inspectable architecture and the source consumed
+by the native GGML lowering.
 
 ## Usage
 
@@ -30,7 +32,7 @@ rllm_gguf_model(path, runtime = NULL, rope_mode = NULL)
 - rope_mode:
 
   Optional RoPE override: `0` for normal/interleaved or `2` for NEOX.
-  The architecture plan supplies the default.
+  The architecture program supplies the default.
 
 ## Value
 
@@ -42,7 +44,7 @@ created lazily by
 ## Details
 
 Architecture definitions are data ASTs rather than native model-family
-branches. The registered plans cover llama, Qwen3.5, LFM2MoE and
+branches. The registered programs cover llama, Qwen3.5, LFM2MoE and
 EmbeddingGemma. Models with tied embeddings reuse `token_embd.weight` as
 the output projection.
 

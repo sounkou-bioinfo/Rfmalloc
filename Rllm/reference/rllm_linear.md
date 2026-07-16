@@ -25,7 +25,8 @@ rllm_attention(
   key_norm = NULL,
   rope = NULL,
   mask = list(type = "causal"),
-  scale = NULL
+  scale = NULL,
+  state = list(op = "none")
 )
 
 rllm_pool(x, kind = c("mean", "cls", "none"))
@@ -66,6 +67,11 @@ rllm_pool(x, kind = c("mean", "cls", "none"))
 - rope, mask, scale:
 
   Data-only attention specifications.
+
+- state:
+
+  Data-only persistent-state specification. The default declares no
+  state.
 
 ## Value
 

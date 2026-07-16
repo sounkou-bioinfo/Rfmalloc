@@ -1,7 +1,7 @@
-# Lower a semantic model plan and return its logits
+# Lower a bound semantic program and return its logits
 
 Lowers the model's inspectable
-[`rllm_plan()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_plan.md)
+[`rllm_program()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_input.md)
 to a GGML graph over its memory-mapped weights and computes it on a
 chosen backend. The operator vocabulary includes causal and gated
 attention, gated-delta recurrence, short convolution, dense gated
@@ -50,7 +50,7 @@ scores the token following position `i`.
 Without a `cache`, the graph evaluates the complete token batch from
 zero state. With a
 [`rllm_kv_cache()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_kv_cache.md),
-the pass advances every state declared by the plan, including key/value,
-convolution and gated-delta state, then advances `cache$n_past`. This is
-the incremental-decoding path: prefill once with the prompt, then feed
-one token at a time.
+the pass advances every state declared by the program, including
+key/value, convolution and gated-delta state, then advances
+`cache$n_past`. This is the incremental-decoding path: prefill once with
+the prompt, then feed one token at a time.

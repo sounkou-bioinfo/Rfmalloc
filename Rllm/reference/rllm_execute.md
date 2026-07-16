@@ -4,9 +4,10 @@
 [`rllm_program()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_input.md).
 Semantic operators are ordinary R functions supplied in `operators`; a
 small dense reference vocabulary is provided for arithmetic shared by
-the architecture probes. This is a reference and lowering harness, not
-the GGUF execution path used by
-[`rllm_forward()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_forward.md).
+the architecture probes. This is the dense reference interpreter for the
+same program that
+[`rllm_forward()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_forward.md)
+binds to mapped weights and lowers natively through GGML.
 
 ## Usage
 

@@ -10,11 +10,11 @@
 - [`rllm_execute()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_execute.md)
   : Execute a data-only architecture program
 - [`rllm_forward()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_forward.md)
-  : Lower a semantic model plan and return its logits
+  : Lower a bound semantic program and return its logits
 - [`rllm_generate()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_generate.md)
   : Generate tokens with a KV cache (greedy or sampled)
 - [`rllm_gguf_model()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_gguf_model.md)
-  : Load a GGUF model as a semantic execution plan and borrowed weights
+  : Load a GGUF model as a bound semantic program
 - [`rllm_input()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_input.md)
   [`rllm_inputs()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_input.md)
   [`rllm_parameter()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_input.md)
@@ -23,7 +23,7 @@
   [`rllm_program()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_input.md)
   : Build a typed model program with ordinary R functions and pipes
 - [`rllm_kv_cache()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_kv_cache.md)
-  : Create plan-shaped state for incremental decoding
+  : Create program-shaped state for incremental decoding
 - [`rllm_linear()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_linear.md)
   [`rllm_norm()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_linear.md)
   [`rllm_attention()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_linear.md)
@@ -32,7 +32,7 @@
 - [`rllm_loop()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_loop.md)
   : Trace a structured, shared recurrence
 - [`rllm_plan()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_plan.md)
-  : Inspect the semantic execution plan of a GGUF model
+  : Inspect the normalized checkpoint description of a GGUF model
 - [`rllm_quantize_tensor()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_quantize_tensor.md)
   : Quantize a matrix into an Rfmalloc-backed quantized tensor
 - [`rllm_residual()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_residual.md)

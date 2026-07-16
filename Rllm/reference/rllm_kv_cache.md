@@ -1,6 +1,6 @@
-# Create plan-shaped state for incremental decoding
+# Create program-shaped state for incremental decoding
 
-Allocates the persistent state declared by the model plan. Attention
+Allocates the persistent state declared by the bound program. Attention
 layers receive key/value slabs, short-convolution layers receive causal
 history, and gated-delta layers receive both convolution history and
 recurrent matrices. State is plain R memory by default or

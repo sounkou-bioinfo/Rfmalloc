@@ -29,7 +29,8 @@ rggml_test_mul_mat_q4k(A, B, backend = c("cpu", "blas", "vulkan", "cuda"))
 
 - backend:
 
-  The GGML backend that owns the tensor buffer.
+  Compute backend. `"cpu"` exercises a borrowed external payload; the
+  other backends exercise backend-owned buffers.
 
 ## Value
 
