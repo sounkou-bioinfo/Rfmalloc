@@ -36,7 +36,9 @@ normalizes GGUF metadata into one serializable semantic program, binds that
 program to mapped weights and lowers it into forward graphs, state, embeddings
 and byte-level generation over the same typed storage. Llama, Qwen3.5,
 LFM2MoE and EmbeddingGemma are model probes of the operator vocabulary rather
-than C++ subclasses.
+than C++ subclasses. Their metadata adapters trace the program and declare its
+typed parameters directly. `rllm_plan()` constructs a layer-oriented view only
+when inspection is requested.
 
 ## Quantized products, zero-copy
 
@@ -157,15 +159,24 @@ checkpoint importer and native bidirectional-attention lowering do not yet
 exist.
 
 The native lowerer implements the operators exercised by llama, Qwen3.5,
-LFM2MoE and EmbeddingGemma. ESM-2 and Evo 2 remain executable-frontier probes,
-but their programs are no longer caricatures. The ESM-2 8M program records
-typed token and padding inputs, six attention layers returning both hidden
-states and attention maps, tied embeddings, representation taps and the
-contact head over those maps. The Evo 2 7B program records the complete
-32-layer schedule: 27 short, medium and long Hyena cascades with their distinct
-FIR or IIR state, interleaved with five causal-attention layers. Missing
-checkpoint importers and numerical lowerings fail explicitly; they are not
-model-family branches hidden in C++.
+LFM2MoE and EmbeddingGemma. ESM-2 8M also crosses the real numerical boundary.
+`tools/convert_esm2.py`, using the `fair-esm` and `gguf` Python packages, asks
+the official loader for the checkpoint and writes its 106 unmodified F32
+tensors to GGUF. The GGUF adapter constructs
+a 69-node program with typed token and padding inputs, six rotary attention
+layers returning hidden states and attention maps, tied embeddings,
+representation and attention taps, and the contact head. The dense R
+interpreter matches the official execution on a fixed protein: selected
+logits, representations, attention probabilities and contacts agree within
+0.003, 0.0002, 0.00003 and 0.0003 respectively. Its native two-input GGML
+lowering remains explicit work and fails at the grammar boundary.
+
+Evo 2 remains an executable-frontier probe, but its program is not a
+caricature. The Evo 2 7B program records the complete 32-layer schedule: 27
+short, medium and long Hyena cascades with their distinct FIR or IIR state,
+interleaved with five causal-attention layers. Its missing checkpoint importer
+and numerical lowering fail explicitly; they are not model-family branches
+hidden in C++.
 
 [Rtinycc](https://github.com/sounkou-bioinfo/Rtinycc) is a plausible prototype
 target for generated C reference operators and ABI glue. It can compile a

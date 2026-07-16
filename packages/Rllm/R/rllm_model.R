@@ -8,8 +8,9 @@
 #' lowering.
 #'
 #' Architecture definitions are data ASTs rather than native model-family
-#' branches. The registered programs cover llama, Qwen3.5, LFM2MoE and
-#' EmbeddingGemma.
+#' branches. Native GGML lowering covers llama, Qwen3.5, LFM2MoE and
+#' EmbeddingGemma. ESM-2 is numerically executable through [rllm_execute()]
+#' but its two-input program is not accepted by this native model loader.
 #' Models with tied embeddings reuse `token_embd.weight` as the output
 #' projection.
 #'
@@ -31,8 +32,9 @@ rllm_gguf_model <- function(path, runtime = NULL, rope_mode = NULL) {
     ctx <- Rgguf::gguf_open(path)
     md <- Rgguf::gguf_metadata(ctx)
     tt <- Rgguf::gguf_tensors(ctx)
-    plan <- .rllm_plan_from_gguf(md, tt, rope_mode)
-    needed <- names(plan$tensors)
+    definition <- .rllm_program_from_gguf(md, tt, rope_mode)
+    program <- definition$program
+    needed <- names(program$parameters)
 
     tensors <- vector("list", length(needed))
     names(tensors) <- needed
@@ -41,11 +43,11 @@ rllm_gguf_model <- function(path, runtime = NULL, rope_mode = NULL) {
         tensors[[nm]] <- list(
             payload = nt,
             type = Rfmalloc::fmalloc_tensor_dtype(nt),
-            dims = plan$tensors[[nm]]$shape
+            dims = program$parameters[[nm]]$shape
         )
     }
 
-    execution <- .rllm_bind_program(plan$program, plan$symbols, tensors)
+    execution <- .rllm_bind_program(program, definition$symbols, tensors)
 
     hparams <- execution$lowering$symbols
     if (length(unique(hparams$n_head_kv)) == 1L) {

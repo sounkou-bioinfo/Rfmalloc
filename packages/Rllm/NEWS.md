@@ -4,10 +4,12 @@
   its typed GGUF parameter bindings and its validated GGML lowering travel as
   one object. Forward execution, embedding, CUDA upload and persistent state no
   longer read or store a separate model plan or tensor-binding alias;
-  `rllm_plan(model)` is a derived inspection view. Program mutations, not
-  legacy plan mutations, drive the native semantic tests. Operator fields such
-  as masks, routing, scale and state now live directly on AST nodes rather than
-  inside a second opaque specification wrapper.
+  `rllm_plan(model)` is a derived inspection view. GGUF metadata adapters now
+  trace that program and declare its parameters directly instead of first
+  allocating a layer plan and tensor table. Program mutations, not legacy plan
+  mutations, drive the native semantic tests. Operator fields such as masks,
+  routing, scale and state live directly on AST nodes rather than inside a
+  second opaque specification wrapper.
 
 - Named each sibling package explicitly in `Remotes`, so dependency installers
   replace stale monorepo dependencies instead of mistaking a shared repository
@@ -35,8 +37,17 @@
   lowerings; its dense oracle pins the Tiny Recursive Model recurrence against
   direct iteration. The ESM-2 8M probe records all six layers and its real
   attention-map contact path. The Evo 2 7B probe records all 32 HCS, HCM, HCL
-  and attention blocks with their distinct state geometries. Their checkpoint
-  importers and numerical lowerings remain explicit work.
+  and attention blocks with their distinct state geometries. Unsupported
+  operator lowerings fail explicitly.
+
+- Added a direct ESM-2 GGUF adapter and dense semantic execution for token
+  dropout, key-padded NEOX attention with attention-map results, tied
+  projection and contact regression. `tools/convert_esm2.py` writes the
+  official `fair-esm` ESM-2 8M checkpoint as 106 unmodified F32 GGUF tensors.
+  Its 69-node program matches upstream logits, representations, attention
+  probabilities and contacts on a fixed protein. Native GGML execution rejects
+  the unsupported two-input grammar explicitly instead of selecting a hidden
+  model-family path.
 
 - GGUF metadata is normalized into semantic programs for llama, LFM2MoE and
   EmbeddingGemma before any weight is borrowed. The model-neutral lowerer

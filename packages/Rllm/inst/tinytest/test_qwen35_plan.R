@@ -67,7 +67,12 @@ for (il in 0:63) {
 directory <- data.frame(name = tensor_names, stringsAsFactors = FALSE)
 directory$dims <- I(tensor_dims)
 
-plan <- Rllm:::.rllm_plan_from_gguf(metadata, directory)
+definition <- Rllm:::.rllm_program_from_gguf(metadata, directory)
+expect_equal(names(definition), c("program", "symbols"))
+expect_false(any(c("layers", "tensors") %in% names(definition)))
+plan <- Rllm:::.rllm_plan_from_program(
+    definition$program, definition$symbols
+)
 operators <- vapply(plan$layers, function(layer) layer$operator$op,
                     character(1))
 states <- vapply(plan$layers, function(layer) layer$state$op, character(1))
@@ -93,7 +98,7 @@ expect_identical(unserialize(serialize(plan$program, NULL)), plan$program)
 bad <- directory
 at <- match("blk.3.attn_q.weight", bad$name)
 bad$dims[[at]] <- c(5120L, 6144L)
-expect_error(Rllm:::.rllm_plan_from_gguf(metadata, bad),
+expect_error(Rllm:::.rllm_program_from_gguf(metadata, bad),
              "attention.query_gate.*expected.*12288")
 
 real_path <- Sys.getenv("RLLM_QWEN35_GGUF")

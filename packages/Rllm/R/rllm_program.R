@@ -374,7 +374,9 @@ rllm_program <- function(x, name = NULL) {
     if (inherits(x, "rllm_model")) return(x$execution$program)
     if (inherits(x, "rllm_plan")) return(x$program)
     if (is.character(x) && length(x) == 1L && !is.na(x)) {
-        return(rllm_plan(x)$program)
+        return(.rllm_program_from_gguf(
+            Rgguf::gguf_metadata(x), Rgguf::gguf_tensors(x)
+        )$program)
     }
     .rllm_snapshot(x, name)
 }
@@ -405,10 +407,11 @@ print.rllm_program <- function(x, ...) {
 #' control the representation of their results, so a lowering may preserve a
 #' mapped or device-backed value rather than materializing it in R.
 #'
-#' The built-in dense reference operators are `add`, `linear`, `rms_norm`,
-#' `layer_norm`, `pool`, `gelu`, `silu`, `sigmoid`, `tanh`,
-#' `broadcast_initial`, `select_first_token`, `drop_puzzle_prefix` and
-#' `swiglu`. Entries in `operators` replace built-ins with the same name.
+#' The built-in dense reference vocabulary covers arithmetic, normalization,
+#' pooling, activations and recurrence helpers. It also covers ESM token
+#' dropout, key-padded rotary attention with attention-map results, tied
+#' projection and contact regression. Entries in `operators` replace
+#' built-ins with the same name.
 #'
 #' @param program A data-only `rllm_program`.
 #' @param inputs A named list of input values. Extra entries remain available
@@ -746,6 +749,10 @@ rllm_execute <- function(program, inputs, parameters = list(), counts = list(),
         layer_norm = function(inputs, attributes, parameters, context) {
             .rllm_execute_norm(inputs, attributes, parameters, layer = TRUE)
         },
+        esm_token_embedding = .rllm_execute_esm_embedding,
+        attention = .rllm_execute_esm_attention,
+        tied_projection = .rllm_execute_tied_projection,
+        esm_contact_head = .rllm_execute_esm_contact,
         pool = .rllm_execute_pool,
         gelu = unary(function(x) x * stats::pnorm(x)),
         silu = unary(function(x) x * stats::plogis(x)),
@@ -975,106 +982,4 @@ rllm_execute <- function(program, inputs, parameters = list(), counts = list(),
         for (item in x) .rllm_register_parameters(builder, item)
     }
     invisible(NULL)
-}
-
-.rllm_plan_parameter <- function(plan, name) {
-    binding <- plan$tensors[[name]]
-    if (is.null(binding)) stop("plan refers to unknown tensor '", name, "'")
-    rllm_parameter(binding$name, binding$shape, role = binding$role)
-}
-
-.rllm_bind_plan_parameters <- function(x, plan) {
-    if (is.character(x) && length(x) == 1L && !is.null(plan$tensors[[x]])) {
-        return(.rllm_plan_parameter(plan, x))
-    }
-    if (is.list(x)) return(lapply(x, .rllm_bind_plan_parameters, plan = plan))
-    x
-}
-
-.rllm_program_plan_op <- function(x, operator, plan, state = NULL) {
-    attributes <- .rllm_bind_plan_parameters(operator, plan)
-    op <- attributes$op
-    attributes$op <- NULL
-    if (!is.null(state)) attributes$state <- state
-    do.call(rllm_op, c(list(x = x, op = op), attributes))
-}
-
-.rllm_program_from_plan <- function(plan) {
-    n_embd <- plan$symbols$n_embd
-    n_token <- "n_token"
-    tokens <- rllm_input("tokens", c(sequence = n_token), "i32")
-    x <- rllm_op(
-        tokens, "embedding",
-        weight = .rllm_plan_parameter(plan, plan$input$weight),
-        scale = plan$input$scale,
-        output_shape = c(feature = as.character(n_embd), sequence = n_token),
-        output_dtype = "f32"
-    )
-    eps <- plan$symbols$rms_eps
-
-    for (layer in plan$layers) {
-        block <- rllm_module(paste0("block.", layer$index), function(x) {
-            x <- rllm_residual(x, function(branch) {
-                branch <- rllm_norm(
-                    branch,
-                    .rllm_plan_parameter(plan, layer$operator_norm),
-                    eps = eps
-                )
-                branch <- .rllm_program_plan_op(
-                    branch, layer$operator, plan, state = layer$state
-                )
-                if (!is.null(layer$operator_post_norm)) {
-                    branch <- rllm_norm(
-                        branch,
-                        .rllm_plan_parameter(plan, layer$operator_post_norm),
-                        eps = eps
-                    )
-                }
-                branch
-            })
-            rllm_residual(x, function(branch) {
-                branch <- rllm_norm(
-                    branch,
-                    .rllm_plan_parameter(plan, layer$ffn_norm),
-                    eps = eps
-                )
-                branch <- .rllm_program_plan_op(
-                    branch, layer$feed_forward, plan
-                )
-                if (!is.null(layer$feed_forward_post_norm)) {
-                    branch <- rllm_norm(
-                        branch,
-                        .rllm_plan_parameter(
-                            plan, layer$feed_forward_post_norm
-                        ),
-                        eps = eps
-                    )
-                }
-                branch
-            })
-        })
-        x <- block(x)
-    }
-
-    x <- rllm_norm(x, .rllm_plan_parameter(plan, plan$output$norm), eps = eps)
-    if (plan$output$op == "projection") {
-        x <- rllm_linear(x, .rllm_plan_parameter(plan, plan$output$weight))
-    } else {
-        x <- rllm_pool(x, plan$output$pooling)
-        if (!is.null(plan$output$projection_1)) {
-            x <- rllm_linear(
-                x, .rllm_plan_parameter(plan, plan$output$projection_1)
-            )
-            x <- rllm_linear(
-                x, .rllm_plan_parameter(plan, plan$output$projection_2)
-            )
-        }
-    }
-    program <- rllm_program(x, plan$architecture)
-    missing <- setdiff(names(plan$tensors), names(program$parameters))
-    if (length(missing)) {
-        stop("semantic program did not bind tensors: ",
-             paste(missing, collapse = ", "))
-    }
-    program
 }

@@ -12,136 +12,14 @@ parameter <- function(name, shape) rllm_parameter(name, shape)
 
 # ESM-2 8M is a complete six-layer topology. It forces the AST to preserve
 # typed token and padding inputs, attention as a genuine two-result operator,
-# per-layer representations, tied embeddings and a contact head over attention
-# maps. The official contact head never consumes the hidden representation.
-esm_hidden <- 320L
-esm_ff <- 1280L
-esm_heads <- 20L
+# per-layer representations and attention maps, tied embeddings and a contact
+# head over attention maps. The official contact head never consumes hidden
+# representations.
 esm_layers <- 6L
-esm_alphabet <- 33L
-n_residue <- "n_residue"
-esm_shape <- c(feature = esm_hidden, sequence = n_residue, batch = "batch")
-attention_shape <- c(head = esm_heads, query = n_residue,
-                     key = n_residue, batch = "batch")
-esm_inputs <- rllm_inputs(
-    tokens = c(sequence = n_residue, batch = "batch"),
-    padding_mask = c(sequence = n_residue, batch = "batch"),
-    .dtype = c(tokens = "i32", padding_mask = "bool"),
-    .name = "esm2_t6_8M"
-)
-esm_embedding <- parameter("embed_tokens.weight",
-                           c(vocabulary = esm_alphabet,
-                             feature = esm_hidden))
-esm_hidden_state <- rllm_op(
-    esm_inputs, "esm_token_embedding",
-    weight = esm_embedding,
-    token_dropout = list(mask_index = 32L, training_ratio = 0.12),
-    output_shape = esm_shape
-) |>
-    rllm_tap("representation.0")
-
-esm_block <- function(index, padding_mask) {
-    prefix <- paste0("layers.", index - 1L, ".")
-    self_norm <- parameter(paste0(prefix, "self_attn_layer_norm.weight"),
-                           esm_hidden)
-    self_norm_bias <- parameter(
-        paste0(prefix, "self_attn_layer_norm.bias"), esm_hidden
-    )
-    final_norm <- parameter(paste0(prefix, "final_layer_norm.weight"),
-                            esm_hidden)
-    final_norm_bias <- parameter(paste0(prefix, "final_layer_norm.bias"),
-                                 esm_hidden)
-    projection <- function(name) {
-        list(
-            weight = parameter(paste0(prefix, "self_attn.", name,
-                                      "_proj.weight"),
-                               c(esm_hidden, esm_hidden)),
-            bias = parameter(paste0(prefix, "self_attn.", name,
-                                    "_proj.bias"), esm_hidden)
-        )
-    }
-    query <- projection("q")
-    key <- projection("k")
-    value <- projection("v")
-    output <- projection("out")
-    fc1 <- parameter(paste0(prefix, "fc1.weight"), c(esm_hidden, esm_ff))
-    fc1_bias <- parameter(paste0(prefix, "fc1.bias"), esm_ff)
-    fc2 <- parameter(paste0(prefix, "fc2.weight"), c(esm_ff, esm_hidden))
-    fc2_bias <- parameter(paste0(prefix, "fc2.bias"), esm_hidden)
-
-    rllm_module(paste0("esm.encoder.layer.", index), function(x) {
-        normalized <- rllm_norm(
-            x, self_norm, kind = "layer", bias = self_norm_bias
-        )
-        attention <- rllm_op(
-            list(hidden = normalized, padding_mask = padding_mask),
-            "attention",
-            query = query, key = key, value = value, output = output,
-            heads = esm_heads,
-            rope = list(type = "neox", base = 10000),
-            mask = list(type = "key_padding"),
-            outputs = list(hidden = esm_shape, weights = attention_shape)
-        )
-        hidden <- rllm_op(
-            list(residual = x, update = attention$hidden), "add"
-        )
-        hidden <- rllm_residual(hidden, function(branch) {
-            branch |>
-                rllm_norm(final_norm, kind = "layer",
-                          bias = final_norm_bias) |>
-                rllm_linear(fc1, fc1_bias) |>
-                rllm_op("gelu") |>
-                rllm_linear(fc2, fc2_bias)
-        })
-        list(hidden = hidden, attention = attention$weights)
-    })
-}
-
-esm_attentions <- vector("list", esm_layers)
-for (index in seq_len(esm_layers)) {
-    block <- esm_block(index, esm_inputs$padding_mask)(esm_hidden_state)
-    esm_hidden_state <- block$hidden |>
-        rllm_tap(paste0("representation.", index))
-    esm_attentions[[index]] <- block$attention
-}
-names(esm_attentions) <- paste0("layer.", seq_len(esm_layers))
-
-esm_final_norm <- parameter("emb_layer_norm_after.weight", esm_hidden)
-esm_final_norm_bias <- parameter("emb_layer_norm_after.bias", esm_hidden)
-esm_representation <- esm_hidden_state |>
-    rllm_norm(esm_final_norm, kind = "layer", bias = esm_final_norm_bias) |>
-    rllm_tap("representation.final")
-esm_lm_dense <- parameter("lm_head.dense.weight",
-                          c(esm_hidden, esm_hidden))
-esm_lm_dense_bias <- parameter("lm_head.dense.bias", esm_hidden)
-esm_lm_norm <- parameter("lm_head.layer_norm.weight", esm_hidden)
-esm_lm_norm_bias <- parameter("lm_head.layer_norm.bias", esm_hidden)
-esm_lm_bias <- parameter("lm_head.bias", esm_alphabet)
-esm_logits <- esm_representation |>
-    rllm_linear(esm_lm_dense, esm_lm_dense_bias) |>
-    rllm_op("gelu") |>
-    rllm_norm(esm_lm_norm, kind = "layer", bias = esm_lm_norm_bias) |>
-    rllm_op(
-        "tied_projection", weight = esm_embedding, bias = esm_lm_bias,
-        transpose = TRUE,
-        output_shape = c(feature = esm_alphabet, sequence = n_residue,
-                         batch = "batch")
-    )
-contact_inputs <- c(list(tokens = esm_inputs$tokens), esm_attentions)
-esm_contacts <- rllm_op(
-    contact_inputs, "esm_contact_head",
-    regression = parameter("contact_head.regression.weight",
-                           c(layer_head = esm_layers * esm_heads, output = 1L)),
-    bias = parameter("contact_head.regression.bias", 1L),
-    remove_bos = TRUE, remove_eos = TRUE,
-    symmetrize = TRUE, average_product_correction = TRUE,
-    output_shape = c(row = "n_residue_without_specials",
-                     column = "n_residue_without_specials", batch = "batch")
-)
-esm <- rllm_program(
-    list(logits = esm_logits, representation = esm_representation,
-         contacts = esm_contacts),
-    "esm2_t6_8M"
+esm <- Rllm:::.rllm_esm2_program(
+    n_layer = esm_layers, n_embd = 320L, n_head = 20L, n_ff = 1280L,
+    n_vocab = 33L, rms_eps = 1e-5, mask_id = 32L, padding_id = 1L,
+    bos_id = 0L, eos_id = 2L, token_dropout = 0.12
 )
 
 esm_ops <- vapply(esm$nodes, `[[`, character(1), "op")
@@ -149,8 +27,10 @@ expect_true(all(c("esm_token_embedding", "attention", "op_result",
                   "tied_projection", "esm_contact_head") %in% esm_ops))
 expect_equal(sum(esm_ops == "attention"), esm_layers)
 expect_equal(sum(esm_ops == "op_result"), 2L * esm_layers)
+expect_equal(length(esm$parameters), 106L)
 expect_equal(length(grep("^representation\\.", names(esm$outputs))),
              esm_layers + 2L)
+expect_equal(length(grep("^attention\\.", names(esm$outputs))), esm_layers)
 expect_equal(length(Filter(function(node) {
     identical(node$op, "input")
 }, esm$nodes)), 2L)

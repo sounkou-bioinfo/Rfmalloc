@@ -46,8 +46,9 @@ symbolic counts, and the enclosing loop iterations. Operator functions
 control the representation of their results, so a lowering may preserve a
 mapped or device-backed value rather than materializing it in R.
 
-The built-in dense reference operators are \code{add}, \code{linear}, \code{rms_norm},
-\code{layer_norm}, \code{pool}, \code{gelu}, \code{silu}, \code{sigmoid}, \code{tanh},
-\code{broadcast_initial}, \code{select_first_token}, \code{drop_puzzle_prefix} and
-\code{swiglu}. Entries in \code{operators} replace built-ins with the same name.
+The built-in dense reference vocabulary covers arithmetic, normalization,
+pooling, activations and recurrence helpers. It also covers ESM token
+dropout, key-padded rotary attention with attention-map results, tied
+projection and contact regression. Entries in \code{operators} replace
+built-ins with the same name.
 }

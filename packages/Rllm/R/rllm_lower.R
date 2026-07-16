@@ -26,6 +26,13 @@
   if (!is.list(nodes) || !length(nodes)) {
     stop("program has no nodes")
   }
+  inputs <- Filter(function(node) identical(node$op, "input"), nodes)
+  if (length(inputs) != 1L) {
+    stop(
+      "native GGML lowering does not implement the program's ",
+      length(inputs), "-input grammar"
+    )
+  }
   ids <- vapply(nodes, `[[`, character(1), "id")
   if (anyDuplicated(ids)) {
     stop("program node ids must be unique")

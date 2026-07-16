@@ -133,15 +133,14 @@ the accepted program to the native operator vocabulary. Llama, Qwen3.5,
 LFM2MoE and EmbeddingGemma all cross that same boundary while retaining their
 CPU, CUDA, cache and dense-equation oracles.
 
-The remaining duplication has moved earlier. GGUF metadata adapters still
-construct `plan$layers` and then trace those layers into the program. That is a
-construction scaffold, not an execution abstraction. The model stores neither
-that plan nor a second tensor-binding alias; `rllm_plan(model)` reconstructs an
-inspection view from the bound program. The construction scaffold should
-disappear as each adapter learns to construct the program and parameter
-declarations directly.
+The earlier construction duplication is gone. GGUF metadata adapters now
+trace the program and declare typed parameters directly. The tensor directory
+validates those declarations before any payload is borrowed. No layer plan or
+parallel tensor table is allocated while loading a model. `rllm_plan()` lowers
+the program into a layer-oriented inspection view only when a caller asks for
+one.
 
-The compiler also recognizes a deliberately constrained transformer grammar:
+The native compiler recognizes a deliberately constrained transformer grammar:
 embedding, repeated attention or state-space blocks with two residual joins,
 and projection or pooled embedding output. ESM, TRM and Evo are useful because
 they force this grammar to grow through reusable dataflow, multi-result and
@@ -162,14 +161,19 @@ The R compiler and native operator builder remain the oracle and
 fallback; generated C would be a cache derived from the AST, never another
 source of truth.
 
-The llama equivalence proof is closed, and Qwen3.5, LFM2MoE and
-EmbeddingGemma have already supplied the structurally different attention,
-recurrence, routing and output cases. The next proof is a real ESM-2 8M
-checkpoint. It forces a second typed input, padding semantics, attention as a
-multi-result operator, representation taps, tied parameters and a contact head
-through numerical execution. If this requires an ESM branch in C instead of
-reusable operators and graph results, the vocabulary is not ready. A
-constrained vocabulary plus a deterministic validator makes both human and
+The ESM-2 8M numerical proof is closed at the dense semantic boundary. The
+official `fair-esm` checkpoint converts to 106 unmodified F32 tensors in GGUF.
+Its adapter emits a 69-node program directly. A fixed protein crosses the
+second typed input, token dropout, padding semantics, six multi-result rotary
+attention blocks, representation and attention taps, tied projection and the
+contact head. Selected logits, representations, attention probabilities and
+contacts agree with official execution within 0.003, 0.0002, 0.00003 and
+0.0003. The reference interpreter learned reusable semantic operators; it did
+not acquire an ESM executor branch. The native GGML compiler still rejects the
+two-input grammar explicitly, so native ESM execution remains a compilation
+proof rather than a semantic uncertainty.
+
+A constrained vocabulary plus a deterministic validator makes both human and
 LLM-authored programs reviewable; the prompt is not the artifact. This is the
 useful discipline in [DSLs Enable Reliable Use of LLMs](https://martinfowler.com/articles/llm-and-dsls.html):
 the semantic language and its validator become the maintained source of
@@ -195,27 +199,23 @@ again from that boundary.
 
 ## The next contradictions to push
 
-1. Remove plan-first architecture construction. Make GGUF adapters produce the
-   semantic program and parameter declarations directly, then derive or delete
-   the older layer-plan view without changing any numerical oracle.
-2. Close ESM-2 8M against a real checkpoint. Extend the compiler through typed
-   masks, multi-result attention, taps and the contact head, never through an
-   ESM-specific executor. Follow with TRM recurrence and then Evo's genuinely
-   new Hyena FIR/IIR operators.
-3. Patch kalis to borrow the aligned haplotype view while preserving its cache
+1. Lower the ESM semantic operators through GGML without changing its program
+   or numerical oracle. Then close full TRM recurrence and Evo's genuinely new
+   Hyena FIR/IIR operators.
+2. Patch kalis to borrow the aligned haplotype view while preserving its cache
    ownership and SIMD invariants. Compare Forward/Backward output against its
    copied cache and assert that no integer matrix or second packed body exists.
-4. Test ALP-RD and SIMD decode as independent storage-bandwidth experiments,
+3. Test ALP-RD and SIMD decode as independent storage-bandwidth experiments,
    then decide whether a fused compressed dot deserves to exist.
-5. Build the layer access scheduler and compare mmap advice with explicit
+4. Build the layer access scheduler and compare mmap advice with explicit
    double buffering on cold storage.
-6. Establish the upstream CUDA numerical oracle across one-token prefixes and
+5. Establish the upstream CUDA numerical oracle across one-token prefixes and
    equivalent whole batches, then make a decode graph genuinely reusable.
    Test stable or bucketed attention extents and device-resident mutable KV
    state against the host-authoritative cache, preserving explicit
    CPU/CUDA handoff. Persistent graph allocation without stable execution has
    already measured slower and does not deserve an API.
-7. Decide whether importer metadata should become its own semantic sink. It is
+6. Decide whether importer metadata should become its own semantic sink. It is
    transient because compute paths consume genotype records only.
 
 No compatibility shim or API-version ceremony is warranted while every
