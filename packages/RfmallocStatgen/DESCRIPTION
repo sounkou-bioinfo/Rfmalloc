@@ -38,8 +38,8 @@ Suggests:
     Matrix,
     pcaone
 Remotes:
-    sounkou-bioinfo/Rfmalloc/packages/Rfmalloc,
-    sounkou-bioinfo/Rfmalloc/packages/Rggml
+    Rfmalloc=sounkou-bioinfo/Rfmalloc/packages/Rfmalloc,
+    Rggml=sounkou-bioinfo/Rfmalloc/packages/Rggml
 SystemRequirements: C++17
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3

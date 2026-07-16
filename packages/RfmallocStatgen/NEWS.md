@@ -1,5 +1,8 @@
 # RfmallocStatgen 0.1.0 (unreleased)
 
+- Named each sibling package explicitly in `Remotes`, so dependency installers
+  distinguish monorepo subdirectories which share one repository commit.
+
 - The pinned PCAone logger now initializes its screen state deterministically
   and sends optional output through R's console instead of `std::cout` or
   `std::cerr`. The adaptation is part of the byte-checked vendoring recipe.
