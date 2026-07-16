@@ -12,11 +12,13 @@ contains no R closures, environments or backend pointers.
 ``` r
 rllm_input(name, shape, dtype = "f32")
 
+rllm_inputs(..., .dtype = "f32", .name = NULL)
+
 rllm_parameter(name, shape, dtype = NULL, role = NULL)
 
 rllm_module(name, forward)
 
-rllm_op(x, op, ..., output_shape = NULL, output_dtype = NULL)
+rllm_op(x, op, ..., output_shape = NULL, output_dtype = NULL, outputs = NULL)
 
 rllm_program(x, name = NULL)
 ```
@@ -36,6 +38,20 @@ rllm_program(x, name = NULL)
 
   Storage or value type.
 
+- ...:
+
+  Named, data-only operator attributes, or arguments passed to a
+  module's `forward` function.
+
+- .dtype:
+
+  One dtype for all inputs, or a named character vector with one dtype
+  per input.
+
+- .name:
+
+  Program-builder name for a multiple-input trace.
+
 - role:
 
   Optional semantic role for a parameter.
@@ -54,11 +70,6 @@ rllm_program(x, name = NULL)
 
   A non-empty semantic operator name.
 
-- ...:
-
-  Named, data-only operator attributes, or arguments passed to a
-  module's `forward` function.
-
 - output_shape:
 
   Optional result shape. The input shape is retained when omitted.
@@ -67,12 +78,20 @@ rllm_program(x, name = NULL)
 
   Optional result type. The input type is retained when omitted.
 
+- outputs:
+
+  Optional named output specifications for an operator with multiple
+  results. Each entry is either a shape or a list with `shape` and
+  optional `dtype`. This cannot be combined with `output_shape` or
+  `output_dtype`.
+
 ## Value
 
-`rllm_input()` and operators return a traced `rllm_value`.
-`rllm_parameter()` returns a data-only tensor reference, `rllm_module()`
-returns a callable R function, and `rllm_program()` returns a data-only
-`rllm_program`.
+`rllm_input()` and single-result operators return a traced `rllm_value`.
+`rllm_inputs()` and multiple-result operators return named lists of
+traced values. `rllm_parameter()` returns a data-only tensor reference,
+`rllm_module()` returns a callable R function, and `rllm_program()`
+returns a data-only `rllm_program`.
 
 ## Details
 

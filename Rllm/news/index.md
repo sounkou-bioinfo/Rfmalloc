@@ -6,23 +6,31 @@
   its selected state is available through
   [`rllm_backend_enabled()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_use_ggml.md).
 
-- Added a Qwen3.5 semantic plan against the real Ternary Bonsai 27B
-  metadata and tensor layout. Its single serializable R program
-  distinguishes 48 gated delta recurrent blocks from 16 gated-attention
-  blocks, represents both recurrent and KV state, and binds all 851
-  parameters without a C++ architecture branch. The two new operators
-  remain explicit lowering work.
+- Added complete Qwen3.5 execution against the real Ternary Bonsai 27B
+  metadata and tensor layout. Its serializable R program distinguishes
+  48 gated-delta recurrent blocks from 16 gated-attention blocks,
+  represents both recurrent and KV state, and binds all 851 parameters
+  without a C++ model branch. Whole-batch and incremental paths match a
+  pure-R oracle and run on CUDA with plain and fmalloc-backed state; all
+  248,320 token-zero logits from the real checkpoint match a portable
+  upstream llama.cpp build bit-for-bit.
 
 - Added official GGML group-64 `q2_0` to quantization and the
   typed-product bridge. The codec stays encoded in Rfmalloc storage and
   uses GGML’s ternary decoder and CPU dot product.
 
 - Added a data-only architecture program traced from ordinary R modules
-  and base pipes. Typed parameter identities, residual branches, named
-  representation taps, multiple carried states and structured shared
-  loops remain inspectable and serializable. ESM, StripedHyena2 and Tiny
-  Recursive Model sketches stress those forms without claiming
-  unsupported execution.
+  and base pipes. It preserves several typed inputs, several named
+  operator results, parameter identities, representation taps and
+  structured shared loops.
+  [`rllm_execute()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_execute.md)
+  runs dataflow and carried loops through explicit R lowerings; its
+  dense oracle pins the Tiny Recursive Model recurrence against direct
+  iteration. The ESM-2 8M probe records all six layers and its real
+  attention-map contact path. The Evo 2 7B probe records all 32 HCS,
+  HCM, HCL and attention blocks with their distinct state geometries.
+  Their checkpoint importers and numerical lowerings remain explicit
+  work.
 
 - GGUF metadata is normalized into semantic plans for llama, LFM2MoE and
   EmbeddingGemma before any weight is borrowed. The model-neutral

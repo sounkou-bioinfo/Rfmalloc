@@ -1,9 +1,10 @@
 # Create plan-shaped state for incremental decoding
 
 Allocates the persistent state declared by the model plan. Attention
-layers receive key/value slabs sized by their own KV width;
-short-convolution layers receive their fixed causal history. State is
-plain R memory by default or Rfmalloc-backed when `runtime` is supplied.
+layers receive key/value slabs, short-convolution layers receive causal
+history, and gated-delta layers receive both convolution history and
+recurrent matrices. State is plain R memory by default or
+Rfmalloc-backed when `runtime` is supplied.
 
 ## Usage
 
@@ -30,8 +31,8 @@ rllm_kv_cache(model, n_ctx = 512L, runtime = NULL)
 
 ## Value
 
-An environment of class `rllm_kv_cache` with per-layer `k`, `v` and
-`conv` state, plus `n_ctx` and `n_past`.
+An environment of class `rllm_kv_cache` with per-layer `k`, `v`, `conv`
+and `recurrent` state, plus `n_ctx` and `n_past`.
 
 ## Details
 

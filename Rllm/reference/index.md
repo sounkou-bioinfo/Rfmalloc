@@ -7,6 +7,8 @@
   : Convert between token ids and raw bytes
 - [`rllm_embed()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_embed.md)
   : Compute one pooled sequence embedding
+- [`rllm_execute()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_execute.md)
+  : Execute a data-only architecture program
 - [`rllm_forward()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_forward.md)
   : Lower a semantic model plan and return its logits
 - [`rllm_generate()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_generate.md)
@@ -14,6 +16,7 @@
 - [`rllm_gguf_model()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_gguf_model.md)
   : Load a GGUF model as a semantic execution plan and borrowed weights
 - [`rllm_input()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_input.md)
+  [`rllm_inputs()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_input.md)
   [`rllm_parameter()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_input.md)
   [`rllm_module()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_input.md)
   [`rllm_op()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_input.md)

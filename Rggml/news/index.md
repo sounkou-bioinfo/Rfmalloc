@@ -11,8 +11,21 @@
   builds.
 
 - Updated the generated engine to official GGML v0.16.0. This adds the
-  upstream group-64 `Q2_0` ternary block format while keeping its CPU,
-  Vulkan, CUDA and GGUF semantics on one content-pinned source tree.
+  upstream group-64 `Q2_0` ternary block format and lets Rggml consume
+  it through the official GGUF and CPU implementations on one
+  content-pinned source tree. Upstream does not yet provide a `Q2_0`
+  CUDA or Vulkan product.
+
+- Extended the backend-neutral graph C-callables with L2 normalization,
+  softplus, MRoPE, gated-delta recurrence, and four-dimensional reshape
+  and view operations. Rllm composes these reusable operators for
+  Qwen3.5 without linking GGML or adding a native model-family class.
+
+- Corrected CUDA launch geometry for recurrent models. SSM convolution
+  selects a thread width that divides the channel count, while
+  gated-delta kernels support power-of-two state widths from 1 through
+  128 without partial-warp out-of-bounds access. The Qwen3.5 whole-batch
+  and incremental graph tests run these paths on the RTX rig.
 
 - Removed the unused C-callable API counter and its accumulated version
   strata. The installed header is the one current monorepo contract. The
@@ -187,19 +200,13 @@
   (`Rggml_type_size`, `Rggml_row_size`, `Rggml_blck_size`,
   `Rggml_nbytes`, `Rggml_nelements`, `Rggml_type_name`).
 
-- Added **runtime SIMD dispatch** for GGML’s hot quantized vec-dot
-  kernels, starting with `q4_K x q8_K`. `configure` compiles the kernel
-  into ISA-specific variants (`-mavx2 -mfma -O3` on x86 incl. Intel
-  macOS; `-O3` NEON on aarch64 incl. Apple Silicon) staged under
-  `tools/simd/`, and a CPUID dispatcher
-  (`tools/simd/rggml_simd_dispatch.c`, using a vendored copy of
-  RsimdDispatch’s `cpu_features`) selects the best at runtime, falling
-  back to GGML’s scalar reference. The ISA flags live in `configure`,
-  not in R’s recorded package flags, so R CMD check raises no
-  non-portable-flags NOTE; a variant is only called after its ISA is
-  confirmed at runtime (single `.so`, no `dlopen`, unlike GGML’s own
-  `GGML_CPU_ALL_VARIANTS`). The AVX2 q4_K dot measures ~6-7x faster than
-  the scalar reference on x86.
+- Added runtime SIMD dispatch for `q4_K x q8_K`. On x86, `configure`
+  compiles GGML’s official `arch/x86/quants.c` translation unit under
+  private names and a CPUID dispatcher selects its Q4_K dot only when
+  the complete upstream AVX2 feature set is present. Aarch64 and wasm
+  compile GGML’s complete official architecture sources directly. ISA
+  flags stay out of R’s recorded package flags, and the portable GGML
+  implementation remains the fallback.
 
 - Enabled GGML’s **BLAS backend** (`Rggml_backend_blas_init`,
   `Rggml_backend_blas_set_n_threads`): dense F32 `mul_mat` offloads to

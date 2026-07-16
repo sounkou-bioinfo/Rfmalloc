@@ -42,9 +42,9 @@ created lazily by
 ## Details
 
 Architecture definitions are data ASTs rather than native model-family
-branches. The registered plans cover llama, LFM2MoE and EmbeddingGemma.
-Models with tied embeddings reuse `token_embd.weight` as the output
-projection.
+branches. The registered plans cover llama, Qwen3.5, LFM2MoE and
+EmbeddingGemma. Models with tied embeddings reuse `token_embd.weight` as
+the output projection.
 
 ## See also
 

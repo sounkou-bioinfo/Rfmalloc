@@ -3,8 +3,8 @@
 Unlike an R `for` loop, `rllm_loop()` does not unroll its body. The body
 is traced once into a nested data-only program and retained as a loop
 node. A single value supports pipe syntax. A named list supports
-multiple carried values, as required by recurrent answer and latent
-states.
+multiple carried values, including nested recurrences with shared
+parameters.
 
 ## Usage
 
