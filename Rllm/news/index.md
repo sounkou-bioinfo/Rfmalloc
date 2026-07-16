@@ -2,6 +2,10 @@
 
 ## Rllm 0.1.0 (unreleased)
 
+- Named each sibling package explicitly in `Remotes`, so dependency
+  installers replace stale monorepo dependencies instead of mistaking a
+  shared repository commit for an already installed package.
+
 - Attaching Rllm is quiet. Backend registration remains automatic and
   its selected state is available through
   [`rllm_backend_enabled()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_use_ggml.md).

@@ -34,7 +34,8 @@
 
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.1.0" id="rgguf-010-unreleased">Rgguf 0.1.0 (unreleased)<a class="anchor" aria-label="anchor" href="#rgguf-010-unreleased"></a></h2>
-<ul><li><p>Registered official GGML <code>q2_0</code> group-64 ternary blocks as an Rfmalloc storage codec. Legacy group-128 files which reuse the same numeric type id remain unsupported rather than being decoded with the wrong geometry.</p></li>
+<ul><li><p>Named each sibling package explicitly in <code>Remotes</code>, so dependency installers distinguish monorepo subdirectories which share one repository commit.</p></li>
+<li><p>Registered official GGML <code>q2_0</code> group-64 ternary blocks as an Rfmalloc storage codec. Legacy group-128 files which reuse the same numeric type id remain unsupported rather than being decoded with the wrong geometry.</p></li>
 <li><p>Added <code>gguf_tensor(as = "view")</code> and <code>gguf_import(as = "view")</code>. A view borrows the tensor’s exact read-only span in the original GGUF mapping, keeps that mapping alive, and enters Rfmalloc/GGML compute without copying the encoded payload into a second file.</p></li>
 <li><p>Removed the partial vendored <code>gguflib</code> parser. Rggml now carries GGML’s official <code>gguf.cpp</code>; Rgguf uses its indexed metadata, tensor directory, writer, and type-traits decoders, while mapping tensor bytes read-only. Numeric decode uses bounded scratch, and the ten common quantized codecs are registered here rather than split between Rgguf and Rllm.</p></li>
 <li><p><code>gguf_tensor(as = "native")</code> copies the raw encoded payload and only needs a registered Rfmalloc codec. <code>as = "numeric"</code> decodes through GGML’s reference implementation.</p></li>
