@@ -187,7 +187,7 @@ rllm_generate <- function(model, prompt, n_new = 32L, temperature = 0,
     if (!inherits(model, "rllm_model")) {
         stop("model must be an rllm_model from rllm_gguf_model()")
     }
-    if (!identical(model$plan$output$op, "projection")) {
+    if (!identical(model$execution$lowering$output$op, "projection")) {
         stop("this model produces embeddings; use rllm_embed()")
     }
     textual_prompt <- is.raw(prompt) || is.character(prompt)

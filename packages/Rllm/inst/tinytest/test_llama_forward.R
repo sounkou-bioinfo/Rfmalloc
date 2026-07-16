@@ -129,9 +129,13 @@ for (cfg_name in names(configs)) {
 
     model <- rllm_gguf_model(path, runtime = rt)
     expect_inherits(model, "rllm_model")
+    expect_inherits(model$execution, "rllm_bound_program")
+    expect_inherits(model$execution$lowering, "rllm_ggml_lowering")
+    expect_identical(model$execution$program, rllm_program(model))
+    expect_equal(model$execution$lowering$layers, rllm_plan(model)$layers)
     expect_equal(model$hparams$n_layer, hp$n_layer, info = cfg_name)
     expect_equal(model$hparams$n_vocab, hp$n_vocab, info = cfg_name)
-    expect_true(all(vapply(model$tensors, function(w) {
+    expect_true(all(vapply(model$execution$bindings, function(w) {
         identical(typeof(w$payload), "externalptr") &&
             !Rfmalloc::is_fmalloc_vector(w$payload)
     }, logical(1))), info = paste(cfg_name, "weights borrow GGUF spans"))

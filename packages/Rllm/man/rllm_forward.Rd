@@ -2,7 +2,7 @@
 % Please edit documentation in R/rllm_model.R
 \name{rllm_forward}
 \alias{rllm_forward}
-\title{Lower a semantic model plan and return its logits}
+\title{Lower a bound semantic program and return its logits}
 \usage{
 rllm_forward(model, tokens, cache = NULL, backend = c("cpu", "cuda"))
 }
@@ -22,7 +22,7 @@ A numeric matrix of logits, dim \code{c(n_vocab, length(tokens))}:
 column \code{i} scores the token following position \code{i}.
 }
 \description{
-Lowers the model's inspectable \code{\link[=rllm_plan]{rllm_plan()}} to a GGML graph over its
+Lowers the model's inspectable \code{\link[=rllm_program]{rllm_program()}} to a GGML graph over its
 memory-mapped weights and computes it on a chosen backend. The operator
 vocabulary includes causal and gated attention, gated-delta recurrence,
 short convolution, dense gated products and sparse routed experts.
@@ -35,7 +35,7 @@ mutable inputs, cache slabs and logits move through Rggml's transfer API.
 \details{
 Without a \code{cache}, the graph evaluates the complete token batch from zero
 state. With a \code{\link[=rllm_kv_cache]{rllm_kv_cache()}}, the pass advances every state declared by
-the plan, including key/value, convolution and gated-delta state, then
+the program, including key/value, convolution and gated-delta state, then
 advances \code{cache$n_past}. This is the incremental-decoding path: prefill once
 with the prompt, then feed one token at a time.
 }

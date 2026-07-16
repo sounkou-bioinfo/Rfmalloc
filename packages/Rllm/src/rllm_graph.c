@@ -1,8 +1,8 @@
 /*
- * rllm_graph.c - lower a semantic model plan through Rggml's C-callable graph
- * ops over borrowed GGUF weight spans. Quantized and float weights point
- * directly into the model's read-only mapping. Generative plans may append to
- * persistent state; embedding plans consume a complete sequence.
+ * rllm_graph.c - lower a bound semantic program through Rggml's C-callable
+ * graph ops over borrowed GGUF weight spans. Quantized and float weights point
+ * directly into the model's read-only mapping. Generative programs may append
+ * to persistent state; embedding programs consume a complete sequence.
  *
  * CPU passes use a no_alloc weight context whose tensors point at R-owned
  * payloads. CUDA creates that context once per model, uploads the encoded
@@ -58,7 +58,7 @@ static const char *rllm_string(SEXP list, const char *name)
     SEXP v = rllm_list_elt(list, name);
     if (TYPEOF(v) != STRSXP || XLENGTH(v) != 1 ||
         STRING_ELT(v, 0) == NA_STRING) {
-        Rf_error("plan field '%s' must be one string", name);
+        Rf_error("program field '%s' must be one string", name);
     }
     return CHAR(STRING_ELT(v, 0));
 }
@@ -69,7 +69,7 @@ static const char *rllm_optional_string(SEXP list, const char *name)
     if (v == R_NilValue) return NULL;
     if (TYPEOF(v) != STRSXP || XLENGTH(v) != 1 ||
         STRING_ELT(v, 0) == NA_STRING) {
-        Rf_error("plan field '%s' must be NULL or one string", name);
+        Rf_error("program field '%s' must be NULL or one string", name);
     }
     return CHAR(STRING_ELT(v, 0));
 }
@@ -79,7 +79,7 @@ static int rllm_integer(SEXP list, const char *name)
     SEXP v = rllm_list_elt(list, name);
     int out = Rf_asInteger(v);
     if (v == R_NilValue || out == NA_INTEGER) {
-        Rf_error("plan field '%s' must be one integer", name);
+        Rf_error("program field '%s' must be one integer", name);
     }
     return out;
 }
@@ -88,14 +88,14 @@ static int rllm_named_integer(SEXP vector, const char *name)
 {
     SEXP names = Rf_getAttrib(vector, R_NamesSymbol);
     if (TYPEOF(vector) != INTSXP && TYPEOF(vector) != REALSXP) {
-        Rf_error("plan vector '%s' must be numeric", name);
+        Rf_error("program vector '%s' must be numeric", name);
     }
     if (TYPEOF(names) != STRSXP || XLENGTH(names) != XLENGTH(vector)) {
-        Rf_error("plan vector must name '%s'", name);
+        Rf_error("program vector must name '%s'", name);
     }
     for (R_xlen_t i = 0; i < XLENGTH(vector); i++) {
         if (STRING_ELT(names, i) == NA_STRING) {
-            Rf_error("plan vector has a missing field name");
+            Rf_error("program vector has a missing field name");
         }
         if (strcmp(CHAR(STRING_ELT(names, i)), name)) continue;
         double value;
@@ -103,11 +103,11 @@ static int rllm_named_integer(SEXP vector, const char *name)
         else if (TYPEOF(vector) == REALSXP) value = REAL(vector)[i];
         if (!R_FINITE(value) || value < 1 || value > INT_MAX ||
             value != floor(value)) {
-            Rf_error("plan vector '%s' must be a positive integer", name);
+            Rf_error("program vector '%s' must be a positive integer", name);
         }
         return (int)value;
     }
-    Rf_error("plan vector has no '%s' field", name);
+    Rf_error("program vector has no '%s' field", name);
     return 0;
 }
 
@@ -116,7 +116,7 @@ static double rllm_number(SEXP list, const char *name)
     SEXP v = rllm_list_elt(list, name);
     double out = Rf_asReal(v);
     if (v == R_NilValue || !R_FINITE(out)) {
-        Rf_error("plan field '%s' must be one finite number", name);
+        Rf_error("program field '%s' must be one finite number", name);
     }
     return out;
 }
@@ -126,7 +126,7 @@ static int rllm_boolean(SEXP list, const char *name)
     SEXP v = rllm_list_elt(list, name);
     if (TYPEOF(v) != LGLSXP || XLENGTH(v) != 1 ||
         LOGICAL(v)[0] == NA_LOGICAL) {
-        Rf_error("plan field '%s' must be TRUE or FALSE", name);
+        Rf_error("program field '%s' must be TRUE or FALSE", name);
     }
     return LOGICAL(v)[0];
 }
@@ -382,30 +382,36 @@ SEXP RC_rllm_cuda_model_context(SEXP tensors)
     return ext;
 }
 
-/* Lower a validated semantic plan to one GGML graph. The native code knows
- * operator tags, not model-family names: attention, causal short convolution,
- * gated feed-forward products and routed experts are reusable vocabulary. */
-SEXP RC_rllm_plan_forward(SEXP plan, SEXP tensors, SEXP tokens_sexp,
-                          SEXP kcache, SEXP vcache, SEXP convcache,
-                          SEXP recurrent_cache, SEXP n_ctx_sexp,
-                          SEXP n_past_sexp,
-                          SEXP backend_sexp, SEXP backend_context)
+/* Lower a validated, bound semantic program to one GGML graph. The R compiler
+ * has already checked its dataflow and reduced it to this native operator
+ * vocabulary; this code never dispatches on a model-family name. */
+SEXP RC_rllm_program_forward(SEXP bound, SEXP tokens_sexp,
+                             SEXP kcache, SEXP vcache, SEXP convcache,
+                             SEXP recurrent_cache, SEXP n_ctx_sexp,
+                             SEXP n_past_sexp,
+                             SEXP backend_sexp, SEXP backend_context)
 {
-    if (TYPEOF(plan) != VECSXP || TYPEOF(tensors) != VECSXP) {
-        Rf_error("plan and tensors must be named lists");
+    if (TYPEOF(bound) != VECSXP) {
+        Rf_error("bound program must be a list");
+    }
+    SEXP lowering = rllm_list_elt(bound, "lowering");
+    SEXP tensors = rllm_list_elt(bound, "bindings");
+    if (TYPEOF(lowering) != VECSXP || TYPEOF(tensors) != VECSXP) {
+        Rf_error("bound program must contain lowering and bindings lists");
     }
     if (TYPEOF(tokens_sexp) != INTSXP || XLENGTH(tokens_sexp) < 1 ||
         XLENGTH(tokens_sexp) > INT_MAX) {
         Rf_error("tokens must be a non-empty integer vector of 0-based ids");
     }
 
-    SEXP hparams = rllm_list_elt(plan, "symbols");
-    SEXP layers = rllm_list_elt(plan, "layers");
-    SEXP input_spec = rllm_list_elt(plan, "input");
-    SEXP output_spec = rllm_list_elt(plan, "output");
+    SEXP hparams = rllm_list_elt(lowering, "symbols");
+    SEXP layers = rllm_list_elt(lowering, "layers");
+    SEXP input_spec = rllm_list_elt(lowering, "input");
+    SEXP output_spec = rllm_list_elt(lowering, "output");
     if (TYPEOF(hparams) != VECSXP || TYPEOF(layers) != VECSXP ||
         TYPEOF(input_spec) != VECSXP || TYPEOF(output_spec) != VECSXP) {
-        Rf_error("plan must contain symbols, input, layers and output lists");
+        Rf_error("program lowering must contain symbols, input, layers and "
+                 "output lists");
     }
     const char *input_op = rllm_string(input_spec, "op");
     if (strcmp(input_op, "embedding")) {
@@ -426,7 +432,7 @@ SEXP RC_rllm_plan_forward(SEXP plan, SEXP tensors, SEXP tokens_sexp,
     }
     if (n_layer < 1 || n_embd < 1 || n_head < 1 || n_ff < 1 ||
         n_vocab < 1 || XLENGTH(layers) != n_layer || rms_eps <= 0) {
-        Rf_error("invalid plan symbols or layer count");
+        Rf_error("invalid program symbols or layer count");
     }
 
     int has_shortconv = 0;
@@ -464,7 +470,7 @@ SEXP RC_rllm_plan_forward(SEXP plan, SEXP tensors, SEXP tokens_sexp,
         Rf_error("CUDA lowering for short-convolution state is not implemented");
     }
 
-    /* -- plan-shaped persistent state -------------------------------------- */
+    /* -- program-declared persistent state --------------------------------- */
     const int use_cache = kcache != R_NilValue;
     const int n_ctx = Rf_asInteger(n_ctx_sexp);
     const int n_past    = Rf_asInteger(n_past_sexp);

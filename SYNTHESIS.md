@@ -34,7 +34,7 @@ package boundary.
 ## What this resolves
 
 - Rggml derives core, CPU, BLAS, GGUF, Vulkan and CUDA from one pinned official
-  GGML v0.11.0 tree. The unused ggmlR engine fork and its split translation
+  GGML v0.16.0 tree. The unused ggmlR engine fork and its split translation
   units are gone. Rgguf no longer owns a partial C port of the format; it is
   the R-facing adapter over the one official `gguf.cpp`.
 - Rllm weights borrow their exact encoded spans from the original read-only
@@ -102,52 +102,81 @@ properties change at each token. Both experiments were removed. Upstream
 460.1 with them, so the remaining contradiction is graph stability and mutable
 KV residency, not another buffer-transfer or storage API.
 
+The real `Q4_K_M` probe also separates cache correctness from invariance to
+batch shape. For an identical prefix shape, cached and uncached logits are
+bit-identical on CPU and CUDA. CPU is invariant when the same four-token prefix
+is evaluated whole or incrementally. CUDA is not: on token ids 1, 5, 9, 2,
+prefix-versus-whole cosine similarity ranges from 0.761 to 0.997 and two of
+four argmaxes differ. Products at the model's real `q5_0`, `q4_k`, `q8_0` and
+`q6_k` shapes remain within 1.25e-4 NMSE of CPU, while CUDA one-column and
+four-column products agree exactly. In this probe, cache layout and weight
+upload are not the source of the split. The next numerical oracle must compare
+Rllm with the matching upstream GGML and llama.cpp graph at each batch shape;
+the measurements do not yet assign the graph-level divergence to either side.
+
 ## Architecture graphs are programs
 
-The llama forward pass proves the storage and execution path, but its graph is
-hand-written in C. Repeating that pattern for every architecture in llama.cpp
-would turn Rllm into another architecture switch forest. The durable
-abstraction should be a transparent, typed architecture language whose source
-describes tensor roles, shape constraints, repeated blocks, persistent state,
-and graph expressions. Native code should implement the operator vocabulary,
-fused kernels, buffer movement and GGML lowering, not the identity of every
-model family.
+The executable object is a bound program: the serializable architecture
+AST, its typed storage bindings and a validated GGML lowering. Forward passes,
+embedding, CUDA upload and persistent state allocation consume that object.
+The C entry point never receives the older model plan and never dispatches on a
+model-family name. The LFM2MoE tests mutate the program's routed-expert
+semantics and rebind it; the native result changes or fails accordingly. This
+is stronger than checking that the AST merely resembles the graph.
 
 R is a useful surface syntax for this language, but arbitrary R closures would
-make validation and compilation opaque. Constructors should produce a small
-data AST. Its control forms are compile-time layer repetition, optional or tied
-tensors, and shape expressions, not a general interpreter. Loading a GGUF file
-normalizes its metadata and tensor directory, validates the architecture AST
-with errors stated in model terms, and compiles it once to a typed native plan.
-Execution instantiates that plan for a prompt or decode shape and backend. The
-plan remains inspectable, serializable and testable as the source of truth.
+make validation and compilation opaque. The constructors therefore freeze
+ordinary modules and pipes into data. Binding validates every declared tensor
+name and shape without copying its payload. Compilation validates dataflow,
+residual structure, state, normalization and output semantics, then reduces
+the accepted program to the native operator vocabulary. Llama, Qwen3.5,
+LFM2MoE and EmbeddingGemma all cross that same boundary while retaining their
+CPU, CUDA, cache and dense-equation oracles.
+
+The remaining duplication has moved earlier. GGUF metadata adapters still
+construct `plan$layers` and then trace those layers into the program. That is a
+construction scaffold, not an execution abstraction. The model stores neither
+that plan nor a second tensor-binding alias; `rllm_plan(model)` reconstructs an
+inspection view from the bound program. The construction scaffold should
+disappear as each adapter learns to construct the program and parameter
+declarations directly.
+
+The compiler also recognizes a deliberately constrained transformer grammar:
+embedding, repeated attention or state-space blocks with two residual joins,
+and projection or pooled embedding output. ESM, TRM and Evo are useful because
+they force this grammar to grow through reusable dataflow, multi-result and
+state primitives rather than model-name exceptions.
 
 [Rtinycc](https://github.com/sounkou-bioinfo/Rtinycc) is a plausible lowering
-target for that plan, not the language itself. It can turn a declarative recipe
-into C, compile and relocate it in memory, retain the live compiler state with
-the callable, and recompile from the recipe after serialization. A validated
-architecture AST could therefore emit one C graph-builder function rather than
-interpret one R call per operator. The generated function should call a narrow,
-opaque Rllm plan ABI or vtable instead of depending on GGML's entire header
-surface. TinyCC does not need to optimize tensor arithmetic: the generated code
-only assembles the graph, while official GGML kernels still perform the work.
-The ordinary native plan interpreter remains the oracle and fallback; generated
-C is a cache derived from the AST, never another source of truth.
+target for the program, not the language itself. It can turn a declarative
+recipe into C, compile and relocate it in memory, retain the live compiler
+state with the callable, and recompile from the recipe after serialization. A
+validated architecture AST could therefore emit one C graph-builder function
+rather than interpret one R call per operator. The generated function should
+call a narrow, opaque Rllm operator vtable instead of depending on GGML's
+entire header surface. TinyCC does not need to optimize tensor arithmetic: the
+generated code only assembles the graph, while official GGML kernels still
+perform the work.
 
-The first proof is to express the existing llama graph in the language and
-keep every pure-R, cache and CUDA oracle unchanged. The second proof must be an
-architecture with real differences, such as optional QKV biases and a distinct
-RoPE convention. If that model needs an architecture-specific C branch instead
-of a reusable operator or state primitive, the vocabulary is not ready and
-should be revised rather than escaped. A later MoE or state-space model tests
-whether cache and routing state belong in the same semantic model. A constrained
-vocabulary plus a deterministic validator makes both human and LLM-authored
-programs reviewable; the prompt is not the artifact. This is the useful
-discipline in [DSLs Enable Reliable Use of LLMs](https://martinfowler.com/articles/llm-and-dsls.html):
-the semantic language and its validator become the maintained source of truth.
-An optional Rtinycc proof must additionally produce the same graph and logits
-as the interpreter, cross into native code once per graph build rather than once
-per node, and demonstrate that compiler-state lifetime follows model lifetime.
+The R compiler and native operator builder remain the oracle and
+fallback; generated C would be a cache derived from the AST, never another
+source of truth.
+
+The llama equivalence proof is closed, and Qwen3.5, LFM2MoE and
+EmbeddingGemma have already supplied the structurally different attention,
+recurrence, routing and output cases. The next proof is a real ESM-2 8M
+checkpoint. It forces a second typed input, padding semantics, attention as a
+multi-result operator, representation taps, tied parameters and a contact head
+through numerical execution. If this requires an ESM branch in C instead of
+reusable operators and graph results, the vocabulary is not ready. A
+constrained vocabulary plus a deterministic validator makes both human and
+LLM-authored programs reviewable; the prompt is not the artifact. This is the
+useful discipline in [DSLs Enable Reliable Use of LLMs](https://martinfowler.com/articles/llm-and-dsls.html):
+the semantic language and its validator become the maintained source of
+truth. An optional Rtinycc proof must additionally produce the same graph and
+logits as the interpreter, cross into native code once per graph build rather
+than once per node, and demonstrate that compiler-state lifetime follows model
+lifetime.
 
 ## Threat model for this phase
 
@@ -166,23 +195,27 @@ again from that boundary.
 
 ## The next contradictions to push
 
-1. Patch kalis to borrow the aligned haplotype view while preserving its cache
+1. Remove plan-first architecture construction. Make GGUF adapters produce the
+   semantic program and parameter declarations directly, then derive or delete
+   the older layer-plan view without changing any numerical oracle.
+2. Close ESM-2 8M against a real checkpoint. Extend the compiler through typed
+   masks, multi-result attention, taps and the contact head, never through an
+   ESM-specific executor. Follow with TRM recurrence and then Evo's genuinely
+   new Hyena FIR/IIR operators.
+3. Patch kalis to borrow the aligned haplotype view while preserving its cache
    ownership and SIMD invariants. Compare Forward/Backward output against its
    copied cache and assert that no integer matrix or second packed body exists.
-2. Extract the llama graph into the typed architecture AST, compile it once,
-   and require all existing CPU, CUDA and cache oracles to remain unchanged.
-   Add one structurally different architecture only after that equivalence is
-   exact.
-3. Test ALP-RD and SIMD decode as independent storage-bandwidth experiments,
+4. Test ALP-RD and SIMD decode as independent storage-bandwidth experiments,
    then decide whether a fused compressed dot deserves to exist.
-4. Build the layer access scheduler and compare mmap advice with explicit
+5. Build the layer access scheduler and compare mmap advice with explicit
    double buffering on cold storage.
-5. Make a decode graph genuinely reusable before revisiting persistence. Test
-   stable or bucketed attention extents and device-resident mutable KV state
-   against the current host-authoritative cache, preserving explicit CPU/CUDA
-   handoff. Persistent graph allocation without stable execution has already
-   measured slower and does not deserve an API.
-6. Decide whether importer metadata should become its own semantic sink. It is
+6. Establish the upstream CUDA numerical oracle across one-token prefixes and
+   equivalent whole batches, then make a decode graph genuinely reusable.
+   Test stable or bucketed attention extents and device-resident mutable KV
+   state against the host-authoritative cache, preserving explicit
+   CPU/CUDA handoff. Persistent graph allocation without stable execution has
+   already measured slower and does not deserve an API.
+7. Decide whether importer metadata should become its own semantic sink. It is
    transient because compute paths consume genotype records only.
 
 No compatibility shim or API-version ceremony is warranted while every

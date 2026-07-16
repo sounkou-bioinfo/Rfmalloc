@@ -12,7 +12,8 @@ must be a multiple of 256 (\code{QK_K}).}
 
 \item{B}{Numeric activation matrix with \code{nrow(B) == nrow(A)}.}
 
-\item{backend}{The GGML backend that owns the tensor buffer.}
+\item{backend}{Compute backend. \code{"cpu"} exercises a borrowed external
+payload; the other backends exercise backend-owned buffers.}
 }
 \value{
 A numeric matrix, dim \code{c(ncol(A), ncol(B))}, equal to

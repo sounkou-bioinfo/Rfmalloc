@@ -184,7 +184,7 @@ program <- rllm_program(model)
 expect_true(setequal(names(program$parameters), names(plan$tensors)))
 attention_nodes <- Filter(function(node) node$op == "attention", program$nodes)
 expect_equal(vapply(attention_nodes, function(node) {
-    node$attributes$specification$mask$type
+    node$attributes$mask$type
 }, character(1)), c("symmetric_window", "bidirectional"))
 
 tokens <- c(2L, 17L, 4L, 11L)
@@ -224,4 +224,4 @@ expect_error(rllm_kv_cache(model), "no incremental decode state")
 
 Rfmalloc::cleanup_fmalloc(rt)
 unlink(c(path, rt_path))
-message("EmbeddingGemma semantic-plan tests completed")
+message("EmbeddingGemma semantic-program tests completed")

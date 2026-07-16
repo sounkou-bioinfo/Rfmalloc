@@ -18,11 +18,11 @@ and are never decoded to double on the compute path.
 The first composition is a codec-aware matrix-product backend:
 `dense %*% quantized_fmalloc_tensor` contracts the encoded blocks
 directly through GGML after registering with Rfmalloc’s backend
-registry. The second normalizes GGUF metadata into semantic plans and
-composes those plans into forward graphs, state, embeddings and
-byte-level generation over the same typed storage. Llama, Qwen3.5,
-LFM2MoE and EmbeddingGemma are model probes of the operator vocabulary
-rather than C++ subclasses.
+registry. The second normalizes GGUF metadata into one serializable
+semantic program, binds that program to mapped weights and lowers it
+into forward graphs, state, embeddings and byte-level generation over
+the same typed storage. Llama, Qwen3.5, LFM2MoE and EmbeddingGemma are
+model probes of the operator vocabulary rather than C++ subclasses.
 
 ## Quantized products, zero-copy
 
@@ -88,7 +88,9 @@ instead of unrolling it. Freezing the trace with `rllm_program()`
 removes the builder environment and leaves only serializable data.
 `rllm_inputs()` starts a trace with several typed inputs, while an
 operator’s `outputs` specification keeps several named results in the
-same graph.
+same graph. Masks, RoPE, routing, scale, state and tensor parameters
+remain direct named node attributes rather than being hidden in an
+architecture blob.
 
 ``` r
 d <- "hidden"
@@ -118,7 +120,7 @@ program
 #> <rllm_program encoder: 5 nodes, 1 parameters, 2 outputs; add=1/attention=1/input=1/pool=1/rms_norm=1>
 ```
 
-The Qwen3.5 plan is the first deliberately heterogeneous model probe.
+The Qwen3.5 program is the first deliberately heterogeneous model probe.
 The metadata and tensor directory of [Ternary Bonsai
 27B](https://huggingface.co/prism-ml/Ternary-Bonsai-27B-gguf) normalize
 to one R data AST with 48 gated-delta recurrent blocks, 16
@@ -136,15 +138,17 @@ corresponding portable CPU backend. The pinned GGML release has no
 executes on CPU. The same Qwen3.5 graph can use CUDA when its weights
 use a codec that backend supports.
 
-The program interpreter executes dataflow and structured control flow
-through an explicit table of R operator lowerings. Its dense reference
-vocabulary pins Tiny Recursive Model evaluation against a direct R
-recurrence: `z_H` and `z_L` cross three nested symbolic loops while one
-reasoning module stays shared. The full attention and SwiGLU TRM
-topology is also serializable, but a Samsung checkpoint importer and
-native bidirectional-attention lowering do not yet exist.
-`rllm_execute()` is a semantic oracle and lowering harness; it does not
-replace the GGUF path in `rllm_forward()`.
+The same frozen program has two consumers. `rllm_execute()` interprets
+dataflow and structured control flow through an explicit table of dense
+R operators. Its reference vocabulary pins Tiny Recursive Model
+evaluation against a direct R recurrence: `z_H` and `z_L` cross three
+nested symbolic loops while one reasoning module stays shared.
+`rllm_forward()` binds the program’s parameters to their mapped GGUF
+spans, validates the supported transformer grammar once and lowers its
+operators through GGML. There is no separate native model plan. The full
+attention and SwiGLU TRM topology is serializable, but a Samsung
+checkpoint importer and native bidirectional-attention lowering do not
+yet exist.
 
 The native lowerer implements the operators exercised by llama, Qwen3.5,
 LFM2MoE and EmbeddingGemma. ESM-2 and Evo 2 remain executable-frontier
@@ -170,11 +174,13 @@ and 128 greedy decode tokens. The median of three complete generations
 was 40.2 tokens/s on CPU and 69.7 tokens/s on the RTX 5050 CUDA path
 after its one-time weight upload.
 
-`rllm_gguf_model()` reads the hyperparameters and borrows every weight’s
-exact read-only span. No weight is copied into the Rfmalloc work file.
-On CPU, `rllm_forward()` points GGML tensors at those bytes while
-assembling RMSNorm, RoPE, causal grouped-query attention and SwiGLU
-through Rggml’s C-callables; Rllm links no private GGML copy.
+`rllm_gguf_model()` reads the hyperparameters, constructs the semantic
+program and borrows every weight’s exact read-only span. Binding
+validates every declared parameter name and shape before native
+execution. No weight is copied into the Rfmalloc work file. On CPU,
+`rllm_forward()` points GGML tensors at those bytes while assembling
+RMSNorm, RoPE, causal grouped-query attention and SwiGLU through Rggml’s
+C-callables; Rllm links no private GGML copy.
 
 `rllm_kv_cache()` allocates one key and value slab per layer in plain R
 memory or in fmalloc storage. The latter makes the cache file-backed,
@@ -222,6 +228,19 @@ execution decision rather than another model format. Vulkan also ships
 in Rggml, but Rllm does not select it. The rig suite checks whole-batch
 and cached CUDA logits, plain and fmalloc cache slabs, and cache handoff
 in both directions between CPU and CUDA.
+
+The suite distinguishes cache correctness from invariance to batch
+shape. For an identical prefix shape, cached and uncached logits from
+the real SmolLM2 `Q4_K_M` file are bit-identical on both CPU and CUDA.
+CPU also gives the same result when a four-token prefix is evaluated
+whole or incrementally. CUDA does not: on the structural token sequence
+1, 5, 9, 2, prefix-versus-whole cosine similarity ranges from 0.761 to
+0.997 and two of four argmaxes differ. Real-shape products for all four
+quantized weight types remain within 1.25e-4 NMSE of CPU, and CUDA
+one-column and four-column products agree exactly. The remaining
+numerical question is therefore at graph level: pin Rllm’s result
+against the matching upstream GGML and llama.cpp paths for each batch
+shape before claiming shape-invariant CUDA execution.
 
 Persistent allocation by itself is not the missing acceleration. A
 measured GGML scheduler experiment reduced CUDA decode from 69.7 to 63.7

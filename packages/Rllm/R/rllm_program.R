@@ -158,6 +158,8 @@ rllm_op <- function(x, op, ..., output_shape = NULL,
 #' @param heads,kv_heads Query and key/value head counts.
 #' @param query_norm,key_norm Optional per-head normalization parameters.
 #' @param rope,mask,scale Data-only attention specifications.
+#' @param state Data-only persistent-state specification. The default declares
+#'   no state.
 #'
 #' @return A traced `rllm_value`.
 #' @export
@@ -205,7 +207,8 @@ rllm_norm <- function(x, weight, kind = c("rms", "layer"), eps = 1e-5,
 rllm_attention <- function(x, query, key, value, output, heads,
                            kv_heads = heads, query_norm = NULL,
                            key_norm = NULL, rope = NULL,
-                           mask = list(type = "causal"), scale = NULL) {
+                           mask = list(type = "causal"), scale = NULL,
+                           state = list(op = "none")) {
     input <- .rllm_one_value(x)
     for (item in list(query = query, key = key, value = value,
                       output = output)) {
@@ -241,10 +244,15 @@ rllm_attention <- function(x, query, key, value, output, heads,
           !.rllm_same_dimension(key_norm$shape[[1L]], head_width)))) {
         stop("attention head normalization has the wrong width")
     }
+    if (!is.list(state) || !is.character(state$op) ||
+        length(state$op) != 1L || is.na(state$op) || !nzchar(state$op)) {
+        stop("state must contain one non-empty operator name")
+    }
     rllm_op(input, "attention", query = query, key = key, value = value,
-            output = output, heads = heads, kv_heads = kv_heads,
+            output = output, n_head = heads, n_head_kv = kv_heads,
+            head_dim = head_width,
             query_norm = query_norm, key_norm = key_norm,
-            rope = rope, mask = mask, scale = scale)
+            rope = rope, mask = mask, scale = scale, state = state)
 }
 
 #' @rdname rllm_linear
@@ -363,7 +371,7 @@ rllm_loop <- function(x, times, body, name = "loop") {
 #' @rdname rllm_input
 #' @export
 rllm_program <- function(x, name = NULL) {
-    if (inherits(x, "rllm_model")) return(x$plan$program)
+    if (inherits(x, "rllm_model")) return(x$execution$program)
     if (inherits(x, "rllm_plan")) return(x$program)
     if (is.character(x) && length(x) == 1L && !is.na(x)) {
         return(rllm_plan(x)$program)
@@ -385,8 +393,9 @@ print.rllm_program <- function(x, ...) {
 #' `rllm_execute()` interprets the dataflow and structured loops in an
 #' [rllm_program()]. Semantic operators are ordinary R functions supplied in
 #' `operators`; a small dense reference vocabulary is provided for arithmetic
-#' shared by the architecture probes. This is a reference and lowering
-#' harness, not the GGUF execution path used by [rllm_forward()].
+#' shared by the architecture probes. This is the dense reference interpreter
+#' for the same program that [rllm_forward()] binds to mapped weights and
+#' lowers natively through GGML.
 #'
 #' Each operator function is called with four named arguments: `inputs`, the
 #' list of values arriving at the node; `attributes`, the node's data-only
@@ -982,6 +991,14 @@ rllm_execute <- function(program, inputs, parameters = list(), counts = list(),
     x
 }
 
+.rllm_program_plan_op <- function(x, operator, plan, state = NULL) {
+    attributes <- .rllm_bind_plan_parameters(operator, plan)
+    op <- attributes$op
+    attributes$op <- NULL
+    if (!is.null(state)) attributes$state <- state
+    do.call(rllm_op, c(list(x = x, op = op), attributes))
+}
+
 .rllm_program_from_plan <- function(plan) {
     n_embd <- plan$symbols$n_embd
     n_token <- "n_token"
@@ -1003,12 +1020,8 @@ rllm_execute <- function(program, inputs, parameters = list(), counts = list(),
                     .rllm_plan_parameter(plan, layer$operator_norm),
                     eps = eps
                 )
-                branch <- rllm_op(
-                    branch, layer$operator$op,
-                    specification = .rllm_bind_plan_parameters(
-                        layer$operator, plan
-                    ),
-                    state = layer$state
+                branch <- .rllm_program_plan_op(
+                    branch, layer$operator, plan, state = layer$state
                 )
                 if (!is.null(layer$operator_post_norm)) {
                     branch <- rllm_norm(
@@ -1025,11 +1038,8 @@ rllm_execute <- function(program, inputs, parameters = list(), counts = list(),
                     .rllm_plan_parameter(plan, layer$ffn_norm),
                     eps = eps
                 )
-                branch <- rllm_op(
-                    branch, layer$feed_forward$op,
-                    specification = .rllm_bind_plan_parameters(
-                        layer$feed_forward, plan
-                    )
+                branch <- .rllm_program_plan_op(
+                    branch, layer$feed_forward, plan
                 )
                 if (!is.null(layer$feed_forward_post_norm)) {
                     branch <- rllm_norm(

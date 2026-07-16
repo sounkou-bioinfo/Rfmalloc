@@ -2,7 +2,7 @@
 % Please edit documentation in R/rllm_model.R
 \name{rllm_kv_cache}
 \alias{rllm_kv_cache}
-\title{Create plan-shaped state for incremental decoding}
+\title{Create program-shaped state for incremental decoding}
 \usage{
 rllm_kv_cache(model, n_ctx = 512L, runtime = NULL)
 }
@@ -18,8 +18,9 @@ An environment of class \code{rllm_kv_cache} with per-layer \code{k}, \code{v},
 \code{conv} and \code{recurrent} state, plus \code{n_ctx} and \code{n_past}.
 }
 \description{
-Allocates the persistent state declared by the model plan. Attention layers
-receive key/value slabs, short-convolution layers receive causal history,
+Allocates the persistent state declared by the bound program. Attention
+layers receive key/value slabs, short-convolution layers receive causal
+history,
 and gated-delta layers receive both convolution history and recurrent
 matrices. State is plain R memory by default or \pkg{Rfmalloc}-backed when
 \code{runtime} is supplied.

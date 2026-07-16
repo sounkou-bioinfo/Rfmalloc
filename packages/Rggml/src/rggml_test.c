@@ -9,6 +9,7 @@
 
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 #include <time.h>
 
 #include <R.h>
@@ -402,15 +403,40 @@ SEXP RC_rggml_test_mul_mat_q4k(SEXP A_sexp, SEXP B_sexp)
     return result;
 }
 
+static enum ggml_type
+rggml_quant_type(const char *name)
+{
+    if (!strcmp(name, "q4_0")) return GGML_TYPE_Q4_0;
+    if (!strcmp(name, "q4_1")) return GGML_TYPE_Q4_1;
+    if (!strcmp(name, "q5_0")) return GGML_TYPE_Q5_0;
+    if (!strcmp(name, "q5_1")) return GGML_TYPE_Q5_1;
+    if (!strcmp(name, "q8_0")) return GGML_TYPE_Q8_0;
+    if (!strcmp(name, "q2_k")) return GGML_TYPE_Q2_K;
+    if (!strcmp(name, "q3_k")) return GGML_TYPE_Q3_K;
+    if (!strcmp(name, "q4_k")) return GGML_TYPE_Q4_K;
+    if (!strcmp(name, "q5_k")) return GGML_TYPE_Q5_K;
+    if (!strcmp(name, "q6_k")) return GGML_TYPE_Q6_K;
+    return GGML_TYPE_COUNT;
+}
+
 /* Quantized device-residency proof. Unlike the host-pointer helper above,
- * this allocates Q4_K weights, F32 activations and the result in the selected
- * backend buffer, then uploads, computes and downloads through the same
- * interface used by a complete model graph. */
-SEXP RC_rggml_test_mul_mat_q4k_backend(SEXP A_sexp, SEXP B_sexp,
-                                        SEXP backend_sexp)
+ * this allocates quantized weights, F32 activations and the result in the
+ * selected backend buffer, then uploads, computes and downloads through the
+ * same interface used by a complete model graph. */
+SEXP
+RC_rggml_test_mul_mat_quant_backend(SEXP A_sexp, SEXP B_sexp,
+    SEXP type_sexp, SEXP backend_sexp)
 {
     if (TYPEOF(A_sexp) != REALSXP || TYPEOF(B_sexp) != REALSXP) {
         Rf_error("A and B must be numeric matrices");
+    }
+    if (TYPEOF(type_sexp) != STRSXP || Rf_xlength(type_sexp) != 1) {
+        Rf_error("type must be one quantized GGML type name");
+    }
+    const char *type_name = CHAR(STRING_ELT(type_sexp, 0));
+    enum ggml_type type = rggml_quant_type(type_name);
+    if (type == GGML_TYPE_COUNT) {
+        Rf_error("unsupported quantized GGML type '%s'", type_name);
     }
     SEXP dimA = Rf_getAttrib(A_sexp, R_DimSymbol);
     SEXP dimB = Rf_getAttrib(B_sexp, R_DimSymbol);
@@ -418,7 +444,11 @@ SEXP RC_rggml_test_mul_mat_q4k_backend(SEXP A_sexp, SEXP B_sexp,
     int64_t k = INTEGER(dimA)[0], nA = INTEGER(dimA)[1];
     int64_t kB = INTEGER(dimB)[0], nB = INTEGER(dimB)[1];
     if (k != kB) Rf_error("nrow(A) must equal nrow(B)");
-    if (k % 256 != 0) Rf_error("nrow(A) must be a multiple of 256 (QK_K)");
+    int64_t block = ggml_blck_size(type);
+    if (k % block != 0) {
+        Rf_error("nrow(A) must be a multiple of %lld for %s",
+            (long long) block, type_name);
+    }
     int which = Rf_asInteger(backend_sexp);
 
     ggml_backend_t backend = NULL;
@@ -446,9 +476,9 @@ SEXP RC_rggml_test_mul_mat_q4k_backend(SEXP A_sexp, SEXP B_sexp,
     for (R_xlen_t i = 0; i < nElemA; i++) af[i] = (float) REAL(A_sexp)[i];
     for (R_xlen_t i = 0; i < nElemB; i++) bf[i] = (float) REAL(B_sexp)[i];
 
-    size_t qa_bytes = ggml_row_size(GGML_TYPE_Q4_K, k) * (size_t) nA;
+    size_t qa_bytes = ggml_row_size(type, k) * (size_t) nA;
     void *qa = R_alloc(qa_bytes > 0 ? qa_bytes : 1, 1);
-    ggml_quantize_chunk(GGML_TYPE_Q4_K, af, qa, 0, nA, k, NULL);
+    ggml_quantize_chunk(type, af, qa, 0, nA, k, NULL);
     Rggml_backend_free_ptr()(cpu);
 
     Rggml_context_create_fun ctx_create = Rggml_context_create_ptr();
@@ -461,7 +491,7 @@ SEXP RC_rggml_test_mul_mat_q4k_backend(SEXP A_sexp, SEXP B_sexp,
     if (!ctx) { bfree(backend); Rf_error("context creation failed"); }
 
     int64_t neA[2] = { k, nA }, neB[2] = { k, nB };
-    struct ggml_tensor *tA = Rggml_new_tensor_ptr()(ctx, GGML_TYPE_Q4_K, 2, neA, NULL);
+    struct ggml_tensor *tA = Rggml_new_tensor_ptr()(ctx, type, 2, neA, NULL);
     struct ggml_tensor *tB = Rggml_new_tensor_ptr()(ctx, GGML_TYPE_F32, 2, neB, NULL);
     struct ggml_tensor *tC = (tA && tB) ? Rggml_mul_mat_ptr()(ctx, tA, tB) : NULL;
     if (!tC) { ctx_free(ctx); bfree(backend); Rf_error("graph construction failed"); }
@@ -485,7 +515,10 @@ SEXP RC_rggml_test_mul_mat_q4k_backend(SEXP A_sexp, SEXP B_sexp,
     Rggml_backend_buffer_free_ptr()(buf);
     ctx_free(ctx);
     bfree(backend);
-    if (rc != 0) { UNPROTECT(1); Rf_error("Q4_K graph compute failed with status %d", rc); }
+    if (rc != 0) {
+        UNPROTECT(1);
+        Rf_error("%s graph compute failed with status %d", type_name, rc);
+    }
     UNPROTECT(1);
     return out;
 }

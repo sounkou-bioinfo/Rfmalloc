@@ -1,16 +1,19 @@
-#' Inspect the semantic execution plan of a GGUF model
+#' Inspect the normalized checkpoint description of a GGUF model
 #'
 #' Rllm normalizes model-family metadata into a small data AST before it
 #' borrows any weight payload. The plan names tensor roles, resolved shapes,
 #' layer operators, feed-forward operators, persistent state and output
-#' projection. It contains data only: no R closures and no backend objects.
+#' projection, and carries the semantic [rllm_program()] derived from them. It
+#' contains data only: no R closures and no backend objects. Native execution
+#' consumes the bound program; this plan remains an inspection view of
+#' checkpoint normalization.
 #'
 #' @param x An `rllm_model` or a path to a GGUF file.
 #' @return An inspectable object of class `rllm_plan`.
 #' @export
 rllm_plan <- function(x) {
     if (inherits(x, "rllm_model")) {
-        return(x$plan)
+        return(.rllm_plan_from_bound(x$execution))
     }
     if (!is.character(x) || length(x) != 1L || is.na(x)) {
         stop("x must be an rllm_model or one GGUF path")
@@ -18,6 +21,26 @@ rllm_plan <- function(x) {
     .rllm_plan_from_gguf(
         Rgguf::gguf_metadata(x),
         Rgguf::gguf_tensors(x)
+    )
+}
+
+.rllm_plan_from_bound <- function(bound) {
+    program <- bound$program
+    lowering <- bound$lowering
+    tensors <- lapply(program$parameters, function(parameter) {
+        .rllm_tensor(parameter$name, parameter$role, parameter$shape)
+    })
+    structure(
+        list(
+            architecture = program$name,
+            symbols = lowering$symbols,
+            tensors = tensors,
+            input = lowering$input,
+            layers = lowering$layers,
+            output = lowering$output,
+            program = program
+        ),
+        class = c("rllm_plan", "list")
     )
 }
 
@@ -131,7 +154,7 @@ print.rllm_plan <- function(x, ...) {
             metadata, directory, rope_mode
         ),
         stop("unsupported GGUF architecture '", architecture,
-             "': no semantic plan is registered")
+             "': no architecture program is registered")
     )
     class(plan) <- c("rllm_plan", "list")
     plan <- .rllm_validate_plan(plan, directory)
@@ -542,7 +565,7 @@ print.rllm_plan <- function(x, ...) {
     }
     if (gating != 2L) {
         stop("lfm2moe expert_gating_func ", gating,
-             " is unsupported; the plan vocabulary expects sigmoid routing")
+             " is unsupported; the program vocabulary expects sigmoid routing")
     }
     rms_eps <- as.numeric(key("attention.layer_norm_rms_epsilon", 1e-5))
     rope_base <- as.numeric(key("rope.freq_base", 5e6))

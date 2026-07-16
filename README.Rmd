@@ -207,6 +207,19 @@ pure-R reference forward to the tolerance imposed by the quantized weights,
 and cached CUDA logits are checked against both whole-batch CUDA and CPU cache
 handoffs.
 
+The real `Q4_K_M` probe separates cache correctness from invariance to batch
+shape. For an identical prefix shape, cached and uncached logits are
+bit-identical on CPU and CUDA. CPU is also invariant when a four-token prefix
+is evaluated whole or one token at a time. CUDA is not: on the structural
+token sequence 1, 5, 9, 2, prefix-versus-whole cosine similarity ranges from
+0.761 to 0.997 and two of four argmaxes differ. Individual products at the
+model's real `q5_0`, `q4_k`, `q8_0` and `q6_k` shapes remain within 1.25e-4
+NMSE of CPU, while CUDA one-column and four-column products agree exactly.
+This rules out cache layout and weight upload as the source of that split. The
+graph-level numerical contract against upstream GGML and llama.cpp across
+batch shapes is therefore an explicit frontier, not a hidden correctness
+claim.
+
 ALP is a useful counterexample to protecting a beautiful idea from a bad
 measurement. The decimal ALP codec is lossless and effective for
 analytical values with decimal structure. On a model-like 2048 by 2048 Q4_K
@@ -221,10 +234,12 @@ normalized into named tensor roles, shapes, operators, state and outputs. An R
 architecture program then expresses modules, residual branches, representation
 taps and structured recurrence with ordinary functions and the base pipe.
 Several typed inputs and several named results stay explicit instead of being
-smuggled through string attributes. The frozen program is data only. C does
-not need another model-family class; it needs reusable lowerings for attention,
-normalization, convolution, routing and whatever operators survive the next
-model stress test.
+smuggled through string attributes. The frozen program is data only. Rllm
+binds its declared parameters directly to mapped storage and compiles its
+validated block grammar to the GGML operator vocabulary. C does not receive a
+second model plan and does not need another model-family class; it needs
+reusable lowerings for attention, normalization, convolution, routing and
+whatever operators survive the next model stress test.
 
 This language is intentionally closer to `torch::nn_module()` and luz's pipe
 cadence than to a C++ architecture switch. EmbeddingGemma forces non-causal and
@@ -236,13 +251,14 @@ schedule: 27 HCS, HCM and HCL cascades with different FIR or IIR state, plus
 five interleaved attention layers. Tiny Recursive Models force shared modules
 and nested carried state.
 
-`rllm_execute()` interprets dataflow and loops through an explicit operator
-table. A dense oracle executes the TRM `z_H` and `z_L` recurrence across its
-three nested symbolic loops and agrees with direct R iteration. It is a
-semantic and lowering harness, not a second GGUF runtime. ESM and Evo still
-need checkpoint importers and numerical lowerings, while TRM still needs its
-full bidirectional-attention lowering. Those absences remain named operator
-failures instead of becoming architecture switches.
+`rllm_execute()` interprets the same program's dataflow and loops through an
+explicit operator table. A dense oracle executes the TRM `z_H` and `z_L`
+recurrence across its three nested symbolic loops and agrees with direct R
+iteration. It is the semantic oracle for the native bound-program lowering,
+not a second GGUF runtime. ESM and Evo still need checkpoint importers and
+numerical lowerings, while TRM still needs its full bidirectional-attention
+lowering. Those absences remain named operator failures instead of becoming
+architecture switches.
 
 [Rtinycc](https://github.com/sounkou-bioinfo/Rtinycc) gives this separation a
 useful experimental path. A data-only program can generate a small C reference

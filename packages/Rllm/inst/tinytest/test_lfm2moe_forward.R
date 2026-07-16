@@ -1,7 +1,7 @@
 library(tinytest)
 library(Rllm)
 
-# A small LFM2MoE model exercises the semantic plan without pretending the
+# A small LFM2MoE model exercises the semantic program without pretending the
 # architecture is llama. The pure-R oracle covers NEOX RoPE, per-head Q/K
 # normalization, gated causal short convolution, sigmoid top-k routing and
 # stacked expert tensors. A second comparison pins mixed KV/convolution state
@@ -227,14 +227,25 @@ expect_equal(vapply(plan$layers, function(x) x$state$op, character(1)),
 
 tokens <- c(2L, 7L, 1L, 12L)
 logits <- rllm_forward(model, tokens)
-moe_layer <- which(vapply(plan$layers, function(layer) {
-    layer$feed_forward$op == "moe_swiglu"
+program <- rllm_program(model)
+moe_node <- which(vapply(program$nodes, function(node) {
+    node$op == "moe_swiglu"
 }, logical(1)))[[1L]]
 scaled_model <- model
-scaled_model$plan$layers[[moe_layer]]$feed_forward$scale <- 0.5
+scaled_program <- program
+scaled_program$nodes[[moe_node]]$attributes$scale <- 0.5
+scaled_model$execution <- Rllm:::.rllm_bind_program(
+    scaled_program, model$execution$lowering$symbols,
+    model$execution$bindings
+)
 expect_false(isTRUE(all.equal(rllm_forward(scaled_model, tokens), logits)))
 bad_model <- model
-bad_model$plan$layers[[moe_layer]]$feed_forward$routing <- "softmax"
+bad_program <- program
+bad_program$nodes[[moe_node]]$attributes$routing <- "softmax"
+bad_model$execution <- Rllm:::.rllm_bind_program(
+    bad_program, model$execution$lowering$symbols,
+    model$execution$bindings
+)
 expect_error(rllm_forward(bad_model, tokens), "unknown expert routing")
 
 W <- Rgguf::gguf_import(path, runtime = rt)
@@ -257,4 +268,4 @@ expect_equal(cache$n_past, length(tokens))
 expect_equal(incremental, logits, tolerance = 2e-5)
 
 unlink(path)
-message("LFM2MoE semantic-plan tests completed")
+message("LFM2MoE semantic-program tests completed")

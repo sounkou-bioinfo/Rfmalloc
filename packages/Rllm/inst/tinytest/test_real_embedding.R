@@ -15,8 +15,11 @@ backing <- tempfile(fileext = ".bin")
 rt <- Rfmalloc::open_fmalloc(backing, mode = "scratch", size_gb = 0.5)
 model <- rllm_gguf_model(path, runtime = rt)
 expect_equal(model$arch, "gemma-embedding")
-expect_equal(length(model$tensors), 316L)
-expect_equal(length(rllm_program(model)$parameters), length(model$tensors))
+expect_equal(length(model$execution$bindings), 316L)
+expect_equal(
+    length(rllm_program(model)$parameters),
+    length(model$execution$bindings)
+)
 
 # "Which city is the capital of France?", including the model's BOS and EOS.
 tokens <- c(2L, 24249L, 3207L, 563L, 506L, 5279L, 529L, 7001L, 236881L, 1L)

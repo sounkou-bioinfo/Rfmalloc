@@ -41,7 +41,7 @@ expect_false(isTRUE(all.equal(logits2[, length(tokens)], logits[, length(tokens)
 cache <- rllm_kv_cache(model, n_ctx = 8L, runtime = rt)
 pre <- rllm_forward(model, tokens[1:2], cache)
 expect_equal(pre, rllm_forward(model, tokens[1:2]), tolerance = 1e-4)
-has_sparse_router <- any(vapply(model$plan$layers, function(layer) {
+has_sparse_router <- any(vapply(model$execution$lowering$layers, function(layer) {
     startsWith(layer$feed_forward$op, "moe_")
 }, logical(1)))
 for (k in 3:length(tokens)) {

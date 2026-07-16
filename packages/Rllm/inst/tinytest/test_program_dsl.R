@@ -439,6 +439,30 @@ expect_false(contains_runtime_object(trm))
 roundtrip <- unserialize(serialize(trm, NULL))
 expect_identical(roundtrip, trm)
 
+attention_input <- rllm_input(
+    "attention_input", c(feature = 8L, sequence = "n_token")
+)
+attention_program <- rllm_attention(
+    attention_input,
+    query = rllm_parameter("attention.q", c(8L, 8L)),
+    key = rllm_parameter("attention.k", c(8L, 4L)),
+    value = rllm_parameter("attention.v", c(8L, 4L)),
+    output = rllm_parameter("attention.output", c(8L, 8L)),
+    heads = 2L,
+    kv_heads = 1L,
+    state = list(op = "kv", width = 4L)
+) |>
+    rllm_program("attention_vocabulary")
+attention_node <- Filter(function(node) {
+    node$op == "attention"
+}, attention_program$nodes)[[1L]]
+expect_equal(attention_node$attributes$n_head, 2L)
+expect_equal(attention_node$attributes$n_head_kv, 1L)
+expect_equal(attention_node$attributes$head_dim, 4L)
+expect_equal(attention_node$attributes$state, list(op = "kv", width = 4L))
+expect_false(any(c("heads", "kv_heads", "specification") %in%
+                 names(attention_node$attributes)))
+
 leaky <- 1
 attr(leaky, "builder") <- new.env(parent = emptyenv())
 expect_error(

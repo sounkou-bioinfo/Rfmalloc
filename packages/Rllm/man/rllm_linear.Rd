@@ -23,7 +23,8 @@ rllm_attention(
   key_norm = NULL,
   rope = NULL,
   mask = list(type = "causal"),
-  scale = NULL
+  scale = NULL,
+  state = list(op = "none")
 )
 
 rllm_pool(x, kind = c("mean", "cls", "none"))
@@ -45,6 +46,9 @@ optional.}
 \item{query_norm, key_norm}{Optional per-head normalization parameters.}
 
 \item{rope, mask, scale}{Data-only attention specifications.}
+
+\item{state}{Data-only persistent-state specification. The default declares
+no state.}
 }
 \value{
 A traced \code{rllm_value}.

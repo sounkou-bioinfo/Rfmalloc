@@ -33,8 +33,9 @@ A named list containing every program output and tap.
 \code{rllm_execute()} interprets the dataflow and structured loops in an
 \code{\link[=rllm_program]{rllm_program()}}. Semantic operators are ordinary R functions supplied in
 \code{operators}; a small dense reference vocabulary is provided for arithmetic
-shared by the architecture probes. This is a reference and lowering
-harness, not the GGUF execution path used by \code{\link[=rllm_forward]{rllm_forward()}}.
+shared by the architecture probes. This is the dense reference interpreter
+for the same program that \code{\link[=rllm_forward]{rllm_forward()}} binds to mapped weights and
+lowers natively through GGML.
 }
 \details{
 Each operator function is called with four named arguments: \code{inputs}, the
