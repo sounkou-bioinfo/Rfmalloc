@@ -60,7 +60,8 @@ Operator functions control the representation of their results, so a
 lowering may preserve a mapped or device-backed value rather than
 materializing it in R.
 
-The built-in dense reference operators are `add`, `linear`, `rms_norm`,
-`layer_norm`, `pool`, `gelu`, `silu`, `sigmoid`, `tanh`,
-`broadcast_initial`, `select_first_token`, `drop_puzzle_prefix` and
-`swiglu`. Entries in `operators` replace built-ins with the same name.
+The built-in dense reference vocabulary covers arithmetic,
+normalization, pooling, activations and recurrence helpers. It also
+covers ESM token dropout, key-padded rotary attention with attention-map
+results, tied projection and contact regression. Entries in `operators`
+replace built-ins with the same name.

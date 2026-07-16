@@ -44,9 +44,12 @@ created lazily by
 ## Details
 
 Architecture definitions are data ASTs rather than native model-family
-branches. The registered programs cover llama, Qwen3.5, LFM2MoE and
-EmbeddingGemma. Models with tied embeddings reuse `token_embd.weight` as
-the output projection.
+branches. Native GGML lowering covers llama, Qwen3.5, LFM2MoE and
+EmbeddingGemma. ESM-2 is numerically executable through
+[`rllm_execute()`](https://sounkou-bioinfo.github.io/Rfmalloc/Rllm/reference/rllm_execute.md)
+but its two-input program is not accepted by this native model loader.
+Models with tied embeddings reuse `token_embd.weight` as the output
+projection.
 
 ## See also
 

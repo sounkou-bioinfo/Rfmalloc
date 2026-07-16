@@ -103,10 +103,11 @@ list containing the current node and program, root and local inputs,
 symbolic counts, and the enclosing loop iterations. Operator functions
 control the representation of their results, so a lowering may preserve a
 mapped or device-backed value rather than materializing it in R.</p>
-<p>The built-in dense reference operators are <code>add</code>, <code>linear</code>, <code>rms_norm</code>,
-<code>layer_norm</code>, <code>pool</code>, <code>gelu</code>, <code>silu</code>, <code>sigmoid</code>, <code>tanh</code>,
-<code>broadcast_initial</code>, <code>select_first_token</code>, <code>drop_puzzle_prefix</code> and
-<code>swiglu</code>. Entries in <code>operators</code> replace built-ins with the same name.</p>
+<p>The built-in dense reference vocabulary covers arithmetic, normalization,
+pooling, activations and recurrence helpers. It also covers ESM token
+dropout, key-padded rotary attention with attention-map results, tied
+projection and contact regression. Entries in <code>operators</code> replace
+built-ins with the same name.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
