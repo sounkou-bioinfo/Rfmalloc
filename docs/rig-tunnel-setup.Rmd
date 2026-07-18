@@ -1,0 +1,299 @@
+---
+title: "GPU rig reverse SSH tunnel setup"
+output: github_document
+params:
+  action: "install"
+  server: "root@88.99.96.102"
+  port: 2222
+---
+
+This executable R Markdown document installs and manages the reverse SSH tunnel
+from the gaming rig's WSL instance to the development server. Run it inside WSL
+as the normal `sounkoutoure` user, not from a root shell.
+
+Valid actions are `install`, `status`, `restart`, and `uninstall`.
+
+## Run the document
+
+Copy this file to the rig, open a local WSL terminal, change to the directory
+containing the file, and run:
+
+```bash
+Rscript -e 'rmarkdown::render(
+  "rig-tunnel-setup.Rmd",
+  params = list(action = "install")
+)'
+```
+
+Do not perform the initial installation through `ssh rig`: replacing a manual
+tunnel can terminate the SSH connection that is running the installer. Later
+management actions can be selected by changing `"install"` to `"status"`,
+`"restart"`, or `"uninstall"`.
+
+```{r setup, include=FALSE}
+action <- as.character(params$action)
+server <- as.character(params$server)
+port <- as.integer(params$port)
+
+stopifnot(
+  length(action) == 1L,
+  action %in% c("install", "status", "restart", "uninstall"),
+  length(server) == 1L,
+  nzchar(server),
+  length(port) == 1L,
+  !is.na(port),
+  port >= 1024L,
+  port <= 65535L
+)
+
+Sys.setenv(
+  RIG_TUNNEL_ACTION = action,
+  RIG_TUNNEL_SERVER = server,
+  RIG_TUNNEL_PORT = as.character(port)
+)
+```
+
+## Execute tunnel management
+
+The following chunk will request `sudo` access. During the first installation,
+it creates a dedicated `~/.ssh/rig_tunnel` key if needed and installs that key
+on the development server.
+
+```{bash manage-tunnel}
+set -euo pipefail
+
+ACTION=${RIG_TUNNEL_ACTION:?}
+SERVER=${RIG_TUNNEL_SERVER:?}
+PORT=${RIG_TUNNEL_PORT:?}
+INSTALLER="$HOME/rig_tunnel_daemon.sh"
+KEY="$HOME/.ssh/rig_tunnel"
+
+if [ "$(id -u)" -eq 0 ]; then
+    echo "ERROR: render this Rmd as the normal WSL user, not root." >&2
+    exit 1
+fi
+
+sudo -v
+
+if [ "$ACTION" = install ]; then
+    if [ "$(ps -p 1 -o comm=)" != systemd ]; then
+        cat >&2 <<'EOF'
+ERROR: systemd is not PID 1.
+
+Add this to /etc/wsl.conf, preserving existing settings:
+
+[boot]
+systemd=true
+
+Then run `wsl --shutdown` from Windows PowerShell, reopen WSL, and rerun this
+Rmd file.
+EOF
+        exit 1
+    fi
+
+    install -d -m 700 "$HOME/.ssh"
+    if [ ! -f "$KEY" ]; then
+        ssh-keygen \
+            -t ed25519 \
+            -f "$KEY" \
+            -N '' \
+            -C 'rig reverse tunnel'
+    fi
+
+    if ! ssh \
+        -i "$KEY" \
+        -o IdentitiesOnly=yes \
+        -o BatchMode=yes \
+        -o StrictHostKeyChecking=accept-new \
+        -o ConnectTimeout=10 \
+        "$SERVER" true
+    then
+        echo "Installing the dedicated tunnel key on $SERVER"
+        ssh-copy-id -i "$KEY.pub" "$SERVER"
+    fi
+
+    ssh \
+        -i "$KEY" \
+        -o IdentitiesOnly=yes \
+        -o BatchMode=yes \
+        -o StrictHostKeyChecking=yes \
+        -o ConnectTimeout=10 \
+        "$SERVER" true
+fi
+
+cat > "$INSTALLER" <<'SCRIPT'
+#!/usr/bin/env bash
+# Install and supervise the reverse SSH tunnel from the rig's WSL instance to
+# port 2222 on the development server.
+set -euo pipefail
+
+SERVER=${SERVER:-root@88.99.96.102}
+PORT=${PORT:-2222}
+UNIT=/etc/systemd/system/rig-tunnel.service
+ACTION=${1:-install}
+
+if [ "$(id -u)" -ne 0 ]; then
+    exec sudo --preserve-env=SERVER,PORT bash "$0" "$@"
+fi
+
+TUNNEL_USER=${SUDO_USER:-}
+if [ -z "$TUNNEL_USER" ] || [ "$TUNNEL_USER" = root ]; then
+    echo "ERROR: run this script as the normal WSL user, without a leading sudo." >&2
+    echo "Example: bash $0" >&2
+    exit 1
+fi
+
+TUNNEL_HOME=$(getent passwd "$TUNNEL_USER" | cut -d: -f6)
+if [ -z "$TUNNEL_HOME" ]; then
+    echo "ERROR: cannot find the home directory for $TUNNEL_USER" >&2
+    exit 1
+fi
+
+KEY="$TUNNEL_HOME/.ssh/rig_tunnel"
+
+case "$ACTION" in
+status)
+    systemctl status rig-tunnel.service --no-pager -l || true
+    echo
+    echo "== last 30 log lines =="
+    journalctl -u rig-tunnel.service -n 30 --no-pager || true
+    exit 0
+    ;;
+restart)
+    systemctl restart rig-tunnel.service
+    systemctl status rig-tunnel.service --no-pager -l
+    exit 0
+    ;;
+uninstall)
+    systemctl disable --now rig-tunnel.service 2>/dev/null || true
+    rm -f "$UNIT"
+    systemctl daemon-reload
+    echo "rig-tunnel.service removed"
+    exit 0
+    ;;
+install)
+    ;;
+*)
+    echo "usage: $0 [install|status|restart|uninstall]" >&2
+    exit 2
+    ;;
+esac
+
+if [ "$(ps -p 1 -o comm=)" != systemd ]; then
+    echo "ERROR: systemd is not PID 1 in this WSL distribution" >&2
+    exit 1
+fi
+
+if [ ! -f "$KEY" ]; then
+    echo "ERROR: missing dedicated SSH key: $KEY" >&2
+    exit 1
+fi
+
+# Verify authentication before installing a service restart loop.
+sudo -u "$TUNNEL_USER" -H /usr/bin/ssh \
+    -i "$KEY" \
+    -o IdentitiesOnly=yes \
+    -o BatchMode=yes \
+    -o StrictHostKeyChecking=yes \
+    -o ConnectTimeout=10 \
+    "$SERVER" true
+
+# The reverse tunnel forwards to this WSL instance's sshd.
+if [ ! -x /usr/sbin/sshd ]; then
+    apt-get update -qq
+    apt-get install -y -qq openssh-server
+fi
+
+systemctl enable --now ssh.service
+if ! systemctl is-active --quiet ssh.service; then
+    echo "ERROR: local ssh.service did not start" >&2
+    exit 1
+fi
+
+# Stop the previous managed service and any hand-started tunnel.
+systemctl stop rig-tunnel.service 2>/dev/null || true
+pkill -u "$TUNNEL_USER" -f "[a]utossh.*-R .*${PORT}.*:22" 2>/dev/null || true
+pkill -u "$TUNNEL_USER" -f "[s]sh.*-R .*${PORT}.*:22" 2>/dev/null || true
+sleep 1
+
+cat > "$UNIT" <<EOF
+[Unit]
+Description=Reverse SSH tunnel from GPU rig WSL to development server
+Wants=network-online.target
+After=network-online.target ssh.service
+Requires=ssh.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+User=${TUNNEL_USER}
+Environment=HOME=${TUNNEL_HOME}
+ExecStart=/usr/bin/ssh -NT \\
+    -i ${KEY} \\
+    -o IdentitiesOnly=yes \\
+    -o BatchMode=yes \\
+    -o StrictHostKeyChecking=yes \\
+    -o ExitOnForwardFailure=yes \\
+    -o ConnectTimeout=10 \\
+    -o ServerAliveInterval=30 \\
+    -o ServerAliveCountMax=3 \\
+    -R 127.0.0.1:${PORT}:127.0.0.1:22 \\
+    ${SERVER}
+Restart=always
+RestartSec=10
+TimeoutStopSec=10
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now rig-tunnel.service
+sleep 3
+
+if ! systemctl is-active --quiet rig-tunnel.service; then
+    echo "ERROR: rig-tunnel.service failed" >&2
+    journalctl -u rig-tunnel.service -n 30 --no-pager >&2
+    exit 1
+fi
+
+echo "rig-tunnel.service is active"
+echo "Logs: journalctl -u rig-tunnel.service -f"
+SCRIPT
+
+chmod 700 "$INSTALLER"
+SERVER="$SERVER" PORT="$PORT" bash "$INSTALLER" "$ACTION"
+```
+
+## Windows logon startup
+
+Systemd starts the service whenever this WSL distribution boots. Windows must
+also start the distribution after login. In an Administrator PowerShell, first
+obtain the exact distribution name:
+
+```powershell
+wsl -l -q
+```
+
+Then replace `Ubuntu-24.04` below if necessary and run:
+
+```powershell
+$Distro = "Ubuntu-24.04"
+schtasks.exe /Create /TN "WSL rig tunnel" /SC ONLOGON /RL HIGHEST /F /TR "C:\Windows\System32\wsl.exe -d $Distro -u root -e /bin/true"
+```
+
+Test the scheduled task:
+
+```powershell
+schtasks.exe /Run /TN "WSL rig tunnel"
+wsl.exe -d $Distro -- systemctl status rig-tunnel.service --no-pager
+```
+
+## Development-server verification
+
+Run this on the development server after the installation succeeds:
+
+```bash
+ssh rig 'hostname; /usr/lib/wsl/lib/nvidia-smi'
+```

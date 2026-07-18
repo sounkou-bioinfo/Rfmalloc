@@ -98,3 +98,5 @@ here.
   ample for the models we test.
 - Editing `.wslconfig` and `wsl --shutdown` are Windows-host actions the agent
   cannot do over `ssh rig`; hand them to the user.
+- The executable setup and recovery procedure is in
+  `docs/rig-tunnel-setup.Rmd`.
